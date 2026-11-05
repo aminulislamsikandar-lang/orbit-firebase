@@ -256,7 +256,7 @@ function settingsHTML(){
  <h2 class="sec">Theme</h2>${chips(THEMES,ST.theme,'sett')}`;
 }
 // ---- Google login + cloud sync (Firebase). cloud.js sets window.CLOUD; if it fails to load (offline) the app still works. ----
-let USER=null,LOGINERR='',SYNCT=null;
+let USER=null,LOGINERR='',SYNCT=null,AUTH_READY=false,CLOUDFAIL='';   // AUTH_READY: Firebase has told us if someone is logged in
 function loginHTML(){
  const h='<h1 style="font-size:26px;margin-top:14px">Log in</h1>';
  if(USER)return h+`<div class="soon">${USER.photo?`<img src="${esc(USER.photo)}" alt="" width="64" height="64" style="border-radius:50%" referrerpolicy="no-referrer">`:I.login}<p><b>${esc(USER.name||'')}</b><br><span class="mut" style="font-size:15px">${esc(USER.email||'')}</span></p></div><div style="text-align:center"><button class="btn" data-act="logout">Log out</button></div>`;
@@ -267,7 +267,8 @@ function syncSoon(){
  clearTimeout(SYNCT);
  SYNCT=setTimeout(()=>window.CLOUD.push({saved:SAVED,pins:PINS,settings:ST}).catch(e=>console.warn('sync failed',e)),1500);
 }
-window.onCloudUser=u=>{USER=u;if(!u){LOGINERR=''}if(DATA)draw()};
+window.onCloudFail=e=>{CLOUDFAIL=String((e&&e.message)||e||'unknown');console.error('cloud.js failed',e);if(navigator.onLine&&!USER)draw()};
+window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(!u){LOGINERR=''}else{openSide(false,true)}if(DATA||!u)draw()};
 // First login on a device: merge this device's data with the cloud. After that the cloud copy wins.
 window.onCloudData=cd=>{
  let uid=USER&&USER.uid,first=true;
@@ -312,7 +313,16 @@ function soonHTML(){
  const [t,i]=SOON[VIEW];
  return `<h1 style="font-size:26px;margin-top:14px">${t}</h1><div class="soon">${I[i]}<p>Coming soon</p></div>`;
 }
+function gateHTML(){
+ return `<div style="min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px">
+ <div class="logo" style="font-size:30px;justify-content:center">${LOGO}Orbit Tutorial</div>
+ <p style="margin:18px 0 4px;font-size:20px;font-weight:600">Shuru karne ke liye log in karo</p>
+ <p class="mut" style="max-width:320px;margin:0 auto">Google se ek tap me login. Tumhare favourite, pinned aur settings har phone par saath rahenge.</p>
+ <button class="btn" data-act="login" ${window.CLOUD?'':'disabled'} style="font-size:17px;padding:14px 22px;margin-top:22px">Google se Continue</button>
+ ${CLOUDFAIL&&!window.CLOUD?`<p class="err" style="max-width:320px">Login system load nahi hua. Page refresh karo. Error: ${esc(CLOUDFAIL)}</p>`:''}${LOGINERR?`<p class="err" style="max-width:320px">${esc(LOGINERR)}</p>`:''}</div>`;
+}
 function draw(){
+ if((AUTH_READY||(CLOUDFAIL&&navigator.onLine))&&!USER){openSide(false,true);$('#app').innerHTML=gateHTML();window.scrollTo(0,0);return}
  const d=DATA,y=window.scrollY;
  let body;
  if(VIEW==='home'||VIEW==='fav'||VIEW==='pins'){
@@ -468,7 +478,7 @@ document.addEventListener('click',e=>{
  else if(act==='say')say(id);
  else if(act==='cp')copy(id);
  else if(act==='vid')openVideo(id);
- else if(act==='login'){LOGINERR='';window.CLOUD.login().catch(e=>{LOGINERR=e&&e.code==='auth/popup-closed-by-user'?'':'Login nahi ho paya. Dobara try karo.';draw()})}
+ else if(act==='login'){LOGINERR='';window.CLOUD.login().catch(e=>{const c=e&&e.code;LOGINERR=c==='auth/popup-closed-by-user'?'':c==='auth/operation-not-allowed'?'Firebase Console me Authentication → Google enable karna baaki hai.':c==='auth/unauthorized-domain'?'Ye website Firebase ke Authorized domains me nahi hai.':'Login nahi ho paya. Dobara try karo.';draw()})}
  else if(act==='logout'){window.CLOUD.logout()}
 });
 
@@ -492,6 +502,6 @@ fetch('/questions.json').then(r=>r.ok?r:fetch((window.ORBIT_API||'')+'/api/quest
 
 if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{})});
 </script>
-<script type="module" src="/cloud.js"></script>
+<script type="module">import('/cloud.js').catch(e=>window.onCloudFail&&window.onCloudFail(e))</script>
 </body>
 </html>

@@ -55,4 +55,3 @@ onAuthStateChanged(auth, async user => {
   if (window.onCloudUser) window.onCloudUser(user ? { uid: user.uid, name: user.displayName, email: user.email, photo: user.photoURL } : null);
   if (user) { try { await load(user); } catch (e) { console.warn('cloud load failed', e); } }
 });
-if (window.onCloudUser) window.onCloudUser(null);
