@@ -1,8 +1,8 @@
-// Firebase Console -> Project settings -> Your apps -> Web app -> "firebaseConfig" copy karke yahan paste karo.
-// Ye keys secret nahi hoti (security Firestore rules aur login se aati hai).
-export const firebaseConfig = {
-  apiKey: 'PASTE_API_KEY',
-  authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
-  projectId: 'YOUR_PROJECT_ID',
-  appId: 'PASTE_APP_ID'
+﻿export const firebaseConfig = {
+  apiKey: "AIzaSyAufmTNj4tfTYy9krTgE6y3_Ki8kF8AtgM",
+  authDomain: "orbitai-9feb8.firebaseapp.com",
+  projectId: "orbitai-9feb8",
+  storageBucket: "orbitai-9feb8.firebasestorage.app",
+  messagingSenderId: "317825385144",
+  appId: "1:317825385144:web:b02e677345930372012a4d"
 };
