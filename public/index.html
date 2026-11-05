@@ -84,12 +84,14 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .soon svg{width:44px;height:44px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .soon p{margin:10px 0 0;font-size:18px}
 @media(prefers-reduced-motion:reduce){.side,.scrim{transition:none}}
+.vid{margin-top:16px}.vid video{width:100%;border-radius:12px;background:#000;margin-top:8px}
 </style>
 </head>
 <body>
 <div id="scrim" class="scrim"></div>
 <aside id="side" class="side" aria-label="Menu" aria-hidden="true" inert></aside>
 <div id="app"><p class="mut">Loading…</p></div>
+<script src="/config.js"></script>
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -141,7 +143,7 @@ const ui=id=>UI[id]||(UI[id]={});
 const SKEY='orbit_saved_v1';
 let SAVED={};
 try{SAVED=JSON.parse(localStorage.getItem(SKEY)||'{}')||{}}catch(e){SAVED={}}
-function persist(){try{localStorage.setItem(SKEY,JSON.stringify(SAVED))}catch(e){}}
+function persist(){try{localStorage.setItem(SKEY,JSON.stringify(SAVED))}catch(e){}syncSoon()}
 for(const id in SAVED)ANS[id]={text:SAVED[id].text};
 // Every answer the AI generates is kept on this device, so it opens later even without internet.
 const CKEY='orbit_answers_v1';
@@ -183,13 +185,13 @@ try{PINS=JSON.parse(localStorage.getItem(PKEY)||'{}')||{}}catch(e){PINS={}}
 try{ST={...ST,...(JSON.parse(localStorage.getItem(STKEY)||'{}')||{})}}catch(e){}
 const isPinned=id=>!!PINS[id];
 const nPinned=()=>Object.keys(PINS).length;
-function pinPersist(){try{localStorage.setItem(PKEY,JSON.stringify(PINS))}catch(e){}}
-function stSave(){try{localStorage.setItem(STKEY,JSON.stringify(ST))}catch(e){}}
+function pinPersist(){try{localStorage.setItem(PKEY,JSON.stringify(PINS))}catch(e){}syncSoon()}
+function stSave(){try{localStorage.setItem(STKEY,JSON.stringify(ST))}catch(e){}syncSoon()}
 function applyTheme(){if(ST.theme==='light'||ST.theme==='dark')document.documentElement.dataset.theme=ST.theme;else delete document.documentElement.dataset.theme}
 applyTheme();
 const DTYPES=[['auto','Auto'],['flow','Flow diagram'],['labelled','Labelled diagram'],['compare','Comparison'],['mindmap','Mind map'],['chart','Chart / graph'],['table','Table']];
 const THEMES=[['auto','Auto'],['light','Light'],['dark','Dark']];
-const SOON={pyq:['PYQ','pyq'],pass:['Pass mark','pass'],topper:['Topper','topper'],faculty:['Faculty','fac'],dev:['Developer','dev'],login:['Log in','login']};
+const SOON={pyq:['PYQ','pyq'],pass:['Pass mark','pass'],topper:['Topper','topper'],faculty:['Faculty','fac'],dev:['Developer','dev']};
 const TITLES={home:'Home',fav:'Favourite',pins:'Pinned',settings:'Settings'};
 const isSaved=id=>!!SAVED[id];
 const nSaved=()=>Object.keys(SAVED).length;
@@ -253,6 +255,59 @@ function settingsHTML(){
  <p class="mut" style="margin-top:8px">Naya diagram is type mein banega. Diagram ke neeche wale icon se naya banao.</p>
  <h2 class="sec">Theme</h2>${chips(THEMES,ST.theme,'sett')}`;
 }
+// ---- Google login + cloud sync (Firebase). cloud.js sets window.CLOUD; if it fails to load (offline) the app still works. ----
+let USER=null,LOGINERR='',SYNCT=null;
+function loginHTML(){
+ const h='<h1 style="font-size:26px;margin-top:14px">Log in</h1>';
+ if(USER)return h+`<div class="soon">${USER.photo?`<img src="${esc(USER.photo)}" alt="" width="64" height="64" style="border-radius:50%" referrerpolicy="no-referrer">`:I.login}<p><b>${esc(USER.name||'')}</b><br><span class="mut" style="font-size:15px">${esc(USER.email||'')}</span></p></div><div style="text-align:center"><button class="btn" data-act="logout">Log out</button></div>`;
+ return h+`<p class="mut" style="margin-top:8px">Google se log in karo. Tumhare favourite, pinned aur settings har phone par mil jayenge. AI answer ke liye log in zaroori hai.</p><button class="btn" data-act="login" ${window.CLOUD?'':'disabled'}>Google se Log in</button>${window.CLOUD?'':'<p class="mut" style="margin-top:10px">Login abhi load nahi hua. Internet check karke page refresh karo.</p>'}${LOGINERR?`<p class="err">${esc(LOGINERR)}</p>`:''}`;
+}
+function syncSoon(){
+ if(!USER||!window.CLOUD)return;
+ clearTimeout(SYNCT);
+ SYNCT=setTimeout(()=>window.CLOUD.push({saved:SAVED,pins:PINS,settings:ST}).catch(e=>console.warn('sync failed',e)),1500);
+}
+window.onCloudUser=u=>{USER=u;if(!u){LOGINERR=''}if(DATA)draw()};
+// First login on a device: merge this device's data with the cloud. After that the cloud copy wins.
+window.onCloudData=cd=>{
+ let uid=USER&&USER.uid,first=true;
+ try{first=localStorage.getItem('orbit_sync_uid')!==uid}catch(e){}
+ if(first){
+  for(const id in cd.saved)if(!SAVED[id]||(cd.saved[id].at||0)>(SAVED[id].at||0))SAVED[id]=cd.saved[id];
+  Object.assign(PINS,cd.pins);
+  if(cd.settings)ST={...ST,...cd.settings};
+ }else{
+  for(const id in SAVED)if(!cd.saved[id])delete SAVED[id];
+  for(const id in cd.saved)SAVED[id]=cd.saved[id];
+  for(const id in PINS)delete PINS[id];
+  Object.assign(PINS,cd.pins);
+  if(cd.settings)ST={...ST,...cd.settings};
+ }
+ for(const id in SAVED){
+  const e=SAVED[id];if(!e||!e.text)continue;
+  ANS[id]={text:e.text};if(!CACHE[id])CACHE[id]={text:e.text,at:e.at};
+  if(e.svg)VIS[id]={svg:e.svg};
+ }
+ try{localStorage.setItem(SKEY,JSON.stringify(SAVED));localStorage.setItem(PKEY,JSON.stringify(PINS));localStorage.setItem(STKEY,JSON.stringify(ST));localStorage.setItem(CKEY,JSON.stringify(CACHE));localStorage.setItem('orbit_sync_uid',uid)}catch(e){}
+ applyTheme();
+ if(first)syncSoon();
+ if(DATA)draw();
+};
+// ---- recorded video lessons (files in Backblaze B2; the server hands out a short-lived link) ----
+let VIDEOS=[];const VID={};   // id -> {loading,url,err}
+function videosHTML(ch){
+ const vs=VIDEOS.filter(v=>v.chapter===ch.no);if(!vs.length)return'';
+ return `<div class="vid"><h2 class="sec">Video lessons</h2>${vs.map(v=>{const s=VID[v.id]||{};
+  return `<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button>${s.url?`<video controls playsinline preload="metadata" src="${esc(s.url)}"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}</div>`}).join('')}</div>`;
+}
+async function openVideo(id){
+ const s=VID[id]=VID[id]||{};
+ if(s.url){delete s.url;draw();return}
+ s.loading=true;s.err='';draw();
+ try{const j=await api('/api/video',{id});s.url=j.url}catch(e){s.err=errMsg(e)}
+ s.loading=false;draw();
+}
+fetch('/videos.json').then(r=>r.ok?r.json():[]).then(v=>{VIDEOS=v;if(DATA)draw()}).catch(()=>{});
 function soonHTML(){
  const [t,i]=SOON[VIEW];
  return `<h1 style="font-size:26px;margin-top:14px">${t}</h1><div class="soon">${I[i]}<p>Coming soon</p></div>`;
@@ -267,8 +322,9 @@ function draw(){
    :`<h1 style="font-size:26px;margin-top:14px">${TITLES[VIEW]}</h1>${multi?'':`<div class="mut">Chapter ${ch.no}: ${esc(ch.title)}</div>`}`;
   const fn=VIEW==='fav'?q=>isSaved(q.id):VIEW==='pins'?q=>isPinned(q.id):()=>true;
   const empty=VIEW==='fav'?'Abhi koi answer save nahi hua. Kisi answer ke neeche heart dabao.':'Abhi koi question pin nahi hua. Question ke upar pin icon dabao.';
-  body=head+listHTML(fn,empty,VIEW==='home'?[ch]:d.chapters)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
+  body=head+(VIEW==='home'?videosHTML(ch):'')+listHTML(fn,empty,VIEW==='home'?[ch]:d.chapters)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
  }else if(VIEW==='settings')body=settingsHTML();
+ else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
  $('#app').innerHTML=`<div class="top"><button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button><div class="logo">${LOGO}Orbit Tutorial</div></div>
  <div class="mut">Class ${d.class} · ${esc(d.subject)}</div>${body}`;
@@ -282,7 +338,7 @@ function drawSide(){
  <div class="sline"></div>
  ${item('pyq','pyq','PYQ')}${item('pass','pass','Pass mark')}${item('topper','topper','Topper')}${item('faculty','fac','Faculty')}${item('dev','dev','Developer')}
  <div class="sgap"></div><div class="sline"></div>
- ${item('settings','set','Settings')}${item('login','login','Log in')}`;
+ ${item('settings','set','Settings')}${item('login','login',USER?'Account':'Log in')}`;
 }
 function openSide(on,noFocus){
  const sd=$('#side'),sc=$('#scrim');
@@ -300,7 +356,9 @@ function go(v){
 function pin(id){if(PINS[id])delete PINS[id];else PINS[id]=Date.now();pinPersist();draw()}
 
 async function api(path,body){
- const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(75000)});
+ const tok=window.CLOUD?await window.CLOUD.token():null;
+ if(!tok)throw new Error('Pehle Google se log in karo (menu → Log in).');
+ const r=await fetch((window.ORBIT_API||'')+path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body),signal:AbortSignal.timeout(75000)});
  const j=await r.json().catch(()=>({}));
  if(!r.ok)throw new Error(j.error||'Kuch gadbad hui. Dobara try karo.');
  return j}
@@ -409,6 +467,9 @@ document.addEventListener('click',e=>{
  else if(act==='visre')genVis(id,true);
  else if(act==='say')say(id);
  else if(act==='cp')copy(id);
+ else if(act==='vid')openVideo(id);
+ else if(act==='login'){LOGINERR='';window.CLOUD.login().catch(e=>{LOGINERR=e&&e.code==='auth/popup-closed-by-user'?'':'Login nahi ho paya. Dobara try karo.';draw()})}
+ else if(act==='logout'){window.CLOUD.logout()}
 });
 
 $('#scrim').addEventListener('click',()=>openSide(false));
@@ -423,7 +484,7 @@ document.addEventListener('keydown',e=>{
 const QKEY='orbit_questions_v1';
 let qOld=null;
 try{qOld=localStorage.getItem(QKEY);const c=norm(JSON.parse(qOld||'null'));if(c){DATA=c;draw()}}catch(e){qOld=null}
-fetch('/api/questions').then(r=>{if(!r.ok)throw new Error('q');return r.json()}).then(d=>{
+fetch('/questions.json').then(r=>r.ok?r:fetch((window.ORBIT_API||'')+'/api/questions')).then(r=>{if(!r.ok)throw new Error('q');return r.json()}).then(d=>{
  const nw=JSON.stringify(d);
  try{localStorage.setItem(QKEY,nw)}catch(e){}
  if(!DATA||nw!==qOld){DATA=norm(d)||DATA;if(DATA)draw()}
@@ -431,5 +492,6 @@ fetch('/api/questions').then(r=>{if(!r.ok)throw new Error('q');return r.json()})
 
 if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{})});
 </script>
+<script type="module" src="/cloud.js"></script>
 </body>
 </html>

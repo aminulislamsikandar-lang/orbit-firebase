@@ -1,33 +1,42 @@
-# Orbit AI Tutor
+# Orbit AI Tutor (Firebase version)
 
-Questions are fixed in `questions.js`. The AI writes the answers on the spot (Gemini).
+- Website (`public/`) -> Firebase Hosting (free Spark plan)
+- Google login -> Firebase Authentication
+- Favourites, pins, settings per user -> Firestore (`firestore.rules`)
+- AI answers (`server.js`, Gemini) -> Render free Web Service; it accepts only requests with a valid Firebase login token
 
-## Run locally
-1. Install Node 20+.
-2. `npm install`
-3. Copy `.env.example` to `.env` and put your Gemini API key (free from Google AI Studio).
-4. `npm run dev` → open http://localhost:3000
+## 1. Firebase (ek baar)
+1. console.firebase.google.com -> Add project (naya, jaise `orbit-v2`). Google Analytics band rakh sakte ho. Plan Spark (free) hi rehne do.
+2. Build -> Authentication -> Get started -> Sign-in method -> **Google** -> Enable -> Save.
+3. Build -> Firestore Database -> Create database -> production mode, location `asia-south1`.
+4. Project settings (gear) -> Your apps -> Web (`</>`) -> app register -> `firebaseConfig` copy karke `public/firebase-config.js` me paste karo.
+5. `.firebaserc` me `YOUR_PROJECT_ID` ki jagah apna project id likho.
 
-## Deploy on Render (free Web Service)
-- New → Web Service → connect this GitHub repo
-- Build command: `npm install`
-- Start command: `npm start`
-- Environment → add `GEMINI_API_KEY`
+## 2. Render (AI server)
+Environment variables:
+- `GEMINI_API_KEY` = tumhari Gemini key
+- `FIREBASE_PROJECT_ID` = Firebase project id
+- `ALLOWED_ORIGINS` = `https://PROJECT_ID.web.app,https://PROJECT_ID.firebaseapp.com`
 
-## Add more questions
-Edit `questions.js`. Questions are grouped as `chapters` > `sections` > `questions`. To add a chapter, add one more object to `chapters` (unique `no`, and question ids that start with `c<no>-`). A chapter switcher (Chapter 1, Chapter 2, ...) shows on Home when there is more than one chapter. Favourite and Pinned show items from all chapters.
-A question can also have: `parts` (sub-questions), `options` (choices), `table: { head: [...], rows: [[...]] }` (a table shown under the question and sent to the AI), and a hidden `context` (for an Activity or figure the student does not see).
+Build command `npm install`, start command `npm start`. Deploy hone par Render ka URL `public/config.js` me daalo.
 
-## Offline answers
-Every answer the AI generates is saved in the browser (`localStorage`, key `orbit_answers_v1`), so it opens later without internet.
-Answers are hidden by default; tapping the question shows or hides them. The questions and the app page are cached too (`public/sw.js`).
-Translations are saved per answer (`orbit_tr_v1`) and are dropped when the answer is regenerated. The diagram of a hearted answer is saved inside the saved entry (`orbit_saved_v1`). The icon under a diagram makes a new one.
+## 2b. Video lessons (Backblaze B2)
+1. B2 me **private** bucket banao. Application Key aisi banao jo sirf us bucket par ho, **Read Only** access ke saath.
+2. Render env vars: `B2_ENDPOINT` (bucket page par "Endpoint", jaise `s3.us-west-004.backblazeb2.com`), `B2_KEY_ID`, `B2_APP_KEY`, `B2_BUCKET` (bucket ka naam).
+3. Videos B2 me upload karo (mp4/H.264 sabse sahi chalta hai), phir `videos.js` me ek line add karo: `{ id, chapter, title, key, free }`. `key` = bucket ke andar file ka path.
+4. Subscription lagani ho to Render me `REQUIRE_SUBSCRIPTION=true`. Phir Firebase Console -> Firestore me collection `subscriptions`, document id = student ka uid (Authentication tab me dikhta hai), field `until` (type timestamp). Jab tak `until` aage ki date hai tab tak video chalegi. `free: true` wali videos sabko dikhti hain.
+5. App video ka link har baar server se leta hai, jo 1 ghante me expire ho jata hai. Bucket private rehta hai, to link share karne se video permanent public nahi hoti.
 
-## Sidebar and settings
-Menu icon (top-left) opens the sidebar: Home, Favourite (hearted answers), Pinned (pin icon on each question), PYQ, Pass mark, Topper, Faculty, Developer, Settings, Log in.
-PYQ, Pass mark, Topper, Faculty, Developer and Log in show "Coming soon" for now.
-Settings: diagram type (Auto, Flow, Labelled, Comparison, Mind map, Chart, Table) and theme (Auto, Light, Dark); both are kept on the device.
+## 3. Deploy
+```
+npm install -g firebase-tools
+firebase login
+firebase deploy --only hosting,firestore:rules
+```
+Deploy se pehle `questions.json` apne aap ban jata hai (`build-questions.js`). Questions badalne ke baad bas dobara deploy karo.
 
-## More options (3-dot menu)
-The last icon under an answer opens: Mnemonic, Analogy, Explain like a kid, Full marks answer, Key points, Common mistakes, Practice MCQ.
-Results come from `POST /api/more` and are saved on the device (`orbit_more_v1`) per answer; they are dropped when the answer is regenerated.
+## 4. Login domain
+Authentication -> Settings -> Authorized domains me `PROJECT_ID.web.app` pehle se hota hai. Custom domain lagao to wahan add karna.
+
+## Local test
+`npm install`, `.env` me `GEMINI_API_KEY`, `FIREBASE_PROJECT_ID`, `ALLOWED_ORIGINS=http://localhost:3000`, phir `npm run dev`.

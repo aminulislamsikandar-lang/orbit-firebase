@@ -5,6 +5,33 @@ const QUIZ = require('./questions');
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
+
+// ---- CORS + Firebase login check --------------------------------------------
+// The website lives on Firebase Hosting; this server only answers AI requests from logged-in users.
+// Render env vars: FIREBASE_PROJECT_ID (your Firebase project id) and ALLOWED_ORIGINS (comma separated,
+// e.g. https://your-project.web.app,https://your-project.firebaseapp.com).
+const admin = require('firebase-admin');
+admin.initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID });
+const ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean);
+app.use('/api', (req, res, next) => {
+  const o = req.headers.origin;
+  if (o && ORIGINS.includes(o)) {
+    res.setHeader('Access-Control-Allow-Origin', o);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+app.use('/api', async (req, res, next) => {
+  if (req.path === '/questions') return next();
+  const h = req.headers.authorization || '';
+  const t = h.startsWith('Bearer ') ? h.slice(7) : '';
+  if (!t) return res.status(401).json({ error: 'Pehle Google se log in karo.' });
+  try { req.user = await admin.auth().verifyIdToken(t); next(); }
+  catch (e) { res.status(401).json({ error: 'Login expire ho gaya. Dobara log in karo.' }); }
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 const KEY = process.env.GEMINI_API_KEY;
@@ -246,6 +273,50 @@ app.post('/api/visual', async (req, res) => {
   if (!svg) return res.status(502).json({ error: 'Diagram sahi nahi bana. Dobara try karo.' });
   CACHE.set(key, svg);
   res.json({ svg });
+});
+
+// ---- recorded videos (private Backblaze B2 bucket, short-lived links) -------------
+// Render env vars: B2_ENDPOINT (e.g. s3.us-west-004.backblazeb2.com), B2_KEY_ID, B2_APP_KEY, B2_BUCKET.
+// REQUIRE_SUBSCRIPTION=true makes non-free videos need an active subscription: Firestore doc subscriptions/<uid> with a
+// timestamp field `until` (you edit it by hand in the Firebase console; users cannot write it, see firestore.rules).
+const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const VIDEOS = require('./videos');
+const VBY = new Map(VIDEOS.map(v => [v.id, v]));
+const B2HOST = (process.env.B2_ENDPOINT || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+const B2 = B2HOST && process.env.B2_KEY_ID && process.env.B2_APP_KEY && process.env.B2_BUCKET
+  ? new S3Client({
+      region: (B2HOST.match(/^s3\.([^.]+)\./) || [])[1] || 'us-west-004',
+      endpoint: 'https://' + B2HOST,
+      credentials: { accessKeyId: process.env.B2_KEY_ID, secretAccessKey: process.env.B2_APP_KEY },
+      requestChecksumCalculation: 'WHEN_REQUIRED'
+    })
+  : null;
+
+async function hasAccess(req, v) {
+  if (process.env.REQUIRE_SUBSCRIPTION !== 'true' || v.free) return true;
+  try {
+    // Read the student's own subscription doc with THEIR login token, so Firestore rules decide (no service account needed).
+    const r = await fetch(`https://firestore.googleapis.com/v1/projects/${process.env.FIREBASE_PROJECT_ID}/databases/(default)/documents/subscriptions/${req.user.uid}`,
+      { headers: { Authorization: req.headers.authorization } });
+    if (!r.ok) return false;
+    const until = ((await r.json()).fields || {}).until;
+    return !!(until && until.timestampValue && new Date(until.timestampValue) > new Date());
+  } catch (e) { return false; }
+}
+
+app.post('/api/video', async (req, res) => {
+  const v = VBY.get((req.body || {}).id);
+  if (!v) return res.status(400).json({ error: 'Video nahi mili.' });
+  if (!B2) return res.status(500).json({ error: 'Video storage abhi set nahi hai.' });
+  if (!(await hasAccess(req, v))) return res.status(403).json({ error: 'Ye video dekhne ke liye subscription chahiye.' });
+  try {
+    const url = await getSignedUrl(B2, new GetObjectCommand({ Bucket: process.env.B2_BUCKET, Key: v.key }), { expiresIn: 3600 });
+    res.json({ url });
+  } catch (e) {
+    console.error('B2 sign failed', e.message);
+    res.status(502).json({ error: 'Video ka link nahi ban paya. Dobara try karo.' });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
