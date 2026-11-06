@@ -319,18 +319,26 @@ app.post('/api/answer', async (req, res) => {
 });
 
 // ---- translate (Hindi / Assamese) ----------------------------------------
+// Translation styles the student can choose in the 3-dot menu. Each builds the prompt for the translator.
+const TR_STYLES = {
+  para: (l, t) => `Translate into ${l}:\n\n${t}`,
+  sent: (l, t) => `Translate into ${l}, sentence by sentence.\nFor every sentence of the text below, write the original English sentence on one line, then on the next line write its translation starting with "→ ". Leave one blank line between sentences. Keep labels such as (a), (b), numbering, formulas and equations with the sentence they belong to. Do not add anything else.\n\n${t}`,
+  words: (l, t) => `From the text below pick the 6 to 10 hardest words or terms a school student may not know. Do NOT translate the whole text.\nFormat: one per line, starting with "- ", as: English word: meaning in ${l}.\nKeep formulas as they are. Output only this list.\n\n${t}`,
+  brackets: (l, t) => `Rewrite the text below in English exactly as it is, but after each difficult word or term put its meaning in ${l} inside round brackets, for example: word (meaning). Add brackets only for hard words (at most about one word in ten). Keep every other word, number, formula, equation and **bold** marker unchanged. Output only the rewritten text.\n\n${t}`
+};
 app.post('/api/translate', async (req, res) => {
   const hit = guard(req, res); if (!hit) return;
   const { q, course, ch } = hit, P = profileFor(course);
   const { id, to } = req.body;
   if (!LANGS[to]) return res.status(400).json({ error: 'Language supported nahi hai.' });
+  const style = Object.prototype.hasOwnProperty.call(TR_STYLES, req.body.style) ? req.body.style : 'para';
   // Translate exactly the answer the student sees (the browser sends it); fall back to the server's copy.
   const base = clientText(req.body.text) || CACHE.get(id + '|en');
   if (!base) return res.status(400).json({ error: 'Pehle AI Answer banao, phir translate karo.' });
-  const key = id + '|tr|' + to + '|' + hash(base);
+  const key = id + '|tr|' + to + '|' + style + '|' + hash(base);
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const r = await gemini(P.tr, `Translate into ${LANGS[to]}:\n\n${base}`, { temperature: 0.2 });
+  const r = await gemini(P.tr, TR_STYLES[style](LANGS[to], base), { temperature: 0.2 });
   if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
@@ -345,9 +353,10 @@ app.post('/api/more', async (req, res) => {
   const base = clientText(req.body.text) || CACHE.get(id + '|en');
   if (!base) return res.status(400).json({ error: 'Pehle AI Answer banao, phir ye option use karo.' });
   const key = id + '|more|' + kind + '|' + hash(base);
+  if (req.body.fresh) CACHE.delete(key);
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const prompt = `${buildPrompt(q, course, ch)}\n\nHere is the answer:\n${base}\n\nExtra help kind: ${kind}.\n${P.kinds[kind]}`;
+  const prompt = `${buildPrompt(q, course, ch)}\n\nHere is the answer:\n${base}\n\nExtra help kind: ${kind}.\n${P.kinds[kind]}` + (req.body.fresh ? '\nThe student wants a different version than before. Use new wording and a different example.' : '');
   const r = await gemini(P.more, prompt, { temperature: 0.5 });
   if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
   CACHE.set(key, r.text);
