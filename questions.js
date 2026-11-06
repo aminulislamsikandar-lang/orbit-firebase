@@ -3,7 +3,9 @@
 // Optional `context` is hidden from students and only sent to the AI
 // (use it when a question refers to an Activity the AI can't see).
 // To add a chapter: add one more object to `chapters` (unique `no`, ids that start with c<no>-).
-module.exports = {
+// Courses (class + subject) are listed at the bottom of this file.
+const science = {
+  id: 'c10-science',
   subject: 'Science',
   class: 10,
   chapters: [
@@ -457,3 +459,6 @@ module.exports = {
   }
   ]
 };
+
+// Courses: one per class + subject. Add a new file for each (see english7.js) and list it here.
+module.exports = { courses: [science, require('./english7.js'), require('./maths7.js'), require('./science7.js')] };

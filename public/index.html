@@ -85,6 +85,16 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .soon p{margin:10px 0 0;font-size:18px}
 @media(prefers-reduced-motion:reduce){.side,.scrim{transition:none}}
 .vid{margin-top:16px}.vid video{width:100%;border-radius:12px;background:#000;margin-top:8px}
+.rows{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:14px;color:var(--tx)}
+.rbadge{flex:none;width:38px;height:38px;border-radius:50%;border:1.5px solid var(--ln);display:flex;align-items:center;justify-content:center;font-weight:700}
+.rmain{flex:1;min-width:0}
+.rtitle{font-weight:600;overflow-wrap:anywhere}
+.rsub{font-size:13px;color:var(--mut);margin-top:2px}
+.rgo{flex:none;color:var(--mut);display:flex}
+.rgo svg,.back svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.back{display:inline-flex;align-items:center;gap:2px;border:0;background:transparent;color:var(--mut);padding:6px 6px 6px 0;margin-top:6px}
+.rnote{font-size:13px;color:var(--mut);margin:-4px 6px 0}
 </style>
 </head>
 <body>
@@ -120,19 +130,51 @@ const I={
  dev:ic('<path d="M8 8l-5 4 5 4"/><path d="M16 8l5 4-5 4"/><path d="M14 5l-4 14"/>'),
  set:ic('<path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h2"/><path d="M10 17h10"/><circle cx="8" cy="17" r="2"/>'),
   more:ic('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'),
+  next:ic('<path d="M9 6l6 6-6 6"/>'),
+ back:ic('<path d="M15 6l-6 6 6 6"/>'),
+ lock:ic('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
  login:ic('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 8l4 4-4 4"/><path d="M14 12H3"/>')
 };
 // translation languages: key -> button label, speech voice
 const TRL={hing:{n:'Hinglish',v:'hi-IN'},as:{n:'অসমীয়া',v:'as-IN'},bn:{n:'বাংলা',v:'bn-IN'}};
 
 let DATA=null,VIEW='home';
-// Chapters: DATA.chapters = [{no,title,sections}]. Older cached data had one chapter + sections; norm() converts it.
-const CHKEY='orbit_chapter_v1';
-let CHNO=1;
-try{CHNO=+localStorage.getItem(CHKEY)||1}catch(e){}
-const norm=d=>d&&d.chapters?d:(d&&d.sections?{subject:d.subject,class:d.class,chapters:[{no:d.chapter.no,title:d.chapter.title,sections:d.sections}]}:null);
-const curCh=()=>DATA.chapters.find(c=>c.no===CHNO)||DATA.chapters[0];
-const chOf=id=>DATA.chapters.find(c=>c.sections.some(s=>s.questions.some(q=>q.id===id)))||curCh();
+// DATA = {courses:[{id,class,subject,chapters:[{no,title,kind,author,locked,sections}]}]}.
+// Older cached data (one course without "courses") is converted by norm().
+const norm=d=>{
+ if(!d)return null;
+ if(d.courses)return d;
+ if(d.chapters)return{courses:[{id:'c10-science',class:d.class||10,subject:d.subject||'Science',chapters:d.chapters}]};
+ if(d.sections&&d.chapter)return{courses:[{id:'c10-science',class:d.class||10,subject:d.subject||'Science',chapters:[{no:d.chapter.no,title:d.chapter.title,sections:d.sections}]}]};
+ return null;
+};
+let IDX={};   // question id -> {course,ch,q}
+const courseOf=(cls,sub)=>DATA.courses.find(c=>c.class===cls&&c.subject===sub);
+const isLocked=ch=>!!ch.locked||!(ch.sections&&ch.sections.length);
+const cLabel=c=>`Class ${c.class} ${c.subject}`;
+const chOf=id=>(IDX[id]||{}).ch||{title:''};
+
+// Where the student is: classes -> subjects -> index (chapters) -> chapter. Remembered on this device.
+const NKEY='orbit_nav_v1',CHKEY='orbit_chapter_v1';
+let NAV={page:'classes'},LOCKED=null;
+try{
+ const n=JSON.parse(localStorage.getItem(NKEY)||'null');
+ if(n&&n.page)NAV=n;
+ else if(localStorage.getItem(CHKEY))NAV={page:'chapter',cls:10,sub:'Science',ch:+localStorage.getItem(CHKEY)||1};
+}catch(e){}
+function navSave(){try{localStorage.setItem(NKEY,JSON.stringify(NAV))}catch(e){}}
+function setData(d){
+ DATA=d;IDX={};
+ d.courses.forEach(c=>c.chapters.forEach(ch=>(ch.sections||[]).forEach(s=>s.questions.forEach(q=>{IDX[q.id]={course:c,ch,q}}))));
+ fixNav();
+}
+function fixNav(){
+ if(NAV.page==='classes')return;
+ if(NAV.page==='subjects'){if(!DATA.courses.some(c=>c.class===NAV.cls))NAV={page:'classes'};return}
+ const c=courseOf(NAV.cls,NAV.sub);
+ if(!c){NAV={page:'classes'};return}
+ if(NAV.page==='chapter'){const ch=c.chapters.find(x=>x.no===NAV.ch);if(!ch||isLocked(ch))NAV={page:'index',cls:NAV.cls,sub:NAV.sub}}
+}
 const ANS={};   // id -> {loading,text,err}
 const TR={};    // id|lang -> {loading,text,err}
 const VIS={};   // id -> {loading,svg,err}
@@ -200,7 +242,7 @@ const dateFmt=t=>new Date(t).toLocaleDateString('en-IN',{day:'numeric',month:'sh
 const fmt=t=>esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
 const plain=t=>String(t||'').replace(/\*\*/g,'');
 function shown(id){const u=ui(id);if(u.tr){const t=TR[id+'|'+u.tr];if(t&&t.text)return t.text}return(ANS[id]||{}).text||''}
-function ytLink(q){const s=`Class 10 Science ${chOf(q.id).title} ${q.video||q.text}`.slice(0,110);return 'https://www.youtube.com/results?search_query='+encodeURIComponent(s)}
+function ytLink(q){const c=(IDX[q.id]||{}).course;const s=`${c?cLabel(c):'Class 10 Science'} ${chOf(q.id).title} ${q.video||q.text}`.slice(0,110);return 'https://www.youtube.com/results?search_query='+encodeURIComponent(s)}
 
 function toolbar(q){
  const id=q.id,u=ui(id),a=ANS[id]||{},tr=u.tr?TR[id+'|'+u.tr]:null,v=VIS[id]||{},sv=isSaved(id),mr=u.mk?MR[id+'|'+u.mk]:null;
@@ -234,7 +276,7 @@ function tblHTML(q){
 }
 function qHTML(q){
  const a=ANS[q.id]||{},txt=shown(q.id),has=!!a.text,open=has&&!!OPEN[q.id];
- return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic pin ${isPinned(q.id)?'liked':''} ${has?'':'nochev'}" data-act="pin" data-id="${q.id}" aria-pressed="${isPinned(q.id)}" title="${isPinned(q.id)?'Pin hatao':'Pin karo'}" aria-label="${isPinned(q.id)?'Pin hatao':'Pin karo'}">${I.pin}</button><div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="Q${q.no}. Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">Q${q.no}.</div>${q.text?`<p>${esc(q.text)}</p>`:''}
+ return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic pin ${isPinned(q.id)?'liked':''} ${has?'':'nochev'}" data-act="pin" data-id="${q.id}" aria-pressed="${isPinned(q.id)}" title="${isPinned(q.id)?'Pin hatao':'Pin karo'}" aria-label="${isPinned(q.id)?'Pin hatao':'Pin karo'}">${I.pin}</button><div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}</div>${q.text?`<p>${esc(q.text)}</p>`:''}
  ${tblHTML(q)}
  ${(q.parts||[]).map(p=>`<p class="pt">${esc(p)}</p>`).join('')}
  ${(q.options||[]).map(p=>`<p class="pt">${esc(p)}</p>`).join('')}</div>${has?`<span class="chev ${open?'open':''}">${I.chev}</span>`:''}</div>
@@ -243,10 +285,34 @@ function qHTML(q){
   :`<button class="btn" data-act="ask" data-id="${q.id}" ${a.loading?'disabled':''}>${a.loading?'Soch raha hoon…':'AI Answer'}</button>`}
  ${a.err?`<div class="err" role="alert">${esc(a.err)}</div>`:''}</div>`}
 
-function listHTML(fn,empty,chs){
- const multi=chs.length>1;
- const secs=chs.flatMap(c=>c.sections.map(x=>({t:(multi?`Ch ${c.no} · `:'')+x.title,qs:x.questions.filter(fn)}))).filter(x=>x.qs.length);
+function listHTML(fn,empty,entries,full){
+ const secs=entries.flatMap(({c,ch})=>(ch.sections||[]).map(x=>({t:(full?`${cLabel(c)} · Ch ${ch.no} · `:'')+x.title,qs:x.questions.filter(fn)}))).filter(x=>x.qs.length);
  return secs.length?secs.map(x=>`<h2 class="sec">${esc(x.t)}</h2>${x.qs.map(qHTML).join('')}`).join(''):`<p class="mut" style="margin-top:24px">${empty}</p>`;
+}
+const rowHTML=(act,attrs,badge,title,sub,icon)=>`<button class="row" data-act="${act}" ${attrs}><span class="rbadge">${badge}</span><span class="rmain"><div class="rtitle">${esc(title)}</div>${sub?`<div class="rsub">${esc(sub)}</div>`:''}</span><span class="rgo" aria-hidden="true">${icon}</span></button>`;
+const backHTML=label=>`<button class="back" data-act="back">${I.back}<span>${esc(label)}</span></button>`;
+const head1=t=>`<h1 style="font-size:26px;margin-top:10px">${esc(t)}</h1>`;
+function navHTML(){
+ const d=DATA;
+ if(NAV.page==='classes'){
+  const cls=[...new Set(d.courses.map(c=>c.class))].sort((a,b)=>a-b);
+  return head1('Class chuno')+`<div class="rows">${cls.map(n=>rowHTML('pg',`data-p="subjects" data-cls="${n}"`,n,`Class ${n}`,d.courses.filter(c=>c.class===n).map(c=>c.subject).join(', '),I.next)).join('')}</div>`;
+ }
+ if(NAV.page==='subjects'){
+  const cs=d.courses.filter(c=>c.class===NAV.cls);
+  return backHTML('Classes')+head1(`Class ${NAV.cls}`)+`<div class="mut">Subject chuno</div><div class="rows">${cs.map(c=>rowHTML('pg',`data-p="index" data-cls="${c.class}" data-sub="${esc(c.subject)}"`,esc(c.subject.charAt(0)),c.subject,`${c.chapters.length} chapters`,I.next)).join('')}</div>`;
+ }
+ const c=courseOf(NAV.cls,NAV.sub);
+ if(NAV.page==='index'){
+  return backHTML('Subjects')+head1(c.subject)+`<div class="mut">Class ${c.class} · Chapters</div><div class="rows">${c.chapters.map(ch=>{
+   const sub=[ch.kind,ch.author].filter(Boolean).join(' · ');
+   const lock=isLocked(ch);
+   return rowHTML(lock?'lock':'pg',lock?`data-ch="${ch.no}"`:`data-p="chapter" data-ch="${ch.no}"`,ch.no,ch.title,sub,lock?I.lock:I.next)
+    +(LOCKED===ch.no?`<div class="rnote" role="status">Coming soon: ye chapter jaldi aa raha hai.</div>`:'');
+  }).join('')}</div>`;
+ }
+ const ch=c.chapters.find(x=>x.no===NAV.ch);
+ return backHTML('Chapters')+head1(`Chapter ${ch.no}: ${ch.title}`)+`<div class="mut">Class ${c.class} · ${esc(c.subject)}</div>`+videosHTML(c,ch)+listHTML(()=>true,'',[{c,ch}],false)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
 }
 function settingsHTML(){
  const chips=(list,cur,act)=>`<div class="chips" role="group">${list.map(([k,n])=>`<button class="chip" data-act="${act}" data-v="${k}" aria-pressed="${cur===k}">${n}</button>`).join('')}</div>`;
@@ -296,11 +362,12 @@ window.onCloudData=cd=>{
 };
 // ---- recorded video lessons (files in Backblaze B2; the server hands out a short-lived link) ----
 let VIDEOS=[];const VID={};   // id -> {loading,url,err}
-function videosHTML(ch){
- const vs=VIDEOS.filter(v=>v.chapter===ch.no);if(!vs.length)return'';
+function videosHTML(c,ch){
+ const vs=VIDEOS.filter(v=>(v.course||'c10-science')===c.id&&v.chapter===ch.no);if(!vs.length)return'';
  return `<div class="vid"><h2 class="sec">Video lessons</h2>${vs.map(v=>{const s=VID[v.id]||{};
-  return `<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button>${s.url?`<video controls playsinline preload="metadata" src="${esc(s.url)}"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}</div>`}).join('')}</div>`;
+  return `<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button>${s.url?`<video controls playsinline preload="metadata" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}</div>`}).join('')}</div>`;
 }
+function vidFail(id){const s=VID[id];if(!s)return;delete s.url;s.err='Video chal nahi paayi. Dobara dabao. Phir bhi na chale to video ka format (mp4, H.264) check karo.';draw()}
 async function openVideo(id){
  const s=VID[id]=VID[id]||{};
  if(s.url){delete s.url;draw();return}
@@ -323,21 +390,19 @@ function gateHTML(){
 }
 function draw(){
  if((AUTH_READY||(CLOUDFAIL&&navigator.onLine))&&!USER){openSide(false,true);$('#app').innerHTML=gateHTML();window.scrollTo(0,0);return}
+ if(!DATA)return;
  const d=DATA,y=window.scrollY;
  let body;
- if(VIEW==='home'||VIEW==='fav'||VIEW==='pins'){
-  const ch=curCh(),multi=d.chapters.length>1;
-  const chips=multi&&VIEW==='home'?`<div class="chips" role="group" aria-label="Chapter chuno">${d.chapters.map(c=>`<button class="chip" data-act="chap" data-v="${c.no}" aria-pressed="${c.no===ch.no}">Chapter ${c.no}</button>`).join('')}</div>`:'';
-  const head=VIEW==='home'?`${chips}<h1 style="font-size:26px;margin-top:14px">Chapter ${ch.no}: ${esc(ch.title)}</h1>`
-   :`<h1 style="font-size:26px;margin-top:14px">${TITLES[VIEW]}</h1>${multi?'':`<div class="mut">Chapter ${ch.no}: ${esc(ch.title)}</div>`}`;
-  const fn=VIEW==='fav'?q=>isSaved(q.id):VIEW==='pins'?q=>isPinned(q.id):()=>true;
+ if(VIEW==='home')body=navHTML();
+ else if(VIEW==='fav'||VIEW==='pins'){
+  const fn=VIEW==='fav'?q=>isSaved(q.id):q=>isPinned(q.id);
   const empty=VIEW==='fav'?'Abhi koi answer save nahi hua. Kisi answer ke neeche heart dabao.':'Abhi koi question pin nahi hua. Question ke upar pin icon dabao.';
-  body=head+(VIEW==='home'?videosHTML(ch):'')+listHTML(fn,empty,VIEW==='home'?[ch]:d.chapters)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
+  const entries=d.courses.flatMap(c=>c.chapters.map(ch=>({c,ch})));
+  body=head1(TITLES[VIEW])+listHTML(fn,empty,entries,true)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
  }else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
- $('#app').innerHTML=`<div class="top"><button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button><div class="logo">${LOGO}Orbit Tutorial</div></div>
- <div class="mut">Class ${d.class} · ${esc(d.subject)}</div>${body}`;
+ $('#app').innerHTML=`<div class="top"><button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button><div class="logo">${LOGO}Orbit Tutorial</div></div>${body}`;
  drawSide();
  window.scrollTo(0,y);
 }
@@ -358,11 +423,31 @@ function openSide(on,noFocus){
  else{sd.setAttribute('inert','');const m=document.querySelector('[data-act=menu]');if(m&&!noFocus)m.focus()}
  const m=document.querySelector('[data-act=menu]');if(m)m.setAttribute('aria-expanded',String(on));
 }
-function go(v){
+function stopSay(){
  if(window.speechSynthesis&&speechSynthesis.speaking)speechSynthesis.cancel();
  for(const id in UI)UI[id].say=false;
+}
+function navTo(n,push=true){
+ stopSay();
+ NAV=n;LOCKED=null;VIEW='home';navSave();
+ draw();window.scrollTo(0,0);
+ if(push){try{history.pushState({nav:n},'')}catch(e){}}
+}
+function goBack(){
+ if(NAV.page==='chapter')navTo({page:'index',cls:NAV.cls,sub:NAV.sub});
+ else if(NAV.page==='index')navTo({page:'subjects',cls:NAV.cls});
+ else if(NAV.page==='subjects')navTo({page:'classes'});
+}
+function go(v){
+ if(v==='home'){openSide(false,true);navTo({page:'classes'});return}
+ stopSay();
  VIEW=v;draw();openSide(false,true);window.scrollTo(0,0);
 }
+window.addEventListener('popstate',e=>{
+ if(!(e.state&&e.state.nav)||!DATA)return;
+ NAV=e.state.nav;LOCKED=null;VIEW='home';fixNav();navSave();draw();window.scrollTo(0,0);
+});
+try{history.replaceState({nav:NAV},'')}catch(e){}
 function pin(id){if(PINS[id])delete PINS[id];else PINS[id]=Date.now();pinPersist();draw()}
 
 async function api(path,body){
@@ -465,7 +550,9 @@ document.addEventListener('click',e=>{
  else if(act==='pin')pin(id);
  else if(act==='more'){const u=ui(id);u.more=!u.more;draw()}
  else if(act==='mk')setMore(id,b.dataset.k);
- else if(act==='chap'){CHNO=+b.dataset.v;try{localStorage.setItem(CHKEY,String(CHNO))}catch(e){}draw();window.scrollTo(0,0)}
+ else if(act==='pg')navTo({page:b.dataset.p,cls:b.dataset.cls?+b.dataset.cls:NAV.cls,sub:b.dataset.sub||NAV.sub,ch:b.dataset.ch?+b.dataset.ch:null});
+ else if(act==='back')goBack();
+ else if(act==='lock'){LOCKED=+b.dataset.ch;draw()}
  else if(act==='setd'){ST.dtype=b.dataset.v;stSave();draw()}
  else if(act==='sett'){ST.theme=b.dataset.v;applyTheme();stSave();draw()}
  else if(act==='ask')ask(id,false);
@@ -493,11 +580,11 @@ document.addEventListener('keydown',e=>{
 // Questions are cached too: the page opens at once (even offline or while Render wakes up), then refreshes quietly.
 const QKEY='orbit_questions_v1';
 let qOld=null;
-try{qOld=localStorage.getItem(QKEY);const c=norm(JSON.parse(qOld||'null'));if(c){DATA=c;draw()}}catch(e){qOld=null}
+try{qOld=localStorage.getItem(QKEY);const c=norm(JSON.parse(qOld||'null'));if(c){setData(c);draw()}}catch(e){qOld=null}
 fetch('/questions.json').then(r=>r.ok?r:fetch((window.ORBIT_API||'')+'/api/questions')).then(r=>{if(!r.ok)throw new Error('q');return r.json()}).then(d=>{
  const nw=JSON.stringify(d);
  try{localStorage.setItem(QKEY,nw)}catch(e){}
- if(!DATA||nw!==qOld){DATA=norm(d)||DATA;if(DATA)draw()}
+ if(!DATA||nw!==qOld){const nd=norm(d);if(nd){setData(nd);draw()}}
 }).catch(()=>{if(!DATA)$('#app').innerHTML='<p class="err">Questions load nahi hue. Internet check karke page refresh karo.</p>'});
 
 if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{})});
