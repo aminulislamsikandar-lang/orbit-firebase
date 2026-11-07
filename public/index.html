@@ -52,6 +52,7 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .btn{background:var(--on);color:var(--onbg);border:0;border-radius:12px;padding:10px 16px;font-weight:600;margin-top:12px}
 .btn:disabled{opacity:.5;cursor:wait}
 .ans{background:var(--ans);border-radius:14px;padding:12px 14px;margin-top:12px;overflow-wrap:anywhere}
+.ans.trans{margin-top:8px;border-left:3px solid var(--mut)}
 .saved-note{font-size:13px;color:var(--mut);margin-top:6px}
 .q.can{cursor:pointer}
 .qb{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;border-radius:12px}
@@ -284,15 +285,16 @@ for(const id in MRC){
 }
 const MORE=[['mnemonic','Mnemonic'],['analogy','Analogy'],['kid','Explain like a kid'],['full','Full marks answer'],['points','Key points'],['mistakes','Common mistakes'],['mcq','Practice MCQ']];
 const OPEN={};   // id -> answer is visible (hidden by default)
-// A free picture from Wikimedia Commons under the default answer (Science only). The server finds it; the link is kept on this device.
-const IKEY='orbit_img_v1';
+// A free picture (Wikipedia/Commons, or Pexels if the server has a key) under the default answer (Science only). The server finds it; the link is kept on this device.
+const IKEY='orbit_img_v2';
 let IMC={};
 try{IMC=JSON.parse(localStorage.getItem(IKEY)||'{}')||{}}catch(e){IMC={}}
 const IMG={};   // id -> {loading} | {none,at} | {url,page,title,by,lic,licUrl}
 for(const id in IMC)IMG[id]=IMC[id];
 function imgPersist(){try{localStorage.setItem(IKEY,JSON.stringify(IMC))}catch(e){}}
-const okImg=u=>/^https:\/\/upload\.wikimedia\.org\//.test(u||''),okPage=u=>/^https:\/\/commons\.wikimedia\.org\//.test(u||'');
+const okImg=u=>/^https:\/\/(upload\.wikimedia\.org|images\.pexels\.com)\//.test(u||''),okPage=u=>/^https:\/\/(commons\.wikimedia\.org|www\.pexels\.com)\//.test(u||'');
 async function ensureImg(id){
+ if(ST.img==='off')return;
  const c=(IDX[id]||{}).course;if(!c||c.subject!=='Science')return;
  const s=IMG[id];
  if(s&&(s.loading||s.url||(s.none&&Date.now()-(s.at||0)<3*864e5)))return;
@@ -305,13 +307,14 @@ async function ensureImg(id){
 }
 function imgBad(id){IMG[id]={none:true,at:Date.now()};IMC[id]=IMG[id];imgPersist();draw()}
 function imgHTML(id){
+ if(ST.img==='off')return'';
  const s=IMG[id];if(!s||!s.url||!okImg(s.url)||!okPage(s.page))return'';
- return `<figure class="wimg"><img src="${esc(s.url)}" alt="${esc(s.title||'Related image')}" loading="lazy" referrerpolicy="no-referrer" onerror="imgBad('${esc(id)}')"><figcaption>Source: <a href="${esc(s.page)}" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a>${s.by?' · '+esc(s.by):''}${s.lic?' · '+(/^https:\/\//.test(s.licUrl)?`<a href="${esc(s.licUrl)}" target="_blank" rel="noopener noreferrer">${esc(s.lic)}</a>`:esc(s.lic)):''}</figcaption></figure>`;
+ return `<figure class="wimg"><img src="${esc(s.url)}" alt="${esc(s.title||'Related image')}" loading="lazy" referrerpolicy="no-referrer" onerror="imgBad('${esc(id)}')"><figcaption>Source: <a href="${esc(s.page)}" target="_blank" rel="noopener noreferrer">${/pexels\.com/.test(s.page)?'Pexels':'Wikimedia Commons'}</a>${s.by?' · '+esc(s.by):''}${s.lic?' · '+(/^https:\/\//.test(s.licUrl)?`<a href="${esc(s.licUrl)}" target="_blank" rel="noopener noreferrer">${esc(s.lic)}</a>`:esc(s.lic)):''}</figcaption></figure>`;
 }
 
 // Pinned questions and settings also live on this device.
 const PKEY='orbit_pins_v1',STKEY='orbit_settings_v1';
-let PINS={},ST={theme:'auto',dtype:'auto',tstyle:'para'};
+let PINS={},ST={theme:'auto',dtype:'auto',tstyle:'para',img:'on'};
 try{PINS=JSON.parse(localStorage.getItem(PKEY)||'{}')||{}}catch(e){PINS={}}
 try{ST={...ST,...(JSON.parse(localStorage.getItem(STKEY)||'{}')||{})}}catch(e){}
 const isPinned=id=>!!PINS[id];
@@ -339,11 +342,13 @@ const isX=id=>id.includes('|'),rid=id=>id.split('|')[0];
 const srcText=id=>isX(id)?((MR[id]||{}).text||''):((ANS[id]||{}).text||'');
 const clip=t=>{if(t.length<=2500)return t;const c=t.slice(0,2500),i=Math.max(c.lastIndexOf('. '),c.lastIndexOf('\n'));return i>1000?c.slice(0,i+1):c};  // server accepts max 2500 chars
 function shown(id){const u=ui(id);if(u.tr){const sy=effSty(u);if(sy!=='words'){const t=TR[trKey(id,u.tr,sy)];if(t&&t.text)return t.text}}return srcText(id)}
+// Translation (any style except 'words') is shown as its own block right under the original text; the original never gets replaced.
+function trBlock(id){const u=ui(id);if(!u.tr)return '';const sy=effSty(u);if(sy==='words')return '';const t=TR[trKey(id,u.tr,sy)];if(!(t&&t.text))return '';return `<div class="ans trans"><b>${esc((TRL[u.tr]||{}).n||'Translation')}</b><br>${fmt(t.text)}</div>`}
 function ytLink(q){const c=(IDX[q.id]||{}).course;const s=`${c?cLabel(c):'Class 10 Science'} ${chOf(q.id).title} ${q.video||q.text}`.slice(0,110);return 'https://www.youtube.com/results?search_query='+encodeURIComponent(s)}
 
 function xBlock(q,k){
  const id=q.id,xk=id+'|'+k,x=ui(xk),sy=effSty(x),t=x.tr?TR[trKey(xk,x.tr,sy)]:null,v=VIS[xk]||{},name=(MORE.find(m=>m[0]===k)||[])[1]||'';
- return `<div class="ans"><b>${esc(name)}</b><br>${fmt(shown(xk))}</div>
+ return `<div class="ans"><b>${esc(name)}</b><br>${fmt(srcText(xk))}</div>${trBlock(xk)}
  <div class="tb" role="toolbar" aria-label="${esc(name)} tools">
   <button class="ic" data-act="cp" data-id="${xk}" title="Copy" aria-label="Copy karo">${x.copied?I.ok:I.cp}</button>
   <button class="ic ${t&&t.loading?'spin':''}" data-act="tr" data-id="${xk}" title="Translate" aria-label="Translate" aria-pressed="${!!(x.menu||x.tr)}">${I.tr}</button>
@@ -410,12 +415,12 @@ function tblHTML(q){
  return `<div class="tw"><table class="qt"><thead><tr>${t.head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${(t.rows||[]).map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 function qHTML(q){
- const a=ANS[q.id]||{},txt=shown(q.id),has=!!a.text,open=has&&!!OPEN[q.id];
+ const a=ANS[q.id]||{},txt=srcText(q.id),has=!!a.text,open=has&&!!OPEN[q.id];
  return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic pin ${isPinned(q.id)?'liked':''} ${has?'':'nochev'}" data-act="pin" data-id="${q.id}" aria-pressed="${isPinned(q.id)}" title="${isPinned(q.id)?'Pin hatao':'Pin karo'}" aria-label="${isPinned(q.id)?'Pin hatao':'Pin karo'}">${I.pin}</button><div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}</div>${q.text?`<p>${esc(q.text)}</p>`:''}
  ${tblHTML(q)}
  ${(q.parts||[]).map(p=>`<p class="pt">${esc(p)}</p>`).join('')}
  ${(q.options||[]).map(p=>`<p class="pt">${esc(p)}</p>`).join('')}</div>${has?`<span class="chev ${open?'open':''}">${I.chev}</span>`:''}</div>
- ${has?(open?`<div class="ans">${fmt(txt)}</div>${imgHTML(q.id)}${isSaved(q.id)?`<div class="saved-note">Saved · ${dateFmt(SAVED[q.id].at)}</div>`:''}${toolbar(q)}`
+ ${has?(open?`<div class="ans">${fmt(txt)}</div>${trBlock(q.id)}${imgHTML(q.id)}${isSaved(q.id)?`<div class="saved-note">Saved · ${dateFmt(SAVED[q.id].at)}</div>`:''}${toolbar(q)}`
   :'')
   :`<button class="btn" data-act="ask" data-id="${q.id}" ${a.loading?'disabled':''}>${a.loading?'Soch raha hoon…':'AI Answer'}</button>`}
  ${a.err?`<div class="err" role="alert">${esc(a.err)}</div>`:''}</div>`}
@@ -495,14 +500,16 @@ function navHTML(){
   }).join('')}</div>`;
  }
  const ch=c.chapters.find(x=>x.no===NAV.ch);
- return backHTML('Chapters')+head1(`Chapter ${ch.no}: ${ch.title}`)+`<div class="mut">Class ${c.class} · ${esc(cTitle(c))}</div>`+videosHTML(c,ch)+lessonHTML(c,ch)+listHTML(()=>true,'',[{c,ch}],false)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
+ return backHTML('Chapters')+head1(`Chapter ${ch.no}: ${ch.title}`)+`<div class="mut">Class ${c.class} · ${esc(cTitle(c))}</div>`+lessonHTML(c,ch)+videosHTML(c,ch)+listHTML(()=>true,'',[{c,ch}],false)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
 }
 function settingsHTML(){
  const chips=(list,cur,act)=>`<div class="chips" role="group">${list.map(([k,n])=>`<button class="chip" data-act="${act}" data-v="${k}" aria-pressed="${cur===k}">${n}</button>`).join('')}</div>`;
  return `<h1 style="font-size:26px;margin-top:14px">Settings</h1>
  <h2 class="sec">Diagram type</h2>${chips(DTYPES,ST.dtype,'setd')}
  <p class="mut" style="margin-top:8px">Naya diagram is type mein banega. Diagram ke neeche wale icon se naya banao.</p>
- <h2 class="sec">Theme</h2>${chips(THEMES,ST.theme,'sett')}`;
+ <h2 class="sec">Theme</h2>${chips(THEMES,ST.theme,'sett')}
+ <h2 class="sec">Answer ke neeche image</h2>${chips([['on','On'],['off','Off']],ST.img==='off'?'off':'on','seti')}
+ <p class="mut" style="margin-top:8px">On: Science answer ke neeche internet se related image aati hai (jab mil sake). Off: koi image nahi dikhegi.</p>`;
 }
 // ---- Google login + cloud sync (Firebase). cloud.js sets window.CLOUD; if it fails to load (offline) the app still works. ----
 let USER=null,LOGINERR='',SYNCT=null,AUTH_READY=false,CLOUDFAIL='';   // AUTH_READY: Firebase has told us if someone is logged in
@@ -765,6 +772,7 @@ document.addEventListener('click',e=>{
  else if(act==='lock'){LOCKED=+b.dataset.ch;draw()}
  else if(act==='setd'){ST.dtype=b.dataset.v;stSave();draw()}
  else if(act==='sett'){ST.theme=b.dataset.v;applyTheme();stSave();draw()}
+ else if(act==='seti'){ST.img=b.dataset.v==='off'?'off':'on';stSave();draw();if(ST.img==='on')for(const k in OPEN)if(OPEN[k]&&ANS[k]&&ANS[k].text)ensureImg(k)}
  else if(act==='ask')ask(id,false);
  else if(act==='re')ask(id,true);
  else if(act==='like')like(id);

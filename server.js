@@ -441,10 +441,10 @@ app.post('/api/visual', async (req, res) => {
   res.json({ svg });
 });
 
-// ---- one picture under the answer (Wikimedia Commons: free, no API key) ---------------
+// ---- one picture under the answer (Wikipedia + Wikimedia Commons, optional Pexels) ---------------
 // Only for Science. The server searches Commons with words from the question, keeps the best match and remembers it,
 // so the search runs once per question, not once per student. No good match = {} and the app shows nothing.
-// Optional Render env var WIKI_UA: a contact for Wikimedia, e.g. "OrbitTutor/1.0 (you@example.com)".
+// Optional Render env vars: PEXELS_API_KEY (extra photo source) and WIKI_UA: a contact for Wikimedia, e.g. "OrbitTutor/1.0 (you@example.com)".
 const WIKI_UA = process.env.WIKI_UA || 'OrbitTutor/1.0 (school tutor app, Assam India)';
 const IMG_CACHE = new Map();     // question id -> {url,page,title,by,lic,licUrl} or null (no good picture)
 const IMG_PENDING = new Map();   // question id -> promise (two students asking at once share one search)
@@ -504,22 +504,128 @@ function pickImage(pages, words, need) {
   delete best.hits;
   return best;
 }
-async function findImage({ q, ch }) {
+const SYSTEM_TOPIC = `You choose a picture topic for a school science textbook question.
+Reply with ONLY one English Wikipedia article title (1 to 4 words) naming the specific thing a photo or diagram should show, for example: Food chain, Photosynthesis, Human heart, Rusting of iron.
+If the question is an opinion, a general "why/what if" with no specific object or process to show, or you doubt that a good picture of it exists on Wikipedia, reply exactly: NONE
+No quotes, no punctuation, no explanation.`;
+
+// Asks Gemini once per question for the picture topic. It sees the question and (if already made) the answer.
+// If Gemini is busy or fails we return '' and the old keyword search still runs.
+async function pictureTopic({ q, ch }, id) {
+  if (!KEY) return '';
+  try {
+    const prompt = `Question: ${[q.text].concat(q.parts || []).join(' ').slice(0, 500)}\nChapter: ${(ch && ch.title) || ''}\nAnswer: ${String(CACHE.get(id + '|en') || '').slice(0, 400)}`;
+    const r = await Promise.race([
+      gemini(SYSTEM_TOPIC, prompt, { temperature: 0, maxTokens: 200 }),
+      new Promise(ok => setTimeout(() => ok({}), 15000))
+    ]);
+    const t = String(r.text || '').split('\n')[0].replace(/[^A-Za-z0-9 '-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+    return /^none$/i.test(t) ? 'NONE' : t;
+  } catch (e) { return ''; }
+}
+// A picture is shown only if its title/description really mentions the topic words (plural/singular ignored).
+const stem = w => (w.length > 4 ? w.replace(/(es|s)$/, '') : w);
+function relevant(text, words, ratio) {
+  const hay = String(text || '').toLowerCase();
+  if (!words.length) return false;
+  return words.filter(w => hay.includes(stem(w))).length >= Math.ceil(words.length * ratio);
+}
+
+const WIKI_HEADERS = { 'User-Agent': WIKI_UA, 'Api-User-Agent': WIKI_UA };
+async function wikiJson(url) {
+  const r = await fetch(url, { headers: WIKI_HEADERS, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error('wikimedia ' + r.status);
+  return r.json();
+}
+// Source 1: the main picture of the English Wikipedia article for this topic (free-licence pictures only).
+// First the exact article title (redirects followed, disambiguation pages skipped); if there is none, a search whose
+// result title must match the topic words. Licence and author come from the Commons file page.
+const okFile = n => n && /\.(jpe?g|png|svg|webp)$/i.test(n) && !BAD_TITLE.test(n.replace(/_/g, ' '));
+async function wikiImage(topic) {
+  const WIKI = 'https://en.wikipedia.org/w/api.php?';
+  const names = [];
+  const ex = await wikiJson(WIKI + new URLSearchParams({
+    action: 'query', format: 'json', titles: topic, redirects: '1',
+    prop: 'pageimages|pageprops', piprop: 'name', pilicense: 'free', ppprop: 'disambiguation'
+  }));
+  for (const pg of Object.values((ex.query && ex.query.pages) || {})) {
+    if (!pg.missing && !(pg.pageprops && 'disambiguation' in pg.pageprops) && okFile(pg.pageimage)) names.push(pg.pageimage);
+  }
+  if (!names.length) {
+    const tw = keywords(topic, 4);
+    const j = await wikiJson(WIKI + new URLSearchParams({
+      action: 'query', format: 'json', generator: 'search', gsrsearch: topic, gsrlimit: '4',
+      prop: 'pageimages', piprop: 'name', pilicense: 'free'
+    }));
+    for (const pg of Object.values((j.query && j.query.pages) || {}).sort((x, y) => (x.index || 0) - (y.index || 0))) {
+      if (okFile(pg.pageimage) && relevant(pg.title, tw, 1)) names.push(pg.pageimage);
+    }
+  }
+  if (!names.length) return null;
+  const titles = names.map(n => 'File:' + n.replace(/_/g, ' '));
+  const k = await wikiJson('https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
+    action: 'query', format: 'json', titles: titles.join('|'), prop: 'imageinfo',
+    iiprop: 'url|mime|size|extmetadata', iiurlwidth: '800'
+  }));
+  const pages = Object.values((k.query && k.query.pages) || {}).sort((x, y) => titles.indexOf(x.title) - titles.indexOf(y.title));
+  const found = pickImage(pages, [], 0);
+  return found ? Object.assign(found, { src: 'Wikimedia Commons' }) : null;
+}
+// Source 2: Commons search with a list of words (needs `need` of them in the file title or description).
+async function commonsWords(words, need) {
+  if (!words.length) return null;
+  const found = pickImage(await commonsSearch(words), words, Math.min(need, words.length));
+  return found ? Object.assign(found, { src: 'Wikimedia Commons' }) : null;
+}
+async function commonsByQuestion({ q, ch }) {
   const qText = [q.text].concat(q.parts || []).join(' ');
-  const tries = [
-    { words: keywords(qText, 6), need: 2 },
-    { words: keywords(qText, 3), need: 2 },
-    { words: keywords(ch && ch.title, 4), need: 2 }
-  ];
   const done = new Set();
-  for (const t of tries) {
+  for (const t of [{ words: keywords(qText, 6) }, { words: keywords(qText, 3) }, { words: keywords(ch && ch.title, 4) }]) {
     if (t.words.length < 2) continue;
-    const k = t.words.join(' ');
-    if (done.has(k)) continue;
-    done.add(k);
-    const found = pickImage(await commonsSearch(t.words), t.words, Math.min(t.need, t.words.length));
+    const key = t.words.join(' ');
+    if (done.has(key)) continue;
+    done.add(key);
+    const found = await commonsWords(t.words, 2);
     if (found) return found;
   }
+  return null;
+}
+// Source 3 (optional, last): Pexels stock photo. Needs the Render env var PEXELS_API_KEY (free at pexels.com/api).
+async function pexelsImage(topic) {
+  const key = process.env.PEXELS_API_KEY;
+  if (!key || !topic) return null;
+  const r = await fetch('https://api.pexels.com/v1/search?' + new URLSearchParams({ query: topic, per_page: '5', orientation: 'landscape' }),
+    { headers: { Authorization: key }, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error('pexels ' + r.status);
+  const j = await r.json();
+  for (const p of (j.photos || [])) {
+    const url = p.src && (p.src.large || p.src.medium), page = p.url;
+    if (!/^https:\/\/images\.pexels\.com\//.test(url || '') || !/^https:\/\/www\.pexels\.com\//.test(page || '')) continue;
+    if (!relevant(p.alt, keywords(topic, 4), 0.67)) continue;   // stock photos often drift: no match in the description = no picture
+    return {
+      url, page, title: String(p.alt || topic).slice(0, 120), by: String(p.photographer || '').slice(0, 80),
+      lic: 'Pexels License', licUrl: 'https://www.pexels.com/license/', src: 'Pexels'
+    };
+  }
+  return null;
+}
+// Tries the sources in order. A source that errors is skipped. If nothing was found and something errored,
+// we throw so the "no picture" result is not remembered and the next student tries again.
+async function findImage(hit, id) {
+  const topic = await pictureTopic(hit, id);
+  if (topic === 'NONE') return null;            // Gemini: nothing specific to picture, so show no image
+  const tw = keywords(topic, 4);
+  const steps = [];
+  if (topic) steps.push(() => wikiImage(topic));
+  if (tw.length) steps.push(() => commonsWords(tw, Math.ceil(tw.length * 2 / 3)));
+  if (!topic) steps.push(() => commonsByQuestion(hit));   // only when Gemini was unavailable
+  if (topic) steps.push(() => pexelsImage(topic));
+  let errors = 0;
+  for (const step of steps) {
+    try { const found = await step(); if (found) return found; }
+    catch (e) { errors++; console.error('Image source failed', id, e.message); }
+  }
+  if (errors) throw new Error('image sources failed: ' + errors);
   return null;
 }
 app.post('/api/image', async (req, res) => {
@@ -531,7 +637,7 @@ app.post('/api/image', async (req, res) => {
   arr.push(now); IMG_HITS.set(req.ip, arr);
   if (arr.length > 40) return res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' });
   try {
-    if (!IMG_PENDING.has(id)) IMG_PENDING.set(id, findImage(hit).finally(() => IMG_PENDING.delete(id)));
+    if (!IMG_PENDING.has(id)) IMG_PENDING.set(id, findImage(hit, id).finally(() => IMG_PENDING.delete(id)));
     const found = await IMG_PENDING.get(id);
     IMG_CACHE.set(id, found);
     res.json(found || {});
