@@ -24,7 +24,18 @@ async function load(user) {
   if (window.onCloudData) window.onCloudData({ saved, pins: d.pins || {}, settings: d.settings || null });
 }
 
+async function loadPeople() {
+  try {
+    const s = await getDocs(collection(db, 'people'));
+    const list = []; s.forEach(d => list.push({ id: d.id, ...d.data() }));
+    if (window.onPeople) window.onPeople(list);
+  } catch (e) { console.warn('people load failed', e); }
+}
+
 window.CLOUD = {
+  // Faculty / Developer people. Writes only work for the admin Google account (see firestore.rules).
+  savePerson(p) { return setDoc(doc(db, 'people', p.id), JSON.parse(JSON.stringify(p))); },
+  deletePerson(id, tombstone) { return tombstone ? setDoc(doc(db, 'people', id), tombstone) : deleteDoc(doc(db, 'people', id)); },
   async login() {
     const provider = new GoogleAuthProvider();
     try { await signInWithPopup(auth, provider); }
@@ -53,5 +64,5 @@ window.CLOUD = {
 
 onAuthStateChanged(auth, async user => {
   if (window.onCloudUser) window.onCloudUser(user ? { uid: user.uid, name: user.displayName, email: user.email, photo: user.photoURL } : null);
-  if (user) { try { await load(user); } catch (e) { console.warn('cloud load failed', e); } }
+  if (user) { loadPeople(); try { await load(user); } catch (e) { console.warn('cloud load failed', e); } }
 });
