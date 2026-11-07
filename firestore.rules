@@ -5,6 +5,21 @@ service cloud.firestore {
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
+    // Faculty and Developer people. Any logged-in user can read; only the admin Google account(s) listed below can change.
+    // >>> Replace ADMIN_EMAIL_HERE with your Google email (lowercase), e.g. 'name@gmail.com'. Add more emails separated by commas.
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email_verified == true
+        && request.auth.token.email in ['aminulislamsikandar@gmail.com'];
+    }
+    match /people/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['id', 'group', 'name', 'role', 'bio', 'order', 'photo', 'deleted'])
+        && (request.resource.data.get('deleted', false) == true
+            || (request.resource.data.name is string && request.resource.data.name.size() <= 80))
+        && request.resource.data.get('photo', '').size() < 150000;
+      allow delete: if isAdmin();
+    }
     // Subscriptions are readable by their owner but written only by you (Firebase console / admin), never by the app.
     match /subscriptions/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;

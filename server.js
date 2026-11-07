@@ -79,6 +79,7 @@ Requirements:
 - No scripts, no images, no external links, no foreignObject. Keep it under 3500 characters.`;
 
 const LANGS = {
+  en: 'simple English (for a school student)',
   hing: 'Hinglish (Hindi written in English/Roman letters, simple everyday words; keep science terms in English)',
   as: 'Assamese (Assamese script)',
   bn: 'Bengali (Bengali script)'
@@ -201,7 +202,118 @@ function scienceProfile(cls) {
     kinds: Object.fromEntries(Object.entries(MORE_KINDS).map(([k, v]) => [k, fix(v)]))
   };
 }
-const profileFor = course => course.subject === 'English' ? englishProfile(course.class)
+// Hindi (Class 6 and others): the lesson and answers are in Hindi; students read English / Assamese / Bengali help.
+function hindiProfile(cls) {
+  const answer = `You are a friendly Class ${cls} Hindi tutor for students in Assam, working from their Hindi textbook.
+Answer ONLY the given textbook question, in simple Hindi (Devanagari script) that a Class ${cls} student can write in an exam.
+Rules:
+- Use the poem or lesson text and notes given in the context. Stay faithful to it. Never invent lines, events or facts.
+- For comprehension questions: 2 to 4 short sentences. For one-word or fill-in-the-blank items: give the answer first, then one short reason.
+- If the question has parts (क), (ख), (ग), answer each part separately with its label.
+- For "explain the lines in your own words" questions: give the meaning in simple Hindi, then link it to the main idea of the poem.
+- For multiple-choice items: write the correct option with its number and text, then one short reason.
+- For grammar items (anunasik, sangya, vachan and so on): give the answer, then the rule in one line.
+- For "make a sentence" questions: give one correct sentence for every word, each showing the meaning of the word.
+- For opinion or value-based questions: give a short, balanced answer of 3 or 4 sentences.
+- Plain text. You may use **bold** for key words. No headings, no tables, no LaTeX.
+- Keep it concise: about 40 to 90 words for a single question, up to 150 words when there are several parts.`;
+  const tr = `You are a careful translator for Hindi school textbooks.
+Translate the given Hindi text into the requested language, in simple words a Class ${cls} student understands.
+Keep Hindi proper names, numbers and **bold** markers as they are, and keep line breaks.
+Output ONLY the translation, nothing else.`;
+  const vis = `You draw simple educational diagrams as SVG for Class ${cls} Hindi students.
+Output ONLY one <svg> element. No markdown fences, no explanation.
+Requirements:
+- xmlns="http://www.w3.org/2000/svg" and viewBox="0 0 640 360".
+- First draw a white background <rect width="640" height="360" fill="#ffffff"/> so it is readable in dark mode.
+- Dark text (#111), font-family Arial, font-size 15 to 20. Use coloured boxes and arrows (you may use <marker>).
+- Write labels in English with the Hindi word in brackets where it helps (the SVG text may contain Devanagari).
+- For a poem or story idea: a mind map or a short labelled flow of 3 to 5 boxes using words from the text. For grammar: a tree with the kinds of the topic and one example in each box.
+- No scripts, no images, no external links, no foreignObject. Keep it under 3500 characters.`;
+  const more = `You are a friendly Class ${cls} Hindi tutor for students in Assam.
+You are given a textbook question and its answer. Write the extra help asked for, at Class ${cls} level, in simple English (keep Hindi words in Devanagari with their English meaning).
+Rules: plain text only, you may use **bold** for key words; no headings, no tables, no LaTeX; keep the meaning of the lesson correct.`;
+  const kinds = {
+    ...MORE_KINDS,
+    kid: 'Explain this answer the way you would to a 10-year-old child: very simple words, short sentences, one small everyday example. Keep the meaning of the lesson correct. Maximum 120 words.',
+    full: `Write this answer the way a Class ${cls} Hindi exam answer should be written to score full marks, in simple Hindi: a direct first sentence that answers the question, two or three supporting sentences that refer to the text, and a one-line conclusion. 4 to 6 lines.`,
+    mcq: `Make 3 multiple-choice practice questions in Hindi on the same lesson or grammar topic, Class ${cls} level. Do not repeat the original question. Use exactly this format for each, with a blank line between questions:\nQ1. question\nA) option\nB) option\nC) option\nD) option\nAnswer: letter`
+  };
+  return { answer, tr, vis, more, kinds };
+}
+// Assamese language subject: the AI writes in simple Assamese (Assamese script), working from the lesson notes in the hidden context.
+function assameseProfile(cls) {
+  const answer = `You are a friendly Class ${cls} Assamese language tutor for students in Assam, working from their textbook.
+Answer ONLY the given textbook question, in simple Assamese (Assamese script) that a Class ${cls} student can write in an exam.
+Rules:
+- Use the lesson notes given in the context. Stay faithful to them. Never invent lines, names or events. Never copy the poem; explain it in your own words.
+- For short questions: 1 to 3 short sentences.
+- For summary (সাৰাংশ) questions: 4 to 6 short sentences covering the main idea.
+- If the question has parts (ক), (খ), (গ) ..., answer each part separately with its label, one or two lines each.
+- For grammar questions such as বৰ্ণ-বিন্যাস: follow the format and example in the context, write the letters joined by + , then say the word again to check.
+- If the context does not say something clearly, say so briefly and answer only what is certain.
+- Plain text. You may use **bold** for key words. No headings, no tables, no LaTeX.
+- Keep it concise: about 40 to 100 words for a single question, up to 180 words when there are several parts.`;
+  const tr = `You are a careful translator for school Assamese textbooks.
+Translate the given text into the requested language.
+Keep names, numbers, Assamese words that are being explained, and **bold** markers exactly as they are.
+Output ONLY the translation, nothing else.`;
+  const vis = `You draw simple educational diagrams as SVG for Class ${cls} Assamese students.
+Output ONLY one <svg> element. No markdown fences, no explanation.
+Requirements:
+- xmlns="http://www.w3.org/2000/svg" and viewBox="0 0 640 360".
+- First draw a white background <rect width="640" height="360" fill="#ffffff"/> so it is readable in dark mode.
+- Dark text (#111), font-family Arial, font-size 15 to 20. Use short Assamese labels (a few words each) in coloured boxes with arrows (you may use <marker>).
+- For a poem or lesson idea: a mind map or a short labelled flow of 3 to 6 boxes using words from the lesson.
+- No scripts, no images, no external links, no foreignObject. Keep it under 3500 characters.`;
+  const more = `You are a friendly Class ${cls} Assamese language tutor for students in Assam.
+You are given a textbook question and its answer. Write the extra help asked for, at Class ${cls} level, in simple Assamese (Assamese script).
+Rules: plain text only, you may use **bold** for key words; no headings, no tables, no LaTeX; keep the meaning of the lesson correct.`;
+  const kinds = {
+    ...MORE_KINDS,
+    full: `Write this answer the way a Class ${cls} Assamese exam answer should be written to score full marks: a direct first sentence that answers the question, two or three supporting sentences that refer to the lesson, and a one-line conclusion. 4 to 6 lines, exam style.`
+  };
+  return { answer, tr, vis, more, kinds };
+}
+function arabicProfile(cls) {
+  const answer = `You are a friendly Class ${cls} Arabic tutor for beginners in Assam. The student uses an Assamese-medium Arabic textbook (Adarsha Arabi Path) but learns in English medium, so explain in simple English.
+Answer ONLY the given textbook exercise question.
+Rules:
+- Write Arabic letters and words in Arabic script and give the Roman transliteration in brackets, for example ب (Ba).
+- Use the chapter notes in the context for letter names, dots and shapes; they are correct, so never contradict them.
+- If the exact letters or words of the exercise are not given in the question, say in one short line that the list is in the textbook, explain the method in 2 to 4 steps and show 2 or 3 examples of your own.
+- For handwriting or writing-practice questions explain how to write it letter by letter, remind that Arabic is written from right to left, and give the meaning.
+- For letter-shape questions use the words isolated, initial, middle and final, and remember that ا د ذ ر ز و do not join to the letter after them.
+- Plain text, short (about 80 to 150 words). You may use **bold** for key words. No headings, no tables, no LaTeX.`;
+  const tr = `You are a careful translator for school Arabic textbooks.
+Translate the given text into the requested language.
+Keep Arabic script, transliteration, letter names, numbers and **bold** markers exactly as they are.
+Output ONLY the translation, nothing else.`;
+  const vis = `You draw simple educational diagrams as SVG for Class ${cls} beginners learning Arabic.
+Output ONLY one <svg> element. No markdown fences, no explanation.
+Requirements:
+- xmlns="http://www.w3.org/2000/svg" and viewBox="0 0 640 360".
+- First draw a white background <rect width="640" height="360" fill="#ffffff"/> so it is readable in dark mode.
+- Dark text (#111), font-family "Noto Naskh Arabic", Arial, font-size 18 to 36 for Arabic letters and 14 to 18 for English labels.
+- For letter shapes: a row of four boxes labelled isolated, initial, middle, final with the letter shown in each. For alphabet groups: boxes with the letters and their dots in clear colour. Write Arabic from right to left.
+- No scripts, no images, no external links, no foreignObject. Keep it under 3500 characters.`;
+  const more = `You are a friendly Class ${cls} Arabic tutor for beginners in Assam.
+You are given a textbook question and its answer. Write the extra help asked for, at Class ${cls} level, in simple English.
+Rules: plain text only, you may use **bold** for key words; no headings, no tables, no LaTeX; write Arabic in Arabic script with the Roman transliteration in brackets and keep every letter name, dot and shape correct.`;
+  const kinds = {
+    ...MORE_KINDS,
+    mnemonic: 'Create one easy memory trick (a short phrase, rhyme or grouping) that helps remember what this answer teaches, for example how to remember letters that look alike. Then say in 1 or 2 lines what each part stands for. Maximum 80 words.',
+    kid: 'Explain this answer the way you would to a 10-year-old child: very simple words, short sentences, one small everyday example. Keep the Arabic correct. Maximum 120 words.',
+    full: `Write this answer the way a Class ${cls} Arabic exam answer should be written to score full marks: a direct first line that answers the question, the Arabic written clearly with transliteration, and a one-line conclusion. 4 to 6 lines, exam style.`,
+    mistakes: 'List 3 common mistakes beginners make on this kind of question (for example mixing up letters that look alike, wrong number of dots, or writing from left to right). For each: the mistake, then the correct version. 1 or 2 lines each.',
+    mcq: `Make 3 multiple-choice practice questions on the same topic, Class ${cls} beginner level. Do not repeat the original question. Show Arabic in Arabic script with transliteration in brackets. Use exactly this format for each, with a blank line between questions:\nQ1. question\nA) option\nB) option\nC) option\nD) option\nAnswer: X (one-line reason)`
+  };
+  return { answer, tr, vis, more, kinds };
+}
+const profileFor = course => course.subject === 'Assamese' ? assameseProfile(course.class)
+  : course.subject === 'English' ? englishProfile(course.class)
+  : course.subject === 'Hindi' ? hindiProfile(course.class)
+  : course.subject === 'Arabic' ? arabicProfile(course.class)
   : course.subject === 'Mathematics' ? mathsProfile(course.class) : scienceProfile(course.class);
 
 const MAX_CLIENT_TEXT = 2500;   // saved answers the browser may send back if the server forgot them (free-tier restarts)
@@ -210,7 +322,7 @@ const clientText = t => (typeof t === 'string' && t.length > 0 && t.length <= MA
 
 function buildPrompt(q, course, ch) {
   const parts = [];
-  if (course && course.subject === 'English' && ch) parts.push(`Lesson: ${ch.title}${ch.author ? ' by ' + ch.author : ''}`);
+  if (course && ['English', 'Hindi', 'Arabic', 'Assamese'].includes(course.subject) && ch) parts.push(`Lesson: ${ch.title}${ch.author ? ' by ' + ch.author : ''}`);
   if (course && (course.subject === 'Mathematics' || (course.subject === 'Science' && course.class !== 10)) && ch) parts.push(`Chapter: ${ch.title}`);
   parts.push(`Question ${q.label || q.no}: ${q.text}`);
   if (q.table) {
@@ -222,7 +334,9 @@ function buildPrompt(q, course, ch) {
   (q.options || []).forEach(o => parts.push(o));
   if (ch && ch.context) parts.push('\n(Textbook text and notes for this lesson, do not repeat them: ' + ch.context + ')');
   if (q.context) parts.push('\n(Textbook context, do not repeat it: ' + q.context + ')');
-  return `Reply in simple English.\n\n${parts.join('\n')}`;
+  const lang = course && course.subject === 'Hindi' ? 'Reply in simple Hindi (Devanagari).'
+    : course && course.subject === 'Assamese' ? 'Reply in simple Assamese (Assamese script).' : 'Reply in simple English.';
+  return `${lang}\n\n${parts.join('\n')}`;
 }
 
 // ---- caches + rate limit -------------------------------------------------
@@ -328,19 +442,47 @@ const TR_STYLES = {
   words: (l, t) => `From the text below pick the 6 to 10 hardest words or terms a school student may not know. Do NOT translate the whole text.\nFormat: one per line, starting with "- ", as: English word: meaning in ${l}.\nKeep formulas as they are. Output only this list.\n\n${t}`,
   brackets: (l, t) => `Rewrite the text below in English exactly as it is, but after each difficult word or term put its meaning in ${l} inside round brackets, for example: word (meaning). Add brackets only for hard words (at most about one word in ten). Keep every other word, number, formula, equation and **bold** marker unchanged. Output only the rewritten text.\n\n${t}`
 };
+// Same styles for a Hindi source text (poem stanzas, answers). Keys match TR_STYLES; `mean` is extra (meaning of a stanza).
+const HI_STYLES = {
+  para: (l, t) => `Translate this Hindi text into ${l}. Keep the line breaks (for a poem, every line on its own line):\n\n${t}`,
+  sent: (l, t) => `Translate into ${l}, line by line.\nFor every line (for prose, every sentence) of the Hindi text below, write the original Hindi line, then on the next line write its translation starting with "→ ". Leave one blank line between pairs. Keep labels such as (क), (ख) and numbering with the line. Output only this.\n\n${t}`,
+  mean: (l, t) => `Explain the Hindi text below in ${l}, in simple words for a school student. First give the meaning line by line (one short sentence for each line), then one sentence for the main idea. Use only what is in the text; add no outside facts. Output only the explanation.\n\n${t}`,
+  words: (l, t) => `From the Hindi text below pick the 6 to 10 hardest words a school student may not know. Do NOT translate the whole text.\nFormat: one per line, starting with "- ", as: Hindi word: meaning in ${l}.\nOutput only this list.\n\n${t}`,
+  brackets: (l, t) => `Rewrite the Hindi text below exactly as it is (same words, same line breaks), but after each difficult word put its meaning in ${l} inside round brackets, for example: word (meaning). Add brackets only for hard words (about one word in eight). Output only the rewritten text.\n\n${t}`
+};
+const stylesFor = course => (course && course.sourceLang === 'Hindi') ? HI_STYLES : TR_STYLES;
 app.post('/api/translate', async (req, res) => {
   const hit = guard(req, res); if (!hit) return;
   const { q, course, ch } = hit, P = profileFor(course);
   const { id, to } = req.body;
   if (!LANGS[to]) return res.status(400).json({ error: 'Language supported nahi hai.' });
-  const style = Object.prototype.hasOwnProperty.call(TR_STYLES, req.body.style) ? req.body.style : 'para';
+  const ST = stylesFor(course);
+  const style = Object.prototype.hasOwnProperty.call(ST, req.body.style) ? req.body.style : 'para';
   // Translate exactly the answer the student sees (the browser sends it); fall back to the server's copy.
   const base = clientText(req.body.text) || CACHE.get(id + '|en');
   if (!base) return res.status(400).json({ error: 'Pehle AI Answer banao, phir translate karo.' });
   const key = id + '|tr|' + to + '|' + style + '|' + hash(base);
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const r = await gemini(P.tr, TR_STYLES[style](LANGS[to], base), { temperature: 0.2 });
+  const r = await gemini(P.tr, ST[style](LANGS[to], base), { temperature: 0.2 });
+  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  CACHE.set(key, r.text);
+  res.json({ text: r.text });
+});
+
+// ---- translate the QUESTION itself (3-dot menu). The server builds the text from its own question list,
+// so nobody can send free text through this route. Translations are remembered per question + language.
+app.post('/api/qtranslate', async (req, res) => {
+  const hit = guard(req, res); if (!hit) return;
+  const { q, course } = hit, P = profileFor(course);
+  const { id, to } = req.body;
+  if (!LANGS[to]) return res.status(400).json({ error: 'Language supported nahi hai.' });
+  const base = [q.text].concat(q.parts || [], q.options || []).filter(Boolean).join('\n');
+  if (!base) return res.status(400).json({ error: 'Is question ka text nahi hai.' });
+  const key = id + '|qtr|' + to;
+  if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
+  if (!guardAI(req, res)) return;
+  const r = await gemini(P.tr, stylesFor(course).para(LANGS[to], base), { temperature: 0.2 });
   if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
@@ -355,11 +497,12 @@ app.post('/api/lesson', async (req, res) => {
   const text = hit && (hit.ch.lesson || [])[+p];
   if (!text) return res.status(400).json({ error: 'Ye paragraph nahi mila.' });
   if (!LANGS[to]) return res.status(400).json({ error: 'Language supported nahi hai.' });
-  const style = Object.prototype.hasOwnProperty.call(TR_STYLES, req.body.style) ? req.body.style : 'para';
+  const ST = stylesFor(hit.course);
+  const style = Object.prototype.hasOwnProperty.call(ST, req.body.style) ? req.body.style : 'para';
   const key = ['lesson', course, chNo, p, to, style].join('|');
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const r = await gemini(englishProfile(hit.course.class).tr, TR_STYLES[style](LANGS[to], text), { temperature: 0.2 });
+  const r = await gemini(profileFor(hit.course).tr, ST[style](LANGS[to], text), { temperature: 0.2 });
   if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
@@ -376,7 +519,14 @@ app.post('/api/rules', async (req, res) => {
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
   const { kind, topic } = section.rules, cls = hit.course.class;
-  const system = `You are a friendly English teacher for Class ${cls} students in Assam. You explain standard English ${kind === 'writing' ? 'writing (letter and application) format' : 'grammar rules'} in ${LANGS[to]}.
+  const hindi = hit.course.subject === 'Hindi';
+  const system = hindi ? `You are a friendly Hindi teacher for Class ${cls} students in Assam (English-medium school). You explain standard Hindi grammar rules in ${LANGS[to]}.
+Rules for your reply:
+- Explain in ${LANGS[to]}. Keep every Hindi example word or sentence in Hindi (Devanagari) and put its meaning in ${LANGS[to]} after it. Name each grammar term in Hindi (Devanagari) with its usual English name once, for example: sangya (noun).
+- Follow the standard school syllabus (NCERT / SEBA level). Be correct and do not invent exceptions.
+- Plain text. You may use **bold** for key words. No headings with #, no tables, no LaTeX.
+- Short numbered points. Every rule is followed by one or two Hindi examples with their meaning.
+- Use the textbook examples given in the notes where they fit.` : `You are a friendly English teacher for Class ${cls} students in Assam. You explain standard English ${kind === 'writing' ? 'writing (letter and application) format' : 'grammar rules'} in ${LANGS[to]}.
 Rules for your reply:
 - Explain in ${LANGS[to]}. Keep every English example, grammar term (in English, with the local-language meaning once) and the parts of a letter in English.
 - Follow the standard school syllabus (SEBA/NCERT level). Be correct and do not invent exceptions.
@@ -385,7 +535,7 @@ Rules for your reply:
 - Use the textbook examples given in the notes where they fit.`;
   const body = kind === 'writing'
     ? `Topic: ${topic}\nExplain the standard format step by step: where the sender's details, date, receiver, subject line, salutation, body (opening line, reason, request), closing line, and signature (name, class, roll no.) go; what language and tone to use; 5 common mistakes; then one short model application in English with the local-language meaning of its first paragraph.`
-    : `Topic: ${topic}\nExplain the standard rules: what it is, its kinds, the rule for each kind with examples, the exceptions the textbook mentions, 5 common mistakes, and a quick memory trick.\nTextbook notes: ${hit.ch.context || ''}`;
+    : `Topic: ${topic}\nExplain the standard rules: what it is, its kinds, the rule for each kind with examples, the exceptions the textbook mentions, 5 common mistakes, and a quick memory trick.${hindi ? ' Give the Hindi examples in Devanagari.' : ''}\nTextbook notes: ${hit.ch.context || ''}`;
   const r = await gemini(system, body, { temperature: 0.3, maxTokens: 6000 });
   if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
   CACHE.set(key, r.text);
@@ -441,10 +591,10 @@ app.post('/api/visual', async (req, res) => {
   res.json({ svg });
 });
 
-// ---- one picture under the answer (Wikimedia Commons: free, no API key) ---------------
+// ---- one picture under the answer (Wikipedia + Wikimedia Commons, optional Pexels) ---------------
 // Only for Science. The server searches Commons with words from the question, keeps the best match and remembers it,
 // so the search runs once per question, not once per student. No good match = {} and the app shows nothing.
-// Optional Render env var WIKI_UA: a contact for Wikimedia, e.g. "OrbitTutor/1.0 (you@example.com)".
+// Optional Render env vars: PEXELS_API_KEY (extra photo source) and WIKI_UA: a contact for Wikimedia, e.g. "OrbitTutor/1.0 (you@example.com)".
 const WIKI_UA = process.env.WIKI_UA || 'OrbitTutor/1.0 (school tutor app, Assam India)';
 const IMG_CACHE = new Map();     // question id -> {url,page,title,by,lic,licUrl} or null (no good picture)
 const IMG_PENDING = new Map();   // question id -> promise (two students asking at once share one search)
@@ -504,22 +654,128 @@ function pickImage(pages, words, need) {
   delete best.hits;
   return best;
 }
-async function findImage({ q, ch }) {
+const SYSTEM_TOPIC = `You choose a picture topic for a school science textbook question.
+Reply with ONLY one English Wikipedia article title (1 to 4 words) naming the specific thing a photo or diagram should show, for example: Food chain, Photosynthesis, Human heart, Rusting of iron.
+If the question is an opinion, a general "why/what if" with no specific object or process to show, or you doubt that a good picture of it exists on Wikipedia, reply exactly: NONE
+No quotes, no punctuation, no explanation.`;
+
+// Asks Gemini once per question for the picture topic. It sees the question and (if already made) the answer.
+// If Gemini is busy or fails we return '' and the old keyword search still runs.
+async function pictureTopic({ q, ch }, id) {
+  if (!KEY) return '';
+  try {
+    const prompt = `Question: ${[q.text].concat(q.parts || []).join(' ').slice(0, 500)}\nChapter: ${(ch && ch.title) || ''}\nAnswer: ${String(CACHE.get(id + '|en') || '').slice(0, 400)}`;
+    const r = await Promise.race([
+      gemini(SYSTEM_TOPIC, prompt, { temperature: 0, maxTokens: 200 }),
+      new Promise(ok => setTimeout(() => ok({}), 15000))
+    ]);
+    const t = String(r.text || '').split('\n')[0].replace(/[^A-Za-z0-9 '-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+    return /^none$/i.test(t) ? 'NONE' : t;
+  } catch (e) { return ''; }
+}
+// A picture is shown only if its title/description really mentions the topic words (plural/singular ignored).
+const stem = w => (w.length > 4 ? w.replace(/(es|s)$/, '') : w);
+function relevant(text, words, ratio) {
+  const hay = String(text || '').toLowerCase();
+  if (!words.length) return false;
+  return words.filter(w => hay.includes(stem(w))).length >= Math.ceil(words.length * ratio);
+}
+
+const WIKI_HEADERS = { 'User-Agent': WIKI_UA, 'Api-User-Agent': WIKI_UA };
+async function wikiJson(url) {
+  const r = await fetch(url, { headers: WIKI_HEADERS, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error('wikimedia ' + r.status);
+  return r.json();
+}
+// Source 1: the main picture of the English Wikipedia article for this topic (free-licence pictures only).
+// First the exact article title (redirects followed, disambiguation pages skipped); if there is none, a search whose
+// result title must match the topic words. Licence and author come from the Commons file page.
+const okFile = n => n && /\.(jpe?g|png|svg|webp)$/i.test(n) && !BAD_TITLE.test(n.replace(/_/g, ' '));
+async function wikiImage(topic) {
+  const WIKI = 'https://en.wikipedia.org/w/api.php?';
+  const names = [];
+  const ex = await wikiJson(WIKI + new URLSearchParams({
+    action: 'query', format: 'json', titles: topic, redirects: '1',
+    prop: 'pageimages|pageprops', piprop: 'name', pilicense: 'free', ppprop: 'disambiguation'
+  }));
+  for (const pg of Object.values((ex.query && ex.query.pages) || {})) {
+    if (!pg.missing && !(pg.pageprops && 'disambiguation' in pg.pageprops) && okFile(pg.pageimage)) names.push(pg.pageimage);
+  }
+  if (!names.length) {
+    const tw = keywords(topic, 4);
+    const j = await wikiJson(WIKI + new URLSearchParams({
+      action: 'query', format: 'json', generator: 'search', gsrsearch: topic, gsrlimit: '4',
+      prop: 'pageimages', piprop: 'name', pilicense: 'free'
+    }));
+    for (const pg of Object.values((j.query && j.query.pages) || {}).sort((x, y) => (x.index || 0) - (y.index || 0))) {
+      if (okFile(pg.pageimage) && relevant(pg.title, tw, 1)) names.push(pg.pageimage);
+    }
+  }
+  if (!names.length) return null;
+  const titles = names.map(n => 'File:' + n.replace(/_/g, ' '));
+  const k = await wikiJson('https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
+    action: 'query', format: 'json', titles: titles.join('|'), prop: 'imageinfo',
+    iiprop: 'url|mime|size|extmetadata', iiurlwidth: '800'
+  }));
+  const pages = Object.values((k.query && k.query.pages) || {}).sort((x, y) => titles.indexOf(x.title) - titles.indexOf(y.title));
+  const found = pickImage(pages, [], 0);
+  return found ? Object.assign(found, { src: 'Wikimedia Commons' }) : null;
+}
+// Source 2: Commons search with a list of words (needs `need` of them in the file title or description).
+async function commonsWords(words, need) {
+  if (!words.length) return null;
+  const found = pickImage(await commonsSearch(words), words, Math.min(need, words.length));
+  return found ? Object.assign(found, { src: 'Wikimedia Commons' }) : null;
+}
+async function commonsByQuestion({ q, ch }) {
   const qText = [q.text].concat(q.parts || []).join(' ');
-  const tries = [
-    { words: keywords(qText, 6), need: 2 },
-    { words: keywords(qText, 3), need: 2 },
-    { words: keywords(ch && ch.title, 4), need: 2 }
-  ];
   const done = new Set();
-  for (const t of tries) {
+  for (const t of [{ words: keywords(qText, 6) }, { words: keywords(qText, 3) }, { words: keywords(ch && ch.title, 4) }]) {
     if (t.words.length < 2) continue;
-    const k = t.words.join(' ');
-    if (done.has(k)) continue;
-    done.add(k);
-    const found = pickImage(await commonsSearch(t.words), t.words, Math.min(t.need, t.words.length));
+    const key = t.words.join(' ');
+    if (done.has(key)) continue;
+    done.add(key);
+    const found = await commonsWords(t.words, 2);
     if (found) return found;
   }
+  return null;
+}
+// Source 3 (optional, last): Pexels stock photo. Needs the Render env var PEXELS_API_KEY (free at pexels.com/api).
+async function pexelsImage(topic) {
+  const key = process.env.PEXELS_API_KEY;
+  if (!key || !topic) return null;
+  const r = await fetch('https://api.pexels.com/v1/search?' + new URLSearchParams({ query: topic, per_page: '5', orientation: 'landscape' }),
+    { headers: { Authorization: key }, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error('pexels ' + r.status);
+  const j = await r.json();
+  for (const p of (j.photos || [])) {
+    const url = p.src && (p.src.large || p.src.medium), page = p.url;
+    if (!/^https:\/\/images\.pexels\.com\//.test(url || '') || !/^https:\/\/www\.pexels\.com\//.test(page || '')) continue;
+    if (!relevant(p.alt, keywords(topic, 4), 0.67)) continue;   // stock photos often drift: no match in the description = no picture
+    return {
+      url, page, title: String(p.alt || topic).slice(0, 120), by: String(p.photographer || '').slice(0, 80),
+      lic: 'Pexels License', licUrl: 'https://www.pexels.com/license/', src: 'Pexels'
+    };
+  }
+  return null;
+}
+// Tries the sources in order. A source that errors is skipped. If nothing was found and something errored,
+// we throw so the "no picture" result is not remembered and the next student tries again.
+async function findImage(hit, id) {
+  const topic = await pictureTopic(hit, id);
+  if (topic === 'NONE') return null;            // Gemini: nothing specific to picture, so show no image
+  const tw = keywords(topic, 4);
+  const steps = [];
+  if (topic) steps.push(() => wikiImage(topic));
+  if (tw.length) steps.push(() => commonsWords(tw, Math.ceil(tw.length * 2 / 3)));
+  if (!topic) steps.push(() => commonsByQuestion(hit));   // only when Gemini was unavailable
+  if (topic) steps.push(() => pexelsImage(topic));
+  let errors = 0;
+  for (const step of steps) {
+    try { const found = await step(); if (found) return found; }
+    catch (e) { errors++; console.error('Image source failed', id, e.message); }
+  }
+  if (errors) throw new Error('image sources failed: ' + errors);
   return null;
 }
 app.post('/api/image', async (req, res) => {
@@ -531,7 +787,7 @@ app.post('/api/image', async (req, res) => {
   arr.push(now); IMG_HITS.set(req.ip, arr);
   if (arr.length > 40) return res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' });
   try {
-    if (!IMG_PENDING.has(id)) IMG_PENDING.set(id, findImage(hit).finally(() => IMG_PENDING.delete(id)));
+    if (!IMG_PENDING.has(id)) IMG_PENDING.set(id, findImage(hit, id).finally(() => IMG_PENDING.delete(id)));
     const found = await IMG_PENDING.get(id);
     IMG_CACHE.set(id, found);
     res.json(found || {});
