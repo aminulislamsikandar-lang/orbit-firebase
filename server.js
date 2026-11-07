@@ -116,6 +116,8 @@ Rules:
 - If the question has parts (a), (b), (c) or (i), (ii), answer each part separately with its label.
 - For "what do these lines mean" questions: say what the lines mean in simple words, then link them to the main idea of the lesson.
 - For fill-in-the-blank or comparison items (for example "___ is compared to a ___"): give the answer first, then one short reason.
+- For letters and applications: give the full format (To, Date, Subject, salutation, body in 2 short paragraphs, closing, name, class and roll no.) in plain text with line breaks. Use the model letter in the context if there is one.
+- For true/false items: say True or False first, then one short reason.
 - For grammar or literary-device questions: define the term in one line, then apply it to the example.
 - Plain text. You may use **bold** for key words. No headings, no tables, no LaTeX.
 - Keep it concise: about 60 to 120 words for a single question, up to 200 words when there are several parts.`;
@@ -344,6 +346,52 @@ app.post('/api/translate', async (req, res) => {
   res.json({ text: r.text });
 });
 
+// ---- lesson reader: translate one paragraph of the chapter text ------------
+const COURSE_BY_ID = new Map(QUIZ.courses.map(c => [c.id, c]));
+const lessonOf = (cid, no) => { const c = COURSE_BY_ID.get(cid); const ch = c && c.chapters.find(x => x.no === +no); return c && ch ? { course: c, ch } : null; };
+app.post('/api/lesson', async (req, res) => {
+  const { course, ch: chNo, p, to } = req.body || {};
+  const hit = lessonOf(course, chNo);
+  const text = hit && (hit.ch.lesson || [])[+p];
+  if (!text) return res.status(400).json({ error: 'Ye paragraph nahi mila.' });
+  if (!LANGS[to]) return res.status(400).json({ error: 'Language supported nahi hai.' });
+  const style = Object.prototype.hasOwnProperty.call(TR_STYLES, req.body.style) ? req.body.style : 'para';
+  const key = ['lesson', course, chNo, p, to, style].join('|');
+  if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
+  if (!guardAI(req, res)) return;
+  const r = await gemini(englishProfile(hit.course.class).tr, TR_STYLES[style](LANGS[to], text), { temperature: 0.2 });
+  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  CACHE.set(key, r.text);
+  res.json({ text: r.text });
+});
+
+// ---- grammar / writing rules explained by the AI ---------------------------
+app.post('/api/rules', async (req, res) => {
+  const { course, ch: chNo, sec, to } = req.body || {};
+  const hit = lessonOf(course, chNo);
+  const section = hit && (hit.ch.sections || [])[+sec];
+  if (!section || !section.rules) return res.status(400).json({ error: 'Is section ke liye rules nahi hain.' });
+  if (!LANGS[to]) return res.status(400).json({ error: 'Language supported nahi hai.' });
+  const key = ['rules', course, chNo, sec, to].join('|');
+  if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
+  if (!guardAI(req, res)) return;
+  const { kind, topic } = section.rules, cls = hit.course.class;
+  const system = `You are a friendly English teacher for Class ${cls} students in Assam. You explain standard English ${kind === 'writing' ? 'writing (letter and application) format' : 'grammar rules'} in ${LANGS[to]}.
+Rules for your reply:
+- Explain in ${LANGS[to]}. Keep every English example, grammar term (in English, with the local-language meaning once) and the parts of a letter in English.
+- Follow the standard school syllabus (SEBA/NCERT level). Be correct and do not invent exceptions.
+- Plain text. You may use **bold** for key words. No headings with #, no tables, no LaTeX.
+- Short numbered points. Every rule is followed by one or two English example sentences, each with its meaning in the local language.
+- Use the textbook examples given in the notes where they fit.`;
+  const body = kind === 'writing'
+    ? `Topic: ${topic}\nExplain the standard format step by step: where the sender's details, date, receiver, subject line, salutation, body (opening line, reason, request), closing line, and signature (name, class, roll no.) go; what language and tone to use; 5 common mistakes; then one short model application in English with the local-language meaning of its first paragraph.`
+    : `Topic: ${topic}\nExplain the standard rules: what it is, its kinds, the rule for each kind with examples, the exceptions the textbook mentions, 5 common mistakes, and a quick memory trick.\nTextbook notes: ${hit.ch.context || ''}`;
+  const r = await gemini(system, body, { temperature: 0.3, maxTokens: 6000 });
+  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  CACHE.set(key, r.text);
+  res.json({ text: r.text });
+});
+
 // ---- extra help (3-dot menu) ---------------------------------------------
 app.post('/api/more', async (req, res) => {
   const hit = guard(req, res); if (!hit) return;
@@ -391,6 +439,106 @@ app.post('/api/visual', async (req, res) => {
   if (!svg) return res.status(502).json({ error: 'Diagram sahi nahi bana. Dobara try karo.' });
   CACHE.set(key, svg);
   res.json({ svg });
+});
+
+// ---- one picture under the answer (Wikimedia Commons: free, no API key) ---------------
+// Only for Science. The server searches Commons with words from the question, keeps the best match and remembers it,
+// so the search runs once per question, not once per student. No good match = {} and the app shows nothing.
+// Optional Render env var WIKI_UA: a contact for Wikimedia, e.g. "OrbitTutor/1.0 (you@example.com)".
+const WIKI_UA = process.env.WIKI_UA || 'OrbitTutor/1.0 (school tutor app, Assam India)';
+const IMG_CACHE = new Map();     // question id -> {url,page,title,by,lic,licUrl} or null (no good picture)
+const IMG_PENDING = new Map();   // question id -> promise (two students asking at once share one search)
+const IMG_HITS = new Map();
+const STOP = new Set(('a an the is are was were be been being of in on at to for and or but why what how which who whom when where does do did ' +
+  'give write state explain define name list differentiate distinguish following given below above with by from that this it its as can should ' +
+  'would will if then than into any all each one two three four only also you your we our they their them these those not no yes find mention ' +
+  'identify justify describe answer question class chapter student students textbook example examples called using use used show shown between ' +
+  'during after before about there here some such more most other another very much many make made makes').split(' '));
+function keywords(text, n) {
+  const seen = new Set(), out = [];
+  for (const w of String(text || '').toLowerCase().replace(/[^a-z\s-]/g, ' ').split(/[\s-]+/)) {
+    if (w.length < 3 || STOP.has(w) || seen.has(w)) continue;
+    seen.add(w); out.push(w);
+    if (out.length >= n) break;
+  }
+  return out;
+}
+const strip = h => String(h || '').replace(/<[^>]*>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim();
+const BAD_TITLE = /\b(logo|flag|icon|stamp|signature|portrait|poster|cover|screenshot|banner|coat of arms|diploma|certificate)\b/i;
+const OK_MIME = new Set(['image/jpeg', 'image/png', 'image/svg+xml', 'image/gif', 'image/webp']);
+
+async function commonsSearch(terms) {
+  const url = 'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
+    action: 'query', format: 'json', generator: 'search', gsrnamespace: '6', gsrlimit: '10', gsrsearch: terms.join(' '),
+    prop: 'imageinfo', iiprop: 'url|mime|size|extmetadata', iiurlwidth: '800'
+  });
+  const r = await fetch(url, { headers: { 'User-Agent': WIKI_UA, 'Api-User-Agent': WIKI_UA }, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error('commons ' + r.status);
+  const j = await r.json();
+  return Object.values((j.query && j.query.pages) || {}).sort((a, b) => (a.index || 0) - (b.index || 0));
+}
+// Picks the first result that is a real picture and mentions enough of our words.
+function pickImage(pages, words, need) {
+  let best = null;
+  for (const p of pages) {
+    const ii = (p.imageinfo || [])[0];
+    if (!ii || !OK_MIME.has(ii.mime) || (ii.width || 0) < 300 || (ii.height || 0) < 200) continue;
+    const title = String(p.title || '').replace(/^File:/, '').replace(/\.[a-z]+$/i, '');
+    if (BAD_TITLE.test(title)) continue;
+    const em = ii.extmetadata || {};
+    if (em.NonFree && String(em.NonFree.value).toLowerCase() === 'true') continue;
+    const hay = (title + ' ' + strip((em.ImageDescription || {}).value)).toLowerCase();
+    const hits = words.filter(w => hay.includes(w)).length;
+    if (hits < need) continue;
+    const url = ii.thumburl || ii.url, page = ii.descriptionurl;
+    if (!/^https:\/\/upload\.wikimedia\.org\//.test(url || '') || !/^https:\/\/commons\.wikimedia\.org\//.test(page || '')) continue;
+    if (!best || hits > best.hits) best = {
+      hits, url, page, title: title.slice(0, 120),
+      by: strip((em.Artist || {}).value).slice(0, 80),
+      lic: strip((em.LicenseShortName || {}).value).slice(0, 40),
+      licUrl: /^https:\/\//.test(strip((em.LicenseUrl || {}).value)) ? strip((em.LicenseUrl || {}).value) : ''
+    };
+    if (best.hits >= words.length) break;
+  }
+  if (!best) return null;
+  delete best.hits;
+  return best;
+}
+async function findImage({ q, ch }) {
+  const qText = [q.text].concat(q.parts || []).join(' ');
+  const tries = [
+    { words: keywords(qText, 6), need: 2 },
+    { words: keywords(qText, 3), need: 2 },
+    { words: keywords(ch && ch.title, 4), need: 2 }
+  ];
+  const done = new Set();
+  for (const t of tries) {
+    if (t.words.length < 2) continue;
+    const k = t.words.join(' ');
+    if (done.has(k)) continue;
+    done.add(k);
+    const found = pickImage(await commonsSearch(t.words), t.words, Math.min(t.need, t.words.length));
+    if (found) return found;
+  }
+  return null;
+}
+app.post('/api/image', async (req, res) => {
+  const hit = guard(req, res); if (!hit) return;
+  const id = req.body.id;
+  if (hit.course.subject !== 'Science') return res.json({});
+  if (IMG_CACHE.has(id)) return res.json(IMG_CACHE.get(id) || {});
+  const now = Date.now(), arr = (IMG_HITS.get(req.ip) || []).filter(t => now - t < 60000);
+  arr.push(now); IMG_HITS.set(req.ip, arr);
+  if (arr.length > 40) return res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' });
+  try {
+    if (!IMG_PENDING.has(id)) IMG_PENDING.set(id, findImage(hit).finally(() => IMG_PENDING.delete(id)));
+    const found = await IMG_PENDING.get(id);
+    IMG_CACHE.set(id, found);
+    res.json(found || {});
+  } catch (e) {
+    console.error('Image search failed', id, e.message);
+    res.json({});   // not cached: the next student triggers a fresh try
+  }
 });
 
 // ---- recorded videos (private Backblaze B2 bucket, short-lived links) -------------
