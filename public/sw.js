@@ -1,6 +1,6 @@
 // Orbit service worker: keeps the app page and fonts so the app opens offline.
 // API calls (/api/*) are never cached here; answers are stored by the page itself.
-const SHELL = 'orbit-shell-v3';
+const SHELL = 'orbit-shell-v4';
 const FONTS = 'orbit-fonts-v1';
 
 self.addEventListener('install', e => {
@@ -31,7 +31,8 @@ self.addEventListener('fetch', e => {
   const r = e.request;
   if (r.method !== 'GET') return;
   const u = new URL(r.url);
-  if (r.mode === 'navigate' && u.origin === location.origin) {
+  // Only the app's home page gets the saved app page. Other addresses (robots.txt, sitemap.xml, the Google verification file) go to the server as normal.
+  if (r.mode === 'navigate' && u.origin === location.origin && (u.pathname === '/' || u.pathname === '/index.html')) {
     e.respondWith(staleWhileRevalidate(SHELL, '/', r));
   } else if (u.hostname === 'fonts.googleapis.com' || u.hostname === 'fonts.gstatic.com') {
     e.respondWith(staleWhileRevalidate(FONTS, r, r));
