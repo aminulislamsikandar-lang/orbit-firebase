@@ -1,5 +1,6 @@
 ﻿{
   "hosting": {
+    "site": "orbittutorial",
     "public": "public",
     "predeploy": ["node build-questions.js"],
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
@@ -11,3 +12,4 @@
   },
   "firestore": { "rules": "firestore.rules" }
 }
+
