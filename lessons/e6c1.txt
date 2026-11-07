@@ -1,0 +1,6 @@
+# Class 6 English, Chapter 1: The Laburnum (Meera Uberoi).
+# Poem text for the Lesson reader: one STANZA per block, blank line between stanzas, lines of a stanza on separate lines.
+# Lines that start with # are ignored. The first stanza is "Just down the road from where I live ..." and there are 7 stanzas in all.
+# Paste the stanzas from your textbook below this line (type or copy them yourself), then run: node build-questions.js and deploy.
+# While this file has no stanzas, the "Lesson text" button stays hidden for this chapter.
+

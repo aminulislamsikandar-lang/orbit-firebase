@@ -1,0 +1,7 @@
+# Class 6 Science, Chapter 1: The Wonderful World of Science.
+# Lesson text for the Lesson reader: one paragraph per block, with a blank line between paragraphs.
+# Lines that start with # are ignored. Paste or type the chapter text from your textbook below this line
+# (pages 7 to 12: the introduction, What is Science?, Science is Everywhere, The Science Puzzle, Exploring Planet Earth,
+# Food and Water, The Science of Materials, Asking Questions: The Scientific Method).
+# Then run: node build-questions.js and deploy. While this file has no text, the "Lesson text" button stays hidden.
+
