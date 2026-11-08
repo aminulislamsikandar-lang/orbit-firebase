@@ -160,12 +160,14 @@
     show(0);
   }
 
-  g.MathVideoPlayer = { open: open, close: close };
+  g.MathVideoPlayer = { open: open, close: close, debug: function () { var cc = null, ctx = null; try { cc = curCh(); var q0 = null; (cc.ch.sections || []).some(function (s) { return (s.questions || []).some(function (q) { q0 = q; return true; }); }); ctx = q0 && mvCtx(q0); } catch (e) {} return { loaded: Object.keys(LOADED), videos: Object.keys(MV), retry: RETRY, lastError: LASTERR, prefix: ctx && ctx.prefix, base: ctx && window.MathVideo.makeCode(ctx.f) }; } };
 
   /* ---------- student side ---------- */
   var SCHOOL = { nashib: "nashibali" };            // app org id -> code me school
   var MV = {};                                      // code -> plan
   var LOADED = {};                                  // prefix -> true
+  var LASTERR = "";                                // debug: aakhri load error
+  var RETRY = 0;                                    // fail hone par auto-retry ginti
   function mvCtx(q) {
     try {
       var x = IDX[q.id]; if (!x || !x.course || !x.ch) return null;      // IDX / NAV: index.html ke globals
@@ -202,10 +204,18 @@
       var q0 = null; (cc.ch.sections || []).some(function (s) { return (s.questions || []).some(function (q) { q0 = q; return true; }); });
       var ctx = q0 && mvCtx(q0); if (!ctx || LOADED[ctx.prefix]) return;
       LOADED[ctx.prefix] = true;
+      var settled = false;
+      function fail(why) {                               // signed-in na ho / offline / atak gaya: thodi der baad apne aap dobara try
+        if (settled) return; settled = true; LASTERR = String(why || "fail");
+        delete LOADED[ctx.prefix];
+        if (RETRY < 5) { RETRY++; setTimeout(load, 3000 * RETRY); }
+      }
+      var guard = setTimeout(function () { fail("timeout"); }, 8000);   // query pending reh jaye to bhi retry
       window.CLOUD.mathVideo.byPrefix(ctx.prefix).then(function (map) {
+        if (settled) return; settled = true; clearTimeout(guard); RETRY = 0; LASTERR = "";
         var n = 0; for (var k in map) { MV[k] = map[k]; n++; }
         if (n) draw();
-      }, function () { delete LOADED[ctx.prefix]; });   // signed-in na ho / offline: agli draw par dobara try
+      }, function (e) { clearTimeout(guard); fail(e && (e.code || e.message)); });
     } catch (e) {}
   }
 
@@ -217,6 +227,7 @@
       try { var b = btnsHTML(q); if (b) h = h.replace(/<\/div>\s*$/, b + "</div>"); } catch (e) {}
       return h;
     };
+    window.addEventListener("online", function () { RETRY = 0; load(); });
     document.addEventListener("click", function (e) {
       var b = e.target.closest && e.target.closest('[data-act="mv"]'); if (!b) return;
       var p = MV[b.dataset.code]; if (p) open(p);
