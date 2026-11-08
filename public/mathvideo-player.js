@@ -110,7 +110,7 @@
        anim.numberline = { min, max, dots:[{v, label?, color?}] }   (static, hamesha dikhta hai)
        anim.cues = [ {point:{line, word}} | {point:{value}} | {hop:{from,to}} | {dot:{v, label?, color?}} ]
        Cues step ki awaaz ke dauran barabar gap se chalte hain (pen word/number par jaata hai). */
-    var NLY = 310, textEls = [], ctimers = [], NL = null, statG = null, dynG = null, pen = null, penShape = null, penPlaced = false, mark = null, curStep = null;
+    var NLY = 310, layout = { lh: 52, fs: 30 }, textEls = [], ctimers = [], NL = null, statG = null, dynG = null, pen = null, penShape = null, penPlaced = false, mark = null, curStep = null;
     function clearCues() { ctimers.forEach(clearTimeout); ctimers = []; }
     function colorOf(c) { return { red: "#d74747", green: "#168653", blue: "#2f6fdb", orange: "#e08a00" }[c] || "#2f6fdb"; }
     function nx(v) { return 50 + (v - NL.min) / (NL.max - NL.min) * 500; }
