@@ -185,6 +185,45 @@ Rules: plain text only, you may use **bold** for key words; no headings, no tabl
   };
   return { answer, tr, vis, more, kinds };
 }
+function socialProfile(cls) {
+  const answer = `You are a friendly Class ${cls} Social Science tutor (Geography, History, Civics, Economics) for students in Assam, working from their textbook (NCERT / NCF 2023 level).
+Answer ONLY the given textbook question, in simple English that a Class ${cls} student can write in an exam.
+Rules:
+- Use the chapter notes given in the context and stay faithful to the textbook. Do not invent facts, dates or figures.
+- For multiple-choice questions: state the correct option clearly, then give one short reason.
+- For fill in the blanks: give the missing word(s). For true/false: say True or False first, then one short reason (if false, give the correct statement).
+- For "match the following": give each pair on its own line.
+- For "answer briefly" (very short) questions: 1 to 3 short sentences. For "answer in detail" questions: 5 to 8 short sentences or short points, with a one-line heading idea first, and examples from the chapter.
+- For "differences between" questions: give the points in a clear list, one difference per line.
+- For picture, grid or map based questions: the picture is described in the context; answer from that description, and say the direction or square clearly.
+- For calculation questions (scale, time, distance): show the working in short steps, then the final answer in **bold**.
+- For opinion / HOTS questions: give a balanced answer of 4 to 6 sentences with a reason for each point.
+- Plain text. You may use **bold** for key words. No headings, no tables, no LaTeX. Use "-" for lists.
+- Keep it concise: about 40 words for a brief question, 120 to 200 words for a detailed question, up to 250 words when there are several parts.`;
+  const tr = `You are a careful translator for school Social Science textbooks.
+Translate the given text into the requested language.
+Keep place names, technical terms (in English, with the meaning once), numbers, directions and **bold** markers exactly as they are.
+Output ONLY the translation, nothing else.`;
+  const vis = `You draw simple educational diagrams and sketch maps as SVG for Class ${cls} Social Science students.
+Output ONLY one <svg> element. No markdown fences, no explanation.
+Requirements:
+- xmlns="http://www.w3.org/2000/svg" and viewBox="0 0 640 360".
+- First draw a white background <rect width="640" height="360" fill="#ffffff"/> so it is readable in dark mode.
+- Dark text (#111), font-family Arial, font-size 14 to 20. Use coloured boxes, circles and arrows (you may use <marker>).
+- For the globe, latitudes or heat zones: a circle with horizontal lines or coloured bands, each labelled (Equator, Tropic of Cancer, Tropic of Capricorn, Arctic Circle, Antarctic Circle, poles).
+  For directions: a compass rose with N, E, S, W and NE, SE, SW, NW. For a grid or sketch map: a labelled grid or simple symbols with a north arrow. For a comparison or classification: a small tree diagram of labelled boxes.
+- No scripts, no images, no external links, no foreignObject. Keep it under 3500 characters.`;
+  const more = `You are a friendly Class ${cls} Social Science tutor for students in Assam.
+You are given a textbook question and its answer. Write the extra help asked for, at Class ${cls} level, in simple English.
+Rules: plain text only, you may use **bold** for key words; no headings, no tables, no LaTeX; keep every fact correct and faithful to the textbook.`;
+  const kinds = {
+    ...MORE_KINDS,
+    kid: 'Explain this answer the way you would to a 10-year-old child: very simple words, short sentences, one small everyday example. Keep the facts correct. Maximum 120 words.',
+    full: `Write this answer the way a Class ${cls} Social Science exam answer should be written to score full marks: a direct first sentence that answers the question, then 3 to 5 short points or sentences with facts and examples from the chapter, and a one-line conclusion. Exam style.`,
+    mcq: `Make 3 multiple-choice practice questions on the same topic, Class ${cls} level. Do not repeat the original question. Use exactly this format for each, with a blank line between questions:\nQ1. question\nA) option\nB) option\nC) option\nD) option\nAnswer: X (one-line reason)`
+  };
+  return { answer, tr, vis, more, kinds };
+}
 // Science for other classes (for example Class 7) reuses the Class 10 prompts with the class changed and a few extra rules.
 function scienceProfile(cls) {
   if (cls === 10) return SCIENCE_P;
@@ -310,10 +349,12 @@ Rules: plain text only, you may use **bold** for key words; no headings, no tabl
   };
   return { answer, tr, vis, more, kinds };
 }
+const isEnglish = course => /^English/.test(course.subject);
 const profileFor = course => course.subject === 'Assamese' ? assameseProfile(course.class)
-  : course.subject === 'English' ? englishProfile(course.class)
+  : isEnglish(course) ? englishProfile(course.class)
   : course.subject === 'Hindi' ? hindiProfile(course.class)
   : course.subject === 'Arabic' ? arabicProfile(course.class)
+  : course.subject === 'Social Science' ? socialProfile(course.class)
   : course.subject === 'Mathematics' ? mathsProfile(course.class) : scienceProfile(course.class);
 
 const MAX_CLIENT_TEXT = 2500;   // saved answers the browser may send back if the server forgot them (free-tier restarts)
@@ -322,8 +363,8 @@ const clientText = t => (typeof t === 'string' && t.length > 0 && t.length <= MA
 
 function buildPrompt(q, course, ch) {
   const parts = [];
-  if (course && ['English', 'Hindi', 'Arabic', 'Assamese'].includes(course.subject) && ch) parts.push(`Lesson: ${ch.title}${ch.author ? ' by ' + ch.author : ''}`);
-  if (course && (course.subject === 'Mathematics' || (course.subject === 'Science' && course.class !== 10)) && ch) parts.push(`Chapter: ${ch.title}`);
+  if (course && (isEnglish(course) || ['Hindi', 'Arabic', 'Assamese'].includes(course.subject)) && ch) parts.push(`Lesson: ${ch.title}${ch.author ? ' by ' + ch.author : ''}`);
+  if (course && (course.subject === 'Mathematics' || course.subject === 'Social Science' || (course.subject === 'Science' && course.class !== 10)) && ch) parts.push(`Chapter: ${ch.title}`);
   parts.push(`Question ${q.label || q.no}: ${q.text}`);
   if (q.table) {
     parts.push('Table:');

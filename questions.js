@@ -461,4 +461,4 @@ const science = {
 };
 
 // Courses: one per class + subject. Add a new file for each (see english7.js) and list it here.
-module.exports = { courses: [science, require('./english7.js'), require('./english8.js'), require('./hindi6.js'), require('./arabic6.js'), require('./assamese6.js'), require('./maths6.js'), require('./maths7.js'), require('./science7.js')] };
+module.exports = { courses: [science, require('./english6.js'), require('./english6grammar.js'), require('./social6.js'), require('./science6.js'), require('./english7.js'), require('./english8.js'), require('./hindi6.js'), require('./arabic6.js'), require('./assamese6.js'), require('./maths6.js'), require('./maths7.js'), require('./science7.js')] };
