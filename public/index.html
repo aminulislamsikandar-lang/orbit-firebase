@@ -688,10 +688,17 @@ function qtrHTML(q){
  return `<div class="qtr"><div class="chips" role="group" aria-label="Question translation language">${trKeys(courseOfId(q.id)).map(l=>`<button class="chip" data-act="qtrset" data-id="${q.id}" data-to="${l}" aria-pressed="${u.qt===l}">${TRL[l].n}</button>`).join('')}</div>${r.loading?'<div class="mut" style="margin-top:8px">Anuvaad ho raha hai…</div>':''}${r.text?`<div class="ans trans"><b>${esc(TRL[u.qt].n)}</b><br>${fmt(r.text)}</div>`:''}${r.err?`<div class="err" role="alert">${esc(r.err)}</div>`:''}</div>`;
 }
 
+let awakeAt=0,awakeP=null;
+function wake(){
+ if(Date.now()-awakeAt<420000)return Promise.resolve();
+ if(!awakeP)awakeP=fetch((window.ORBIT_API||'')+'/api/ping',{signal:AbortSignal.timeout(70000)}).then(r=>{if(r.ok)awakeAt=Date.now()}).catch(()=>{}).finally(()=>{awakeP=null});
+ return awakeP}
+wake();
 async function api(path,body){
  const tok=window.CLOUD?await window.CLOUD.token():null;
  if(!tok)throw new Error('Pehle Google se log in karo (menu → Log in).');
- const r=await fetch((window.ORBIT_API||'')+path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body),signal:AbortSignal.timeout(75000)});
+ await wake();
+ const r=await fetch((window.ORBIT_API||'')+path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body),signal:AbortSignal.timeout(90000)});
  const j=await r.json().catch(()=>({}));
  if(!r.ok)throw new Error(j.error||'Kuch gadbad hui. Dobara try karo.');
  return j}

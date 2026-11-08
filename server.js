@@ -25,7 +25,7 @@ app.use('/api', (req, res, next) => {
   next();
 });
 app.use('/api', async (req, res, next) => {
-  if (req.path === '/questions') return next();
+  if (req.path === '/questions' || req.path === '/ping') return next();
   const h = req.headers.authorization || '';
   const t = h.startsWith('Bearer ') ? h.slice(7) : '';
   if (!t) return res.status(401).json({ error: 'Pehle Google se log in karo.' });
@@ -34,7 +34,11 @@ app.use('/api', async (req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, 'public')));
 
-const KEY = process.env.GEMINI_API_KEY;
+// Add more free keys (each from a DIFFERENT Google project) in Render as GEMINI_API_KEYS=key1,key2,key3
+// GEMINI_API_KEY (single) still works. When one key hits its free limit, the next key is used automatically.
+const KEYS = [...new Set([...(process.env.GEMINI_API_KEYS || '').split(','), process.env.GEMINI_API_KEY || ''].map(k => k.trim()).filter(Boolean))];
+const KEY = KEYS[0];
+let keyStart = 0; // round-robin so load is spread across keys
 // Models are tried in this order. Set GEMINI_MODEL in Render to choose the first one.
 const MODELS = [...new Set([
   process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
@@ -398,42 +402,48 @@ async function gemini(system, prompt, opts = {}) {
   const t0 = Date.now();
   const DEADLINE = t0 + 55000;
   let lastStatus = 0;
+  const start = keyStart++ % Math.max(KEYS.length, 1);
+  const order = KEYS.map((_, i) => KEYS[(start + i) % KEYS.length]);
   for (const model of MODELS) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      const left = DEADLINE - Date.now();
-      if (left < 4000) return { status: lastStatus };
-      try {
-        const r = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },
-            signal: AbortSignal.timeout(Math.min(20000, left)),
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: system }] },
-              contents: [{ role: 'user', parts: [{ text: prompt }] }],
-              generationConfig: { temperature: opts.temperature ?? 0.3, maxOutputTokens: opts.maxTokens || 4096 }
-            })
+    for (let ki = 0; ki < order.length; ki++) {
+      const apiKey = order[ki];
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const left = DEADLINE - Date.now();
+        if (left < 4000) return { status: lastStatus };
+        try {
+          const r = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+              signal: AbortSignal.timeout(Math.min(15000, left)),
+              body: JSON.stringify({
+                systemInstruction: { parts: [{ text: system }] },
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                generationConfig: { temperature: opts.temperature ?? 0.3, maxOutputTokens: opts.maxTokens || 4096 }
+              })
+            }
+          );
+          const j = await r.json().catch(() => ({}));
+          if (r.ok) {
+            const text = ((j.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+            if (text) { console.log('Gemini ok', model, 'key#' + (KEYS.indexOf(apiKey) + 1), (Date.now() - t0) + 'ms'); return { text }; }
+            console.error('Gemini empty answer', model);
+            break;
           }
-        );
-        const j = await r.json().catch(() => ({}));
-        if (r.ok) {
-          const text = ((j.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
-          if (text) { console.log('Gemini ok', model, (Date.now() - t0) + 'ms'); return { text }; }
-          console.error('Gemini empty answer', model);
+          lastStatus = r.status;
+          console.error('Gemini error', r.status, model, 'key#' + (KEYS.indexOf(apiKey) + 1), JSON.stringify(j).slice(0, 300));
+          if (r.status === 429) break; // this key is out of quota: try the next key right away
+          if ((r.status === 503 || r.status === 500) && attempt === 1) {
+            await new Promise(ok => setTimeout(ok, 1200));
+            continue;
+          }
+          break;
+        } catch (e) {
+          console.error('Gemini request failed', model, (Date.now() - t0) + 'ms', e.name, e.message);
+          lastStatus = 504;
           break;
         }
-        lastStatus = r.status;
-        console.error('Gemini error', r.status, model, JSON.stringify(j).slice(0, 300));
-        if ((r.status === 503 || r.status === 429 || r.status === 500) && attempt === 1) {
-          await new Promise(ok => setTimeout(ok, 1200));
-          continue;
-        }
-        break;
-      } catch (e) {
-        console.error('Gemini request failed', model, (Date.now() - t0) + 'ms', e.name, e.message);
-        lastStatus = 504;
-        break;
       }
     }
   }
@@ -453,11 +463,12 @@ function guard(req, res) {
   return hit;
 }
 function guardAI(req, res) {
-  if (!KEY) { res.status(500).json({ error: 'Server mein GEMINI_API_KEY set nahi hai.' }); return false; }
+  if (!KEYS.length) { res.status(500).json({ error: 'Server mein GEMINI_API_KEY set nahi hai.' }); return false; }
   if (limited(req.ip)) { res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' }); return false; }
   return true;
 }
 
+app.get('/api/ping', (req, res) => res.json({ ok: true })); // wakes the sleeping Render server
 app.get('/api/questions', (req, res) => res.json(PUBLIC));
 
 // ---- answer ---------------------------------------------------------------
