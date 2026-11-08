@@ -101,6 +101,10 @@
       if (want && hv.some(function (v) { return v.name === want; })) voiceSel.s.value = want;
     }
     voicesReady(fillVoices);
+    // Chrome voices der se / kai baar load karta hai: list dobara bharte rahenge (voiceschanged + 2s, 5s par)
+    var vch = function () { fillVoices(); };
+    if (g.speechSynthesis) g.speechSynthesis.addEventListener("voiceschanged", vch);
+    var vt1 = setTimeout(fillVoices, 2000), vt2 = setTimeout(fillVoices, 5000);
 
     function show(i) {
       st.i = i; var s = plan.steps[i];
@@ -156,7 +160,7 @@
     }
     function key(e) { if (e.key === "Escape") close(); }
     closeBtn.onclick = close; document.addEventListener("keydown", key);
-    cur = { root: root, key: key, stop: function () { st.playing = false; stopSpeech(); } };
+    cur = { root: root, key: key, stop: function () { st.playing = false; stopSpeech(); clearTimeout(vt1); clearTimeout(vt2); if (g.speechSynthesis) g.speechSynthesis.removeEventListener("voiceschanged", vch); } };
     show(0);
   }
 
