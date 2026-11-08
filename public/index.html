@@ -224,7 +224,7 @@ const CATALOG={
  classes:{seba:[9,10],cbse:[9,10],nashib:[6,7,8,9,10],popular:[6,7,8,9,10],halimon:[6,7,8,9,10]},
  content:{
   seba:{10:[['c10-science','General Science']]},
-  nashib:{6:[['c6-arabic','Arabic'],['c6-assamese','Assamese'],['c6-hindi','Hindi'],['c6-maths']],7:[['c7-english'],['c7-maths'],['c7-science']]},
+  nashib:{6:[['c6-english','English'],['c6-grammar','English Grammar'],['c6-social','Social Science'],['c6-science','General Science'],['c6-hindi','Hindi'],['c6-assamese','Assamese'],['c6-arabic','Arabic'],['c6-maths']],7:[['c7-english'],['c7-maths'],['c7-science']]},
   popular:{7:[['c7-english'],['c7-maths'],['c7-science']]},
   halimon:{7:[['c7-english'],['c7-maths'],['c7-science']],8:[['c8-english']]}
  }
@@ -888,6 +888,8 @@ fetch('/questions.json').then(r=>r.ok?r:fetch((window.ORBIT_API||'')+'/api/quest
 if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{})});
 </script>
 <script src="/team.js"></script>
+<script src="/mathvideo-admin.js"></script>
+<script src="/mathvideo-player.js"></script>
 <script type="module">import('/cloud.js').catch(e=>window.onCloudFail&&window.onCloudFail(e))</script>
 </body>
 </html>

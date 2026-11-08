@@ -1,0 +1,225 @@
+/* mathvideo-admin.js
+ * 1) MathVideo.validate(plan)  -> { errors:[], warnings:[] }  (schema + safety + maths check)
+ * 2) MathVideo.mountAdmin(el, store, opts) -> admin panel (code + JSON paste, validate, preview, save, load, delete)
+ * Sab text textContent se render hota hai, plan data kabhi innerHTML me nahi jata.
+ */
+(function (g) {
+  "use strict";
+  var MAX_STEPS = 12, MAX_LEN = 140, MAX_LINE = 60, MAX_NOTE = 60;
+  var CODE_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,119}$/;     // jaise nashibali-class7-englishmedium-math-EX:1.1-Q1-i
+  var UNSAFE = /<\s*\/?\s*[a-z!]|https?:|www\.|javascript:|data:text|\bon[a-z]+\s*=/i;
+
+  /* ---------- tiny arithmetic parser (no eval) ---------- */
+  function calc(s) {
+    var t = s.replace(/[−–—]/g, "-").replace(/[×✕·]/g, "*").replace(/÷/g, "/")
+             .replace(/,/g, "").replace(/\s+/g, "");
+    if (!t || !/^[0-9+\-*\/().]+$/.test(t) || !/[0-9]/.test(t)) return null;
+    var i = 0, bad = false;
+    function num() {
+      var m = /^\d+(\.\d+)?/.exec(t.slice(i));
+      if (!m) { bad = true; return 0; }
+      i += m[0].length; return parseFloat(m[0]);
+    }
+    function prim() {
+      if (t[i] === "(") { i++; var v = expr(); if (t[i] === ")") i++; else bad = true; return v; }
+      return num();
+    }
+    function unary() {
+      if (t[i] === "-") { i++; return -unary(); }
+      if (t[i] === "+") { i++; return unary(); }
+      return prim();
+    }
+    function term() {
+      var v = unary();
+      while (t[i] === "*" || t[i] === "/") { var op = t[i++], r = unary(); v = op === "*" ? v * r : v / r; }
+      return v;
+    }
+    function expr() {
+      var v = term();
+      while (t[i] === "+" || t[i] === "-") { var op = t[i++], r = term(); v = op === "+" ? v + r : v - r; }
+      return v;
+    }
+    var out = expr();
+    return (bad || i !== t.length || !isFinite(out)) ? null : out;
+  }
+  function same(a, b) { return Math.abs(a - b) < 1e-9 * Math.max(1, Math.abs(a), Math.abs(b)); }
+
+  /* Har pure-number line check: "=" se shuru hone wali line pehli line ke barabar honi chahiye,
+     aur line ke andar "A = B" ho to dono side barabar. Final note "Answer: N" bhi match hona chahiye. */
+  function checkMath(plan, errors) {
+    var ref = null, last = null, skipped = 0;
+    plan.steps.forEach(function (st, si) {
+      st.anim.lines.forEach(function (ln, li) {
+        var s = ln.trim(), lead = s.charAt(0) === "=";
+        var vals = s.replace(/^=/, "").split("=").map(calc);
+        if (vals.some(function (v) { return v === null; })) { skipped++; return; }
+        for (var k = 1; k < vals.length; k++)
+          if (!same(vals[0], vals[k])) errors.push("Step " + (si + 1) + ", line " + (li + 1) + ": dono side barabar nahi (" + ln + ")");
+        if (ref === null && !lead) ref = vals[0];
+        else if (lead && ref !== null && !same(ref, vals[0]))
+          errors.push("Step " + (si + 1) + ", line " + (li + 1) + ": value badal gayi (" + ln + ") — expected " + ref);
+        last = vals[0];
+      });
+    });
+    var lastNote = plan.steps[plan.steps.length - 1].anim.note || "";
+    var m = /answer\s*:\s*([-−]?[\d,]+(?:\.\d+)?)/i.exec(lastNote);
+    if (m && ref !== null) {
+      var ans = parseFloat(m[1].replace("−", "-").replace(/,/g, ""));
+      if (!same(ans, ref)) errors.push("Last note ka answer (" + m[1] + ") working se match nahi karta (" + ref + ")");
+    }
+    return skipped;
+  }
+
+  /* ---------- schema validation ---------- */
+  function str(v, max, path, errors, required) {
+    if (typeof v !== "string" || (required && !v.trim())) { errors.push(path + ": text chahiye"); return false; }
+    if (v.length > max) errors.push(path + ": " + v.length + " characters (max " + max + ")");
+    if (UNSAFE.test(v)) errors.push(path + ": HTML / URL / script allowed nahi");
+    return true;
+  }
+  function langs(o, keys, max, path, errors, warnings) {
+    if (!o || typeof o !== "object") { errors.push(path + ": object chahiye"); return; }
+    keys.forEach(function (k) { str(o[k], max, path + "." + k, errors, true); });
+  }
+
+  function validate(plan) {
+    var errors = [], warnings = [];
+    if (!plan || typeof plan !== "object" || Array.isArray(plan)) return { errors: ["Plan ek JSON object hona chahiye"], warnings: warnings };
+    str(plan.id, 80, "id", errors, true);
+    if (plan.type !== "equation") errors.push("type abhi sirf \"equation\" allowed hai");
+    if (plan.version !== 1) errors.push("version 1 hona chahiye");
+    langs(plan.title, ["en", "hg", "hi"], MAX_LEN, "title", errors);
+    if (!Array.isArray(plan.steps) || plan.steps.length < 1 || plan.steps.length > MAX_STEPS) {
+      errors.push("steps 1 se " + MAX_STEPS + " ke beech hone chahiye"); return { errors: errors, warnings: warnings };
+    }
+    plan.steps.forEach(function (st, i) {
+      var p = "steps[" + (i + 1) + "]";
+      if (!st || typeof st !== "object") { errors.push(p + ": object chahiye"); return; }
+      langs(st.cap, ["en", "hg", "hi"], MAX_LEN, p + ".cap", errors);
+      langs(st.say, ["en", "hi"], MAX_LEN, p + ".say", errors);
+      if (st.say && typeof st.say.hi === "string") {
+        if (/[0-9]/.test(st.say.hi)) warnings.push(p + ".say.hi me digits hain — numbers ko Devanagari words me likho");
+        if (!/[\u0900-\u097F]/.test(st.say.hi)) warnings.push(p + ".say.hi Devanagari me nahi hai");
+      }
+      var a = st.anim;
+      if (!a || typeof a !== "object") { errors.push(p + ".anim chahiye"); return; }
+      if (!Array.isArray(a.lines) || a.lines.length < 1 || a.lines.length > MAX_STEPS) errors.push(p + ".anim.lines 1–" + MAX_STEPS + " honi chahiye");
+      else a.lines.forEach(function (l, j) { str(l, MAX_LINE, p + ".anim.lines[" + (j + 1) + "]", errors, true); });
+      if (!Array.isArray(a.highlight) || a.highlight.some(function (n) { return !Number.isInteger(n) || n < 0 || n >= (a.lines || []).length; }))
+        errors.push(p + ".anim.highlight: valid line index chahiye");
+      if (a.note !== undefined) str(a.note, MAX_NOTE, p + ".anim.note", errors, false);
+    });
+    if (!errors.length) {
+      var skipped = checkMath(plan, errors);
+      if (skipped) warnings.push(skipped + " line(s) me letters/algebra hai — code unka maths verify nahi kar paya, khud dekh lo");
+    }
+    return { errors: errors, warnings: warnings };
+  }
+
+  /* ---------- code builder (admin aur student side dono yahi use karein) ----------
+     makeCode({school:"nashibali", cls:"class7", medium:"englishmedium", subject:"math", ex:"1.1", q:"1", part:"i"})
+     -> "nashibali-class7-englishmedium-math-EX:1.1-Q1-i"   (part khali ho to aakhri "-i" nahi lagta) */
+  function clean(s) { return String(s == null ? "" : s).trim().replace(/[\s\/]+/g, ""); }
+  function makeCode(f) {
+    var base = [f.school, f.cls, f.medium, f.subject].map(function (x) { return clean(x).toLowerCase(); });
+    var ex = clean(f.ex).replace(/^ex[:.\-]?/i, ""), q = clean(f.q).replace(/^q[:.\-]?/i, ""), part = clean(f.part).toLowerCase();
+    if (base.some(function (x) { return !x; }) || !ex || !q) return "";
+    var out = base.concat(["EX:" + ex, "Q" + q]);
+    if (part) out.push(part);
+    return out.join("-");
+  }
+
+  /* ---------- admin panel ---------- */
+  function h(tag, props, kids) {
+    var e = document.createElement(tag);
+    for (var k in (props || {})) { if (k === "text") e.textContent = props[k]; else if (k === "style") e.style.cssText = props[k]; else e[k] = props[k]; }
+    (kids || []).forEach(function (c) { e.appendChild(c); });
+    return e;
+  }
+
+  /* store = { get(code)->plan|null, set(code, plan), del(code), list()->[codes] }
+     opts  = { preview(plan) }  (optional: apne player me plan chalane ke liye) */
+  function mountAdmin(el, store, opts) {
+    opts = opts || {};
+    el.textContent = "";
+    var code = h("input", { placeholder: "code yahan apne aap ban jayega", style: "width:100%;padding:10px;margin:6px 0;box-sizing:border-box;font-family:monospace;font-size:13px" });
+    var saved = {}; try { saved = JSON.parse(localStorage.getItem("mvAdminDefaults") || "{}"); } catch (e) {}
+    var fields = {}, fbox = h("div", { style: "display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0" });
+    function sync() {
+      var f = {}; for (var k in fields) f[k] = fields[k].value;
+      code.value = makeCode(f);
+      try { localStorage.setItem("mvAdminDefaults", JSON.stringify({ school: f.school, cls: f.cls, medium: f.medium, subject: f.subject })); } catch (e) {}
+    }
+    function field(key, label, init, options, hint) {
+      var wrap = h("label", { style: "font-size:12px" });
+      wrap.appendChild(document.createTextNode(label));
+      var inp = options ? h("select") : h("input", { placeholder: hint || "" });
+      if (options) options.forEach(function (o) { inp.appendChild(h("option", { text: o, value: o })); });
+      inp.value = saved[key] || init || "";
+      inp.style.cssText = "width:100%;padding:9px;margin-top:3px;box-sizing:border-box";
+      inp.oninput = inp.onchange = sync;
+      fields[key] = inp; wrap.appendChild(inp); fbox.appendChild(wrap);
+    }
+    field("school", "School", "nashibali");
+    field("cls", "Class", "class7");
+    field("medium", "Medium", "englishmedium", ["englishmedium", "assamesemedium", "hindimedium", "bengalimedium"]);
+    field("subject", "Subject", "math");
+    field("ex", "Exercise / Example", "", null, "jaise 1.1");
+    field("q", "Question", "", null, "jaise 1");
+    field("part", "Part (khali bhi chalega)", "", null, "i, ii, iii");
+    var area = h("textarea", { placeholder: "Yahan plan JSON paste karo", style: "width:100%;height:240px;padding:10px;font-family:monospace;font-size:12px;box-sizing:border-box" });
+    var msg = h("div", { style: "white-space:pre-wrap;font-size:13px;margin:8px 0;min-height:20px" });
+    var list = h("div", { style: "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px" });
+    var bar = h("div", { style: "display:flex;flex-wrap:wrap;gap:8px" });
+
+    function say(lines, ok) { msg.textContent = lines.join("\n"); msg.style.color = ok ? "#168653" : "#d74747"; }
+    function parse() {
+      var c = code.value.trim();
+      if (!CODE_RE.test(c)) { say(["Code galat ya khali: Exercise aur Question bharo (space ya / allowed nahi)"]); return null; }
+      var plan;
+      try { plan = JSON.parse(area.value); } catch (e) { say(["JSON galat hai: " + e.message]); return null; }
+      var r = validate(plan);
+      if (r.errors.length) { say(["Save nahi hoga:"].concat(r.errors)); return null; }
+      say(["Valid hai (" + plan.steps.length + " steps)"].concat(r.warnings.map(function (w) { return "Dhyan: " + w; })), true);
+      return { code: c, plan: plan };
+    }
+    function btn(label, fn) { var b = h("button", { text: label, type: "button", style: "padding:10px 14px;border-radius:10px;border:0;background:rgba(128,128,128,.18);color:inherit;cursor:pointer" }); b.onclick = fn; bar.appendChild(b); return b; }
+
+    btn("Validate", parse);
+    if (opts.preview) btn("Preview", function () { var r = parse(); if (r) opts.preview(r.plan); });
+    btn("Save", function () {
+      var r = parse(); if (!r) return;
+      store.set(r.code, r.plan).then(function () { say(["Saved: " + r.code], true); refresh(); },
+        function (e) { say(["Save fail: " + (e && e.message ? e.message : e)]); });
+    });
+    btn("Load", function () {
+      var c = code.value.trim(); if (!c) return say(["Pehle code likho"]);
+      store.get(c).then(function (p) { if (!p) return say(["Is code ka video nahi mila"]); area.value = JSON.stringify(p, null, 2); say(["Loaded: " + c], true); },
+        function (e) { say(["Load fail: " + (e && e.message ? e.message : e)]); });
+    });
+    btn("Delete", function () {
+      var c = code.value.trim(); if (!c) return say(["Pehle code likho"]);
+      if (!confirm("Delete karna hai: " + c + " ?")) return;
+      store.del(c).then(function () { say(["Deleted: " + c], true); refresh(); }, function (e) { say(["Delete fail: " + (e && e.message ? e.message : e)]); });
+    });
+
+    function refresh() {
+      store.list().then(function (codes) {
+        list.textContent = "";
+        codes.sort().forEach(function (c) {
+          var chip = h("button", { text: c, type: "button", style: "padding:6px 10px;border-radius:999px;border:0;background:rgba(128,128,128,.18);color:inherit;font-size:12px;cursor:pointer" });
+          chip.onclick = function () { code.value = c; store.get(c).then(function (p) { if (p) { area.value = JSON.stringify(p, null, 2); say(["Loaded: " + c], true); } }); };
+          list.appendChild(chip);
+        });
+        if (!codes.length) list.textContent = "Abhi koi video saved nahi.";
+      }, function () { list.textContent = "List load nahi hui."; });
+    }
+
+    [h("h3", { text: "Math Video (code se)" }), fbox, code, area, bar, msg,
+     h("div", { text: "Saved videos:", style: "font-size:12px;margin-top:8px" }), list].forEach(function (n) { el.appendChild(n); });
+    refresh();
+  }
+
+  var api = { validate: validate, mountAdmin: mountAdmin, makeCode: makeCode, calc: calc, CODE_RE: CODE_RE };
+  if (typeof module !== "undefined" && module.exports) module.exports = api; else g.MathVideo = api;
+})(typeof window !== "undefined" ? window : globalThis);

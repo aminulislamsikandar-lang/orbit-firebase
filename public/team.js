@@ -9,7 +9,7 @@
   ];
   var PEOPLE = null;
   try { PEOPLE = JSON.parse(localStorage.getItem(CACHE_KEY)); } catch (e) {}
-  var fails = 0, lockedUntil = 0, editing = null, formMsg = '', pendingPhoto = null;
+  var mvMode = false, fails = 0, lockedUntil = 0, editing = null, formMsg = '', pendingPhoto = null;
 
   var css = document.createElement('style');
   css.textContent =
@@ -123,11 +123,18 @@
       img.src = url;
     });
   }
-  function closeAdmin() { var o = document.getElementById('tm-ov'); if (o) o.remove(); editing = null; formMsg = ''; pendingPhoto = null; }
-  function openAdmin() { editing = null; formMsg = ''; pendingPhoto = null; paint(); }
+  function closeAdmin() { mvMode = false; var o = document.getElementById('tm-ov'); if (o) o.remove(); editing = null; formMsg = ''; pendingPhoto = null; }
+  function openAdmin() { mvMode = false; editing = null; formMsg = ''; pendingPhoto = null; paint(); }
   function paint() {
     var o = document.getElementById('tm-ov');
     if (!o) { o = document.createElement('div'); o.id = 'tm-ov'; o.className = 'tm-ov'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); document.body.appendChild(o); }
+    if (mvMode) {
+      o.innerHTML = '<div class="tm-in"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Math Video</h2><button class="tm-b2" data-tact="mvback">Back</button></div><div id="tm-mv"></div></div>';
+      var box = document.getElementById('tm-mv');
+      if (window.MathVideo && window.CLOUD && window.CLOUD.mathVideo) window.MathVideo.mountAdmin(box, window.CLOUD.mathVideo, { preview: function (p) { if (window.MathVideoPlayer) window.MathVideoPlayer.open(p); } });
+      else box.textContent = 'Cloud load nahi hua. Page refresh karo.';
+      return;
+    }
     var h = '<div class="tm-in"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Team admin</h2><button class="tm-b2" data-tact="close">Close</button></div>';
     if (editing) {
       var p = editing;
@@ -141,7 +148,7 @@
         '<div class="tm-acts"><button class="btn" data-tact="save" style="margin:0">Save</button><button class="tm-b2" data-tact="rmphoto">Photo hatao</button><button class="tm-b2" data-tact="cancel">Cancel</button></div>' +
         (formMsg ? '<div class="tm-msg">' + esc(formMsg) + '</div>' : '') + '</div>';
     } else {
-      h += '<button class="btn" data-tact="add" style="margin:0 0 8px">+ Add person</button>';
+      h += '<button class="btn" data-tact="add" style="margin:0 0 8px">+ Add person</button> <button class="tm-b2" data-tact="mv">Math Video</button>';
       all().sort(function (a, b) { return String(a.group).localeCompare(String(b.group)) || (a.order || 0) - (b.order || 0); }).forEach(function (p) {
         h += '<div class="tm-row">' + av(p) + '<div class="tm-t"><b>' + esc(p.name) + '</b><span>' + (p.group === 'faculty' ? 'Faculty' : 'Developer') + ' · ' + esc(p.role) + '</span></div>' +
           '<button class="tm-b2" data-tact="edit" data-id="' + esc(p.id) + '">Edit</button> <button class="tm-b2" data-tact="del" data-id="' + esc(p.id) + '">Delete</button></div>';
@@ -167,6 +174,8 @@
     var a = b.dataset.tact, id = b.dataset.id;
     if (a === 'pin') listen();
     else if (a === 'close') closeAdmin();
+    else if (a === 'mv') { mvMode = true; paint(); }
+    else if (a === 'mvback') { mvMode = false; paint(); }
     else if (a === 'add') { editing = { id: '', group: 'faculty', name: '', role: '', bio: '', order: 1, photo: '' }; pendingPhoto = null; formMsg = ''; paint(); }
     else if (a === 'edit') { editing = Object.assign({}, all().filter(function (x) { return x.id === id; })[0]); pendingPhoto = null; formMsg = ''; paint(); }
     else if (a === 'cancel') { editing = null; formMsg = ''; pendingPhoto = null; paint(); }

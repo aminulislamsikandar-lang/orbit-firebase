@@ -3,7 +3,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithPopup, signInWithRedirect, GoogleAuthProvider, signOut }
   from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs }
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, documentId }
   from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -33,6 +33,17 @@ async function loadPeople() {
 }
 
 window.CLOUD = {
+  // Maths video plans (collection mathVideos, doc id = question code). Read: signed-in. Write: admin only (firestore.rules).
+  mathVideo: {
+    async get(code) { const s = await getDoc(doc(db, 'mathVideos', code)); return s.exists() ? s.data() : null; },
+    set(code, plan) { return setDoc(doc(db, 'mathVideos', code), JSON.parse(JSON.stringify(plan))); },
+    del(code) { return deleteDoc(doc(db, 'mathVideos', code)); },
+    async list() { const s = await getDocs(collection(db, 'mathVideos')); const a = []; s.forEach(d => a.push(d.id)); return a; },
+    async byPrefix(prefix) {
+      const q = query(collection(db, 'mathVideos'), where(documentId(), '>=', prefix), where(documentId(), '<', prefix + '\uf8ff'));
+      const s = await getDocs(q); const m = {}; s.forEach(d => { m[d.id] = d.data(); }); return m;
+    }
+  },
   // Faculty / Developer people. Writes only work for the admin Google account (see firestore.rules).
   savePerson(p) { return setDoc(doc(db, 'people', p.id), JSON.parse(JSON.stringify(p))); },
   deletePerson(id, tombstone) { return tombstone ? setDoc(doc(db, 'people', id), tombstone) : deleteDoc(doc(db, 'people', id)); },
