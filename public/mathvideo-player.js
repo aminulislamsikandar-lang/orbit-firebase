@@ -188,14 +188,14 @@
     for (var k in MV) if (k === base || k.indexOf(base + "-") === 0) out.push(k);
     return out.sort();
   }
-  function btnsHTML(q) {
+  function itemsHTML(q) {
     var codes = codesFor(q); if (!codes.length) return "";
     var base = window.MathVideo.makeCode(mvCtx(q).f);
     var esc2 = function (s) { return String(s).replace(/[&<>"']/g, function (ch) { return { "&": "&amp;", "<": "&lt;", '"': "&quot;", "'": "&#39;", ">": "&gt;" }[ch]; }); };
-    return '<div class="chips" role="group" aria-label="Maths video">' + codes.map(function (c) {
+    return codes.map(function (c) {
       var part = c === base ? "" : c.slice(base.length + 1);
-      return '<button class="chip" data-act="mv" data-code="' + esc2(c) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Video' + (part ? " (" + esc2(part) + ")" : "") + "</button>";
-    }).join("") + "</div>";
+      return '<button class="qmi" role="menuitem" data-act="mv" data-code="' + esc2(c) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>Video' + (part ? " (" + esc2(part) + ")" : "") + "</span></button>";
+    }).join("");
   }
   function load() {
     try {
@@ -224,13 +224,18 @@
     window.draw = function () { var r = _draw.apply(this, arguments); load(); return r; };
     window.qHTML = function (q) {
       var h = _q.apply(this, arguments);
-      try { var b = btnsHTML(q); if (b) h = h.replace(/<\/div>\s*$/, b + "</div>"); } catch (e) {}
+      try {                                            // videos 3-dot menu me: menu khula ho tabhi items judte hain
+        var m = h.indexOf('class="qmenu"');
+        if (m >= 0) { var e = h.indexOf("</div>", m), it = itemsHTML(q); if (e > m && it) h = h.slice(0, e) + it + h.slice(e); }
+      } catch (e) {}
       return h;
     };
     window.addEventListener("online", function () { RETRY = 0; load(); });
     document.addEventListener("click", function (e) {
       var b = e.target.closest && e.target.closest('[data-act="mv"]'); if (!b) return;
-      var p = MV[b.dataset.code]; if (p) open(p);
+      var p = MV[b.dataset.code]; if (!p) return;
+      try { var card = b.closest("[data-qid]"); if (card && typeof ui === "function") { ui(card.dataset.qid).qm = false; draw(); } } catch (x) {}
+      open(p);
     });
   }
 })(typeof window !== "undefined" ? window : globalThis);
