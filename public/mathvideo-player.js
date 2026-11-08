@@ -106,27 +106,118 @@
     if (g.speechSynthesis) g.speechSynthesis.addEventListener("voiceschanged", vch);
     var vt1 = setTimeout(fillVoices, 2000), vt2 = setTimeout(fillVoices, 5000);
 
+    /* ---------- number line + pen/arrow cues ----------
+       anim.numberline = { min, max, dots:[{v, label?, color?}] }   (static, hamesha dikhta hai)
+       anim.cues = [ {point:{line, word}} | {point:{value}} | {hop:{from,to}} | {dot:{v, label?, color?}} ]
+       Cues step ki awaaz ke dauran barabar gap se chalte hain (pen word/number par jaata hai). */
+    var NLY = 310, textEls = [], ctimers = [], NL = null, statG = null, dynG = null, pen = null, penShape = null, penPlaced = false, mark = null, curStep = null;
+    function clearCues() { ctimers.forEach(clearTimeout); ctimers = []; }
+    function colorOf(c) { return { red: "#d74747", green: "#168653", blue: "#2f6fdb", orange: "#e08a00" }[c] || "#2f6fdb"; }
+    function nx(v) { return 50 + (v - NL.min) / (NL.max - NL.min) * 500; }
+    function drawNL(nl) {
+      var gr = svg("g", { style: "color:var(--tx,#111)" });
+      gr.appendChild(svg("line", { x1: 24, y1: NLY, x2: 576, y2: NLY, stroke: "currentColor", "stroke-width": 3 }));
+      gr.appendChild(svg("polygon", { points: "576," + NLY + " 566," + (NLY - 6) + " 566," + (NLY + 6), fill: "currentColor" }));
+      gr.appendChild(svg("polygon", { points: "24," + NLY + " 34," + (NLY - 6) + " 34," + (NLY + 6), fill: "currentColor" }));
+      for (var v = nl.min; v <= nl.max; v++) {
+        var x = nx(v);
+        gr.appendChild(svg("line", { x1: x, y1: NLY - 8, x2: x, y2: NLY + 8, stroke: "currentColor", "stroke-width": v === 0 ? 3 : 2 }));
+        gr.appendChild(svg("text", { x: x, y: NLY + 34, "text-anchor": "middle", "font-size": 18, "font-family": "system-ui,Segoe UI,sans-serif", fill: "currentColor", style: v === 0 ? "font-weight:700" : "" }, String(v)));
+      }
+      return gr;
+    }
+    function addDot(d, fade) {
+      if (!NL || typeof d.v !== "number") return;
+      var c = svg("circle", { cx: nx(d.v), cy: NLY, r: 8, fill: colorOf(d.color), stroke: "#fff", "stroke-width": 1.5 });
+      if (fade) { c.style.opacity = "0"; c.style.transition = "opacity .4s"; }
+      dynG.appendChild(c);
+      if (d.label) dynG.appendChild(svg("text", { x: nx(d.v), y: NLY - 18, "text-anchor": "middle", "font-size": 18, "font-weight": "700", fill: colorOf(d.color), "font-family": "system-ui,sans-serif" }, d.label));
+      if (fade) setTimeout(function () { c.style.opacity = "1"; }, 20);
+    }
+    function resetDyn() {
+      while (dynG && dynG.firstChild) dynG.removeChild(dynG.firstChild);
+      mark = null; penPlaced = false; if (pen) pen.style.opacity = "0";
+      if (NL && curStep && curStep.anim.numberline.dots) curStep.anim.numberline.dots.forEach(function (d) { addDot(d, false); });
+    }
+    function movePen(x, y, flip) {
+      penShape.setAttribute("transform", flip ? "scale(1,-1)" : "");
+      if (!penPlaced) { pen.style.transition = "none"; pen.style.transform = "translate(" + x + "px," + y + "px)"; void pen.getBoundingClientRect(); pen.style.transition = "transform .7s ease, opacity .3s"; penPlaced = true; }
+      else pen.style.transform = "translate(" + x + "px," + y + "px)";
+      pen.style.opacity = "1";
+    }
+    function wordBox(j, word) {
+      var line = (curStep.anim.lines || [])[j]; if (line === undefined) return null;
+      var idx = word ? line.indexOf(word) : 0, len = word ? word.length : line.length; if (idx < 0) return null;
+      var lh = layout.lh, fs = layout.fs, y = 56 + j * lh, x0, x1, el = textEls[j];
+      try { x0 = el.getStartPositionOfChar(idx).x; x1 = el.getEndPositionOfChar(idx + len - 1).x; } catch (e) { x0 = NaN; }
+      if (!isFinite(x0) || !isFinite(x1) || x1 <= x0) { x0 = 36 + idx * fs * 0.55; x1 = x0 + len * fs * 0.55; }
+      return { x0: x0, x1: x1, y: y };
+    }
+    function pointAt(p) {
+      if (mark && mark.parentNode) mark.parentNode.removeChild(mark); mark = null;
+      if (p.value !== undefined) {
+        if (!NL) return;
+        var x = nx(p.value);
+        mark = svg("circle", { cx: x, cy: NLY, r: 14, fill: "none", stroke: "#d74747", "stroke-width": 3 }); dynG.appendChild(mark);
+        movePen(x, NLY - 16, true);
+      } else {
+        var w = wordBox(p.line, p.word); if (!w) return;
+        mark = svg("rect", { x: w.x0 - 3, y: w.y + 6, width: 0, height: 4, rx: 2, fill: "#d74747" }); mark.style.transition = "width .5s ease";
+        dynG.appendChild(mark); setTimeout(function () { mark.setAttribute("width", Math.max(8, w.x1 - w.x0 + 6)); }, 30);
+        movePen((w.x0 + w.x1) / 2, w.y + 10, false);
+      }
+    }
+    function hop(h) {
+      if (!NL) return;
+      var x1 = nx(h.from), x2 = nx(h.to), ya = NLY - 14, cy = ya - Math.max(40, Math.abs(x2 - x1) * 0.35);
+      var path = svg("path", { d: "M" + x1 + " " + ya + " Q" + ((x1 + x2) / 2) + " " + cy + " " + x2 + " " + ya, fill: "none", stroke: "#d74747", "stroke-width": 3, "stroke-linecap": "round" });
+      dynG.appendChild(path);
+      var L = 0; try { L = path.getTotalLength(); } catch (e) {}
+      if (L) { path.style.strokeDasharray = L; path.style.strokeDashoffset = L; void path.getBoundingClientRect(); path.style.transition = "stroke-dashoffset .9s ease"; path.style.strokeDashoffset = "0"; }
+      setTimeout(function () { dynG.appendChild(svg("polygon", { points: x2 + "," + (ya + 2) + " " + (x2 - 6) + "," + (ya - 11) + " " + (x2 + 6) + "," + (ya - 11), fill: "#d74747" })); }, 850);
+      movePen(x2, NLY - 16, true);
+    }
+    function doCue(c) {
+      try { if (c.dot) addDot(c.dot, true); else if (c.hop) hop(c.hop); else if (c.point) pointAt(c.point); } catch (e) {}
+    }
+    function runCues(totalMs) {
+      clearCues(); resetDyn();
+      var cues = (curStep && curStep.anim.cues) || []; if (!cues.length) return;
+      var gap = Math.max(1000, (totalMs - 500) / cues.length);
+      cues.forEach(function (c, k) { ctimers.push(setTimeout(function () { doCue(c); }, 500 + k * gap)); });
+    }
+
     function show(i) {
-      st.i = i; var s = plan.steps[i];
+      st.i = i; var s = plan.steps[i]; curStep = s; clearCues();
       while (board.firstChild) board.removeChild(board.firstChild);
       var lines = (s.anim && s.anim.lines) || [], hl = (s.anim && s.anim.highlight) || [];
-      var lh = Math.min(52, Math.floor(330 / Math.max(lines.length, 1)));
+      NL = (s.anim && s.anim.numberline) || null;
+      var lh = Math.min(52, Math.floor((NL ? 190 : 330) / Math.max(lines.length, 1)));
       var fs = Math.max(18, Math.min(30, lh - 12));
+      layout = { lh: lh, fs: fs }; textEls = [];
       lines.forEach(function (ln, j) {
         var y = 56 + j * lh;
         if (hl.indexOf(j) >= 0) board.appendChild(svg("rect", { x: 20, y: y - fs, width: 560, height: fs + 12, rx: 8, fill: "#f5c542", opacity: "0.35" }));
         var t = svg("text", { x: 36, y: y, "font-size": fs, "font-family": "system-ui,Segoe UI,sans-serif", fill: "currentColor", opacity: "0", style: "color:var(--tx,#111);transition:opacity .5s" }, ln);
-        board.appendChild(t);
+        board.appendChild(t); textEls.push(t);
         setTimeout(function () { t.setAttribute("opacity", "1"); }, 250 + j * 450);
       });
       if (s.anim && s.anim.note) board.appendChild(svg("text", { x: 36, y: 400, "font-size": 20, fill: "#168653", "font-family": "system-ui,sans-serif", style: "font-weight:600" }, s.anim.note));
+      if (NL) board.appendChild(drawNL(NL));
+      dynG = svg("g", {}); board.appendChild(dynG);
+      pen = svg("g", { style: "opacity:0;pointer-events:none;transition:transform .7s ease,opacity .3s" });
+      penShape = svg("g", {});
+      penShape.appendChild(svg("polygon", { points: "0,0 9,3 44,38 38,44 3,9", fill: "#f5a623", stroke: "#8a5a00", "stroke-width": 1.5, "stroke-linejoin": "round" }));
+      penShape.appendChild(svg("polygon", { points: "0,0 9,3 3,9", fill: "#333" }));
+      pen.appendChild(penShape); board.appendChild(pen);
       cap.textContent = (s.cap && (s.cap[lang] || s.cap.en)) || "";
       prog.textContent = "Step " + (i + 1) + " / " + plan.steps.length;
       bPrev.disabled = i === 0; bNext.disabled = i === plan.steps.length - 1;
       bPlay.textContent = st.playing ? "Pause" : "Play";
+      runCues(((s.anim && s.anim.cues) || []).length * 1800 + 500);
     }
 
-    function stopSpeech() { st.token++; clearTimeout(st.timer); if (g.speechSynthesis) g.speechSynthesis.cancel(); }
+    function stopSpeech() { st.token++; clearTimeout(st.timer); clearCues(); if (g.speechSynthesis) g.speechSynthesis.cancel(); }
     function advance(tok) {
       if (tok !== st.token || !st.playing) return;
       st.timer = setTimeout(function () {
@@ -139,6 +230,7 @@
       var useHi = lang !== "en", text = useHi ? (s.say && s.say.hi) : (s.say && s.say.en);
       var hv = hiVoices(), hasHi = hv.length > 0;
       if (useHi && !hasHi) text = (s.say && s.say.en) || text;   // Hindi voice nahi: English line, English accent
+      runCues(Math.max(3000, (text || "").length * 72));       // pen/arrow cues awaaz ki length me failte hain
       if (!g.speechSynthesis || !text) { st.timer = setTimeout(function () { advance(tok); }, 3500); return; }
       g.speechSynthesis.cancel();
       var u = new SpeechSynthesisUtterance(text);
@@ -160,7 +252,7 @@
     }
     function key(e) { if (e.key === "Escape") close(); }
     closeBtn.onclick = close; document.addEventListener("keydown", key);
-    cur = { root: root, key: key, stop: function () { st.playing = false; stopSpeech(); clearTimeout(vt1); clearTimeout(vt2); if (g.speechSynthesis) g.speechSynthesis.removeEventListener("voiceschanged", vch); } };
+    cur = { root: root, key: key, stop: function () { st.playing = false; stopSpeech(); clearCues(); clearTimeout(vt1); clearTimeout(vt2); if (g.speechSynthesis) g.speechSynthesis.removeEventListener("voiceschanged", vch); } };
     show(0);
   }
 

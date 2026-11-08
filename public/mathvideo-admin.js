@@ -82,6 +82,51 @@
     keys.forEach(function (k) { str(o[k], max, path + "." + k, errors, true); });
   }
 
+  /* ---------- number line + cues (optional) ---------- */
+  var COLORS = ["red", "green", "blue", "orange"];
+  function isInt(n) { return typeof n === "number" && Number.isInteger(n); }
+  function checkDot(d, nl, path, errors) {
+    if (!d || typeof d !== "object" || !isInt(d.v) || d.v < nl.min || d.v > nl.max) { errors.push(path + ": v number line ke andar ka integer hona chahiye"); return; }
+    if (d.label !== undefined) str(d.label, 10, path + ".label", errors, false);
+    if (d.color !== undefined && COLORS.indexOf(d.color) < 0) errors.push(path + ".color: " + COLORS.join(" / ") + " me se ek");
+  }
+  function checkVisuals(a, p, errors) {
+    var nl = a.numberline, ok = false;
+    if (nl !== undefined) {
+      if (!nl || typeof nl !== "object" || !isInt(nl.min) || !isInt(nl.max) || nl.min >= nl.max || nl.max - nl.min > 20 || nl.min < -20 || nl.max > 20)
+        errors.push(p + ".numberline: min < max, dono integer, range 20 se zyada nahi");
+      else {
+        ok = true;
+        if (Array.isArray(a.lines) && a.lines.length > 4) errors.push(p + ": number line ke saath lines 4 se zyada nahi");
+        if (nl.dots !== undefined) {
+          if (!Array.isArray(nl.dots) || nl.dots.length > 12) errors.push(p + ".numberline.dots: list (max 12) chahiye");
+          else nl.dots.forEach(function (d, i) { checkDot(d, nl, p + ".numberline.dots[" + (i + 1) + "]", errors); });
+        }
+      }
+    }
+    if (a.cues === undefined) return;
+    if (!Array.isArray(a.cues) || a.cues.length > 8) { errors.push(p + ".cues: list chahiye (max 8)"); return; }
+    a.cues.forEach(function (c, i) {
+      var cp = p + ".cues[" + (i + 1) + "]", keys = c && typeof c === "object" ? Object.keys(c) : [];
+      if (keys.length !== 1 || ["point", "hop", "dot"].indexOf(keys[0]) < 0) { errors.push(cp + ": sirf ek key: point, hop ya dot"); return; }
+      var k = keys[0], v = c[k];
+      if (!v || typeof v !== "object") { errors.push(cp + "." + k + ": object chahiye"); return; }
+      if (k === "point" && v.value === undefined) {
+        var ln = Array.isArray(a.lines) ? a.lines[v.line] : undefined;
+        if (!isInt(v.line) || typeof ln !== "string") { errors.push(cp + ".point.line: valid line index chahiye"); return; }
+        if (v.word !== undefined) {
+          if (typeof v.word !== "string" || !v.word || v.word.length > 40) errors.push(cp + ".point.word: chhota text chahiye");
+          else if (ln.indexOf(v.word) < 0) errors.push(cp + ".point.word: \"" + v.word + "\" line " + (v.line + 1) + " me nahi mila");
+        }
+        return;
+      }
+      if (!ok) { errors.push(cp + ": ye cue number line maangta hai (anim.numberline add karo)"); return; }
+      if (k === "point") { if (!isInt(v.value) || v.value < nl.min || v.value > nl.max) errors.push(cp + ".point.value: number line ke andar ka integer chahiye"); }
+      else if (k === "hop") { [v.from, v.to].forEach(function (x) { if (!isInt(x) || x < nl.min || x > nl.max) errors.push(cp + ".hop: from/to number line ke andar ke integers hone chahiye"); }); }
+      else checkDot(v, nl, cp + ".dot", errors);
+    });
+  }
+
   function validate(plan) {
     var errors = [], warnings = [];
     if (!plan || typeof plan !== "object" || Array.isArray(plan)) return { errors: ["Plan ek JSON object hona chahiye"], warnings: warnings };
@@ -108,6 +153,7 @@
       if (!Array.isArray(a.highlight) || a.highlight.some(function (n) { return !Number.isInteger(n) || n < 0 || n >= (a.lines || []).length; }))
         errors.push(p + ".anim.highlight: valid line index chahiye");
       if (a.note !== undefined) str(a.note, MAX_NOTE, p + ".anim.note", errors, false);
+      checkVisuals(a, p + ".anim", errors);
     });
     if (!errors.length) {
       var skipped = checkMath(plan, errors);
