@@ -800,7 +800,7 @@ async function copy(id){
 // ---- Get Video: student pastes a maths question, AI makes a whiteboard video, the admin approves it for everyone ----
 const GV={text:'',busy:false,msg:'',err:false,plan:null,eng:(()=>{try{const v=+localStorage.getItem('gvEng');return v>=0&&v<=3&&localStorage.getItem('gvEng')!==null?v:2}catch(e){return 2}})()};
 const GV_ENG=[['Bilkul kam','Sab kuch Hindi mein: numbers bhi Hindi words mein (ऋण तीन गुणा चार).'],['Kam','Sirf plus, minus, into, equal to English mein; baaki Hindi.'],['Normal','Maths words English mein, baaki Hindi (jaisa pehle tha).'],['Zyada','Zyada se zyada English words: number line, jump, step, answer...']];
-const gvNorm=t=>String(t||'').toLowerCase().replace(/[−–—]/g,'-').replace(/[×✕·]/g,'*').replace(/÷/g,'/').replace(/\s+/g,'');
+const gvNorm=t=>window.MathVideo&&window.MathVideo.normQuestion?window.MathVideo.normQuestion(t):String(t||'').toLowerCase().replace(/[−–—]/g,'-').replace(/[×✕·]/g,'*').replace(/÷/g,'/').replace(/\s+/g,'');   // same normaliser as the server (superscripts / ** become ^N), so the library key matches
 async function gvKey(t,eng){            // same question (spaces/case ignored) + same English-words level -> same 40-character id (level 2 keeps the old id)
  const n=gvNorm(t)+(eng===2||eng==null?'':'|e'+eng);
  try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(n));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,40)}
@@ -808,7 +808,7 @@ async function gvKey(t,eng){            // same question (spaces/case ignored) +
 }
 function gvHTML(){
  return `<h1 style="font-size:26px;margin-top:14px">Get Video</h1>
- <p class="mut" style="margin-top:6px">Maths ka question yahan paste karo (Class 6-8, numbers wala). Whiteboard video ban jayega.</p>
+ <p class="mut" style="margin-top:6px">Maths ka question yahan paste karo (Class 6-8, numbers wala; powers aur True/False bhi chalenge). Whiteboard video ban jayega.</p>
  <textarea id="gvText" maxlength="400" rows="4" placeholder="Jaise: (−8) + 5 ka answer batao" aria-label="Maths question" style="width:100%;margin-top:12px;padding:12px;border:1px solid var(--ln);border-radius:12px;background:var(--card);color:var(--tx);font:inherit;resize:vertical">${esc(GV.text)}</textarea>
  <div style="margin-top:12px"><label for="gvEng" style="font-weight:600">English words: <span id="gvEngLab">${GV_ENG[GV.eng][0]}</span></label>
  <input id="gvEng" type="range" min="0" max="3" step="1" value="${GV.eng}" ${GV.busy?'disabled':''} aria-label="Video mein English words kitne hon" style="width:100%;accent-color:var(--ac,#e4572e);margin-top:6px">

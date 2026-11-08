@@ -9,20 +9,77 @@
   var CODE_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,119}$/;     // jaise nashibali-class7-englishmedium-math-EX:1.1-Q1-i
   var UNSAFE = /<\s*\/?\s*[a-z!]|https?:|www\.|javascript:|data:text|\bon[a-z]+\s*=/i;
 
-  /* ---------- tiny arithmetic parser (no eval) ---------- */
-  function calc(s) {
-    var t = s.replace(/[−–—]/g, "-").replace(/[×✕·]/g, "*").replace(/÷/g, "/")
-             .replace(/,/g, "").replace(/\s+/g, "");
-    if (!t || !/^[0-9+\-*\/().]+$/.test(t) || !/[0-9]/.test(t)) return null;
-    var i = 0, bad = false;
+  /* ---------- superscripts / question normaliser (shared by server.js and index.html, so the cache key is the same everywhere) ---------- */
+  var SUP_DIGITS = "\u2070\u00B9\u00B2\u00B3\u2074\u2075\u2076\u2077\u2078\u2079";
+  var SUP_RUN = /[\u2070\u00B9\u00B2\u00B3\u2074-\u2079\u207A\u207B]+/g;
+  // "(-1)\u00B9\u2070\u00B3" -> "(-1)^103"   (a run of superscript digits / signs becomes ^N)
+  function supToCaret(s) {
+    return String(s).replace(SUP_RUN, function (run) {
+      var out = "";
+      for (var i = 0; i < run.length; i++) {
+        var c = run.charAt(i), d = SUP_DIGITS.indexOf(c);
+        out += d >= 0 ? String(d) : c === "\u207B" ? "-" : "";     // superscript plus is dropped
+      }
+      return "^" + out;
+    });
+  }
+  /* Question text as the AI should see it: superscripts, ** and the flattened "(-1)103" case become ^N.
+     Spaces and letters are kept. Flattened digits are converted ONLY for a NEGATIVE bracketed integer written
+     directly before 1-3 digits, like "(-1)103": nobody writes a product that way, so it is unambiguous.
+     "(2)3" or "5 3" are left alone (the AI may say unsupported). */
+  function prepQuestion(s) {
+    var t = supToCaret(s == null ? "" : s).replace(/[\u2212\u2013\u2014]/g, "-").replace(/\*\*/g, "^");
+    return t.replace(/(^|[\s(+\-*\/\u00D7\u00F7=,;:])(\(\s*-\s*\d+\s*\))(\d{1,3})(?=$|[\s)+\-*\/\u00D7\u00F7=,;:?!])/g,
+      function (m, a, b, c) { return a + b + "^" + c; });
+  }
+  // Cache key. For questions without superscripts, "**" or flattened powers it is identical to the old key.
+  function normQuestion(s) {
+    return prepQuestion(s).toLowerCase().replace(/[\u00D7\u2715\u00B7]/g, "*").replace(/\u00F7/g, "/").replace(/\s+/g, "");
+  }
+
+  /* ---------- tiny arithmetic parser (no eval) ----------
+     calcEx(text) -> null (not a pure number line) | { v: number } | { err: "reason" }.
+     Supports + - * / brackets and ^ (power). Power rules: base = whole number or a bracketed whole-number expression,
+     exponent = plain whole number 0..200 (no sign, no bracket, no a^b^c chain), 0^0 is an error, |result| at most 15 digits.
+     Powers are computed exactly with BigInt. Precedence: ^ binds tighter than unary minus, so (-2)^2 = 4 but -2^2 = -4. */
+  var MAX_EXP = 200, MAX_DIGITS = 15;
+  function calcEx(s) {
+    var t = supToCaret(s).replace(/[\u2212\u2013\u2014]/g, "-").replace(/[\u00D7\u2715\u00B7]/g, "*").replace(/\u00F7/g, "/")
+             .replace(/\*\*/g, "^").replace(/,/g, "").replace(/\s+/g, "");
+    if (!t || !/^[0-9+\-*\/().^]+$/.test(t) || !/[0-9]/.test(t)) return null;
+    var i = 0, bad = false, err = null;
+    function fail(m) { if (!err) err = m; bad = true; return 0; }
     function num() {
       var m = /^\d+(\.\d+)?/.exec(t.slice(i));
       if (!m) { bad = true; return 0; }
       i += m[0].length; return parseFloat(m[0]);
     }
+    function power(base, lit) {              // t[i] is the "^"
+      i++;
+      if (lit !== null && lit.indexOf(".") >= 0) return fail("power ka base integer hona chahiye (" + lit + ")");
+      if (!isFinite(base) || Math.floor(base) !== base) return fail("power ka base integer hona chahiye");
+      if (t[i] === "-" || t[i] === "+") return fail("negative ya sign wala exponent allowed nahi (exponent 0 se " + MAX_EXP + " tak)");
+      var m = /^\d+/.exec(t.slice(i));
+      if (!m) return fail("exponent seedha non-negative number hona chahiye, jaise ^3 (bracket ya expression nahi)");
+      i += m[0].length;
+      if (t[i] === ".") return fail("exponent decimal nahi ho sakta");
+      if (t[i] === "^") return fail("power ke upar power (a^b^c) allowed nahi, bracket lagao");
+      var e = m[0].length > 4 ? Infinity : parseInt(m[0], 10);
+      if (e > MAX_EXP) return fail("exponent " + MAX_EXP + " se zyada nahi ho sakta (mila: " + m[0] + ")");
+      if (Math.abs(base) > 1e15) return fail("power ka base bahut bada hai");
+      if (e === 0 && base === 0) return fail("0^0 undefined hai");
+      var b = BigInt(base), r = BigInt(1);
+      for (var k = 0; k < e; k++) r = r * b;
+      var digits = (r < BigInt(0) ? -r : r).toString().length;
+      if (digits > MAX_DIGITS) return fail("power ka result bahut bada hai (" + digits + " digits, max " + MAX_DIGITS + ")");
+      return Number(r);
+    }
     function prim() {
-      if (t[i] === "(") { i++; var v = expr(); if (t[i] === ")") i++; else bad = true; return v; }
-      return num();
+      var v, lit = null;
+      if (t[i] === "(") { i++; v = expr(); if (t[i] === ")") i++; else bad = true; }
+      else { var st = i; v = num(); lit = t.slice(st, i); }
+      if (t[i] === "^") return power(v, lit);
+      return v;
     }
     function unary() {
       if (t[i] === "-") { i++; return -unary(); }
@@ -40,32 +97,104 @@
       return v;
     }
     var out = expr();
-    return (bad || i !== t.length || !isFinite(out)) ? null : out;
+    if (err) return { err: err };
+    return (bad || i !== t.length || !isFinite(out)) ? null : { v: out };
   }
+  function calc(s) { var r = calcEx(s); return r && r.err === undefined ? r.v : null; }
   function same(a, b) { return Math.abs(a - b) < 1e-9 * Math.max(1, Math.abs(a), Math.abs(b)); }
 
-  /* Har pure-number line check: "=" se shuru hone wali line pehli line ke barabar honi chahiye,
-     aur line ke andar "A = B" ho to dono side barabar. Final note "Answer: N" bhi match hona chahiye. */
-  function checkMath(plan, errors) {
-    var ref = null, last = null, skipped = 0;
+  /* ---------- True / False questions ----------
+     "(-1)^103 + (-1)^104 = 0; True or False ?"  ->  { tf:true, left:0, right:0 }
+     The statement is the numeric chain around the first "=". Only "<expression> = <expression>" is understood. */
+  var TF_RE = /\btrue\b[\s\S]*\bfalse\b|\bfalse\b[\s\S]*\btrue\b|\u0938\u0939\u0940\s*(?:\u092F\u093E|\/|\u0905\u0925\u0935\u093E)\s*(?:\u0917\u093C?\u0932\u0924|\u095A\u0932\u0924)|\bsahi\s*(?:ya|\/)\s*galat\b/i;
+  function isTrueFalse(q) { return TF_RE.test(prepQuestion(q)); }
+  var NUMCH = /[0-9+\-*\/().^\u00D7\u00F7\u00B7\u2715\s]/;
+  function parseTF(q) {
+    var t = prepQuestion(q);
+    if (!TF_RE.test(t)) return { tf: false };
+    t = t.replace(/^\s*(?:q(?:uestion)?\.?\s*)?(?:\d+\s*[.)]\s+|\(?[ivx]+\)\s*|\(?[a-d]\)\s*)/i, "")   // leading "1. " / "(i)" / "(a)"
+         .replace(/(\d),(?=\d{3}(?!\d))/g, "$1")                                                // 1,000 -> 1000
+         .replace(/([\d)])\s*[xX]\s*(?=[\d(])/g, "$1 \u00D7 ");                                  // "3 x 4" -> "3 \u00D7 4"
+    var eq = t.indexOf("=");
+    if (eq < 0) return { tf: true, left: null, right: null };
+    var a = eq, b = eq + 1;
+    while (a > 0 && NUMCH.test(t.charAt(a - 1))) a--;
+    while (b < t.length && NUMCH.test(t.charAt(b))) b++;
+    var left = t.slice(a, eq), right = t.slice(eq + 1, b);
+    if (right.indexOf("=") >= 0) return { tf: true, left: null, right: null };
+    function open(x) { return (x.match(/\(/g) || []).length - (x.match(/\)/g) || []).length; }
+    left = left.trim(); right = right.trim();
+    while (open(left) < 0) left = left.replace(/^\s*\)\s*/, "");         // leftover ")" of "(ii)" in front
+    right = right.replace(/[\s.+\-*\/^]+$/, "");
+    while (open(right) > 0) right = right.replace(/\s*\(\s*$/, "");       // leftover "(" of the next "(ii)"
+    var L = calcEx(left), R = calcEx(right);
+    if (L && L.err) return { tf: true, left: null, right: null, err: L.err };
+    if (R && R.err) return { tf: true, left: null, right: null, err: R.err };
+    if (!L || !R) return { tf: true, left: null, right: null };
+    return { tf: true, left: L.v, right: R.v, text: left + " = " + right };
+  }
+
+  /* Har pure-number line check: \"=\" se shuru hone wali line pehli line ke barabar honi chahiye,
+     aur line ke andar \"A = B\" ho to dono side barabar. Final note \"Answer: N\" bhi match hona chahiye.
+     True/False plan (note \"Answer: True/False\" ya question True/False): pehli line pura statement \"X = N\" ho sakti hai;
+     X ki value hi reference hai, N claimed value hai. Code khud truth nikalta hai aur note se milata hai.
+     qinfo = parseTF(question) ya null. Returns number of lines it could not check. */
+  function checkMath(plan, errors, warnings, qinfo) {
+    var lastNote = plan.steps[plan.steps.length - 1].anim.note || "";
+    var tfNote = /answer\s*:\s*(true|false)\b/i.exec(lastNote);
+    var tf = !!(tfNote || (qinfo && qinfo.tf));
+    var ref = null, claim = null, skipped = 0;
     plan.steps.forEach(function (st, si) {
       st.anim.lines.forEach(function (ln, li) {
-        var s = ln.trim(), lead = s.charAt(0) === "=";
-        var vals = s.replace(/^=/, "").split("=").map(calc);
-        if (vals.some(function (v) { return v === null; })) { skipped++; return; }
-        for (var k = 1; k < vals.length; k++)
-          if (!same(vals[0], vals[k])) errors.push("Step " + (si + 1) + ", line " + (li + 1) + ": dono side barabar nahi (" + ln + ")");
+        var s = ln.trim(), lead = s.charAt(0) === "=", where = "Step " + (si + 1) + ", line " + (li + 1) + ": ";
+        var parts = s.replace(/^=/, "").split("=").map(calcEx);
+        if (parts.some(function (r) { return r === null; })) { skipped++; return; }
+        var bad = null;
+        parts.forEach(function (r) { if (r.err && !bad) bad = r.err; });
+        if (bad) { errors.push(where + bad + " (" + ln + ")"); return; }
+        var vals = parts.map(function (r) { return r.v; });
+        if (tf && ref === null && !lead && vals.length === 2) { ref = vals[0]; claim = vals[1]; return; }   // the statement itself
+        for (var k = 1; k < vals.length; k++) {
+          if (same(vals[0], vals[k])) continue;
+          if (tf && claim !== null && same(vals[0], ref) && same(vals[k], claim)) continue;                 // comparison line like "0 = 5"
+          errors.push(where + "dono side barabar nahi (" + ln + ")");
+        }
         if (ref === null && !lead) ref = vals[0];
         else if (lead && ref !== null && !same(ref, vals[0]))
-          errors.push("Step " + (si + 1) + ", line " + (li + 1) + ": value badal gayi (" + ln + ") — expected " + ref);
-        last = vals[0];
+          errors.push(where + "value badal gayi (" + ln + ") — expected " + ref);
       });
     });
-    var lastNote = plan.steps[plan.steps.length - 1].anim.note || "";
-    var m = /answer\s*:\s*([-−]?[\d,]+(?:\.\d+)?)/i.exec(lastNote);
-    if (m && ref !== null) {
-      var ans = parseFloat(m[1].replace("−", "-").replace(/,/g, ""));
-      if (!same(ans, ref)) errors.push("Last note ka answer (" + m[1] + ") working se match nahi karta (" + ref + ")");
+    if (!tf) {
+      var m = /answer\s*:\s*([-−]?[\d,]+(?:\.\d+)?)/i.exec(lastNote);
+      if (m && ref !== null) {
+        var ans = parseFloat(m[1].replace("−", "-").replace(/,/g, ""));
+        if (!same(ans, ref)) errors.push("Last note ka answer (" + m[1] + ") working se match nahi karta (" + ref + ")");
+      }
+      return skipped;
+    }
+    /* ---- True / False ---- */
+    if (ref === null) { errors.push("True/False: pehli line me aisi expression chahiye jiska maths verify ho sake (jaise \"(-1)^103 + (-1)^104 = 0\")"); return skipped; }
+    if (qinfo && qinfo.tf && qinfo.left !== null) {
+      if (!same(ref, qinfo.left)) errors.push("Plan ka left side (" + ref + ") question ke left side (" + qinfo.left + ") se match nahi karta");
+      if (claim !== null && !same(claim, qinfo.right)) errors.push("Plan ka claimed number (" + claim + ") question ke number (" + qinfo.right + ") se match nahi karta");
+      claim = qinfo.right;
+    }
+    if (claim === null) warnings.push("True/False: claimed number (= ke baad wala) verify nahi ho paya — pehli line me poora statement likho");
+    if (!tfNote) { errors.push("True/False question: last step ke note me \"Answer: True\" ya \"Answer: False\" likho"); return skipped; }
+    var said = tfNote[1].toLowerCase() === "true";
+    if (claim !== null) {
+      var truth = same(ref, claim);
+      if (said !== truth) errors.push("Note \"Answer: " + tfNote[1] + "\" galat hai: left side = " + ref + ", claimed number = " + claim + ", isliye statement " + (truth ? "True" : "False") + " hai");
+      var br = /answer\s*:\s*(?:true|false)\s*\(([^)]*)\)/i.exec(lastNote);
+      if (br) {
+        var seg = br[1].split(/(\u2260|!=|=)/);
+        if (seg.length === 3) {
+          var va = calcEx(seg[0]), vb = calcEx(seg[2]), eqOp = seg[1] === "=";
+          if (va && vb && va.err === undefined && vb.err === undefined &&
+              (!same(va.v, ref) || !same(vb.v, claim) || eqOp !== truth))
+            errors.push("Note ke bracket (" + br[1].trim() + ") me left value " + ref + " aur claimed number " + claim + " ka sahi comparison nahi hai");
+        }
+      }
     }
     return skipped;
   }
@@ -127,7 +256,9 @@
     });
   }
 
-  function validate(plan) {
+  /* opts.question (optional): the student's original question. Used for True/False plans: the validator compares the plan
+     with the statement in the question, so the AI cannot change the numbers. */
+  function validate(plan, opts) {
     var errors = [], warnings = [];
     if (!plan || typeof plan !== "object" || Array.isArray(plan)) return { errors: ["Plan ek JSON object hona chahiye"], warnings: warnings };
     str(plan.id, 80, "id", errors, true);
@@ -156,7 +287,8 @@
       checkVisuals(a, p + ".anim", errors);
     });
     if (!errors.length) {
-      var skipped = checkMath(plan, errors);
+      var qinfo = opts && opts.question ? parseTF(opts.question) : null;
+      var skipped = checkMath(plan, errors, warnings, qinfo);
       if (skipped) warnings.push(skipped + " line(s) me letters/algebra hai — code unka maths verify nahi kar paya, khud dekh lo");
     }
     return { errors: errors, warnings: warnings };
@@ -313,6 +445,6 @@
     }
   }
 
-  var api = { validate: validate, mountAdmin: mountAdmin, makeCode: makeCode, calc: calc, CODE_RE: CODE_RE };
+  var api = { validate: validate, mountAdmin: mountAdmin, makeCode: makeCode, calc: calc, calcEx: calcEx, prepQuestion: prepQuestion, normQuestion: normQuestion, parseTF: parseTF, isTrueFalse: isTrueFalse, CODE_RE: CODE_RE };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else g.MathVideo = api;
 })(typeof window !== "undefined" ? window : globalThis);

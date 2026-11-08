@@ -914,7 +914,8 @@ const MV_ADMINS = (process.env.MV_ADMIN_EMAILS || 'aminulislamsikandar@gmail.com
 const MV_DAILY = Math.max(1, parseInt(process.env.MV_DAILY || '5', 10) || 5);   // AI videos per student per day (admin: unlimited)
 const MV_CACHE = new Map();    // normalized question -> plan (or {unsupported}), so the same question never calls the AI twice
 const MV_USE = new Map();      // uid -> {day, n}
-const mvNorm = t => String(t || '').toLowerCase().replace(/[−–—]/g, '-').replace(/[×✕·]/g, '*').replace(/÷/g, '/').replace(/\s+/g, '');
+// Cache key. MV.normQuestion also turns superscripts (x¹⁰³), ** and a flattened "(-1)103" into ^N, so every spelling of a power gives the same key.
+const mvNorm = t => MV.normQuestion(t);
 const mvDay = () => new Date().toISOString().slice(0, 10);
 
 // One complete, validated example. It is serialised into the prompt, so the AI always sees valid JSON in our exact format.
@@ -953,6 +954,49 @@ const MV_EXAMPLE = {
         cues: [{ point: { line: 0, word: '-3' } }, { point: { line: 1, word: '4' } }] } }
   ]
 };
+
+// Second complete example, used automatically when the question has a power (^, a superscript, "power", "square", "cube"). Checked by the same validator in tests.
+const MV_EXAMPLE_POW = {
+  "id": "ask", "type": "equation", "version": 1, "title": {"en": "(-1)^103 + (-1)^104 with powers", "hg": "(-1)^103 + (-1)^104 powers ke saath", "hi": "(-1)^103 + (-1)^104 पावर के साथ"},
+  "steps": [
+    {"cap": {"en": "Question: (-1)^103 + (-1)^104", "hg": "Question: (-1)^103 + (-1)^104", "hi": "क्वेश्चन: (-1)^103 + (-1)^104"}, "say": {"en": "Our question has two powers: minus one to the power 103, plus minus one to the power 104.", "hi": "हमारे क्वेश्चन में दो पावर हैं: माइनस वन की पावर वन हंड्रेड थ्री, प्लस माइनस वन की पावर वन हंड्रेड फोर।"}, "anim": {"lines": ["(-1)^103 + (-1)^104"], "highlight": [0], "cues": [{"point": {"line": 0, "word": "(-1)^103"}}, {"point": {"line": 0, "word": "(-1)^104"}}]}},
+    {"cap": {"en": "A power means repeated multiplication", "hg": "Power ka matlab: baar-baar guna karna", "hi": "पावर का मतलब: बार-बार गुणा करना"}, "say": {"en": "A power tells us how many times to multiply a number by itself. Two to the power three is two times two times two.", "hi": "पावर बताती है कि नंबर को खुद से कितनी बार गुणा करना है। टू की पावर थ्री मतलब टू इनटू टू इनटू टू।"}, "anim": {"lines": ["2^3 = 2 × 2 × 2", "2^3 = 8"], "highlight": [1], "cues": [{"point": {"line": 0, "word": "2 × 2 × 2"}}, {"point": {"line": 1, "word": "= 8"}}]}},
+    {"cap": {"en": "Negative base: the sign keeps changing", "hg": "Negative base: sign badalta rehta hai", "hi": "नेगेटिव बेस: साइन बदलता रहता है"}, "say": {"en": "Look at the pattern. Odd powers of minus one give minus one. Even powers give plus one.", "hi": "पैटर्न देखो। माइनस वन की ऑड पावर का आंसर माइनस वन आता है। ईवन पावर का आंसर प्लस वन आता है।"}, "anim": {"lines": ["(-1)^1 = -1", "(-1)^2 = 1", "(-1)^3 = -1", "(-1)^4 = 1"], "highlight": [], "cues": [{"point": {"line": 0, "word": "= -1"}}, {"point": {"line": 1, "word": "= 1"}}, {"point": {"line": 2, "word": "= -1"}}, {"point": {"line": 3, "word": "= 1"}}]}},
+    {"cap": {"en": "103 is odd, so (-1)^103 = -1", "hg": "103 odd hai, isliye (-1)^103 = -1", "hi": "103 ऑड है, इसलिए (-1)^103 = -1"}, "say": {"en": "One hundred three is an odd number, so the answer is negative.", "hi": "वन हंड्रेड थ्री ऑड नंबर है, इसलिए आंसर नेगेटिव आएगा।"}, "anim": {"lines": ["103 = 2 × 51 + 1", "(-1)^103 = -1"], "highlight": [1], "cues": [{"point": {"line": 0, "word": "+ 1"}}, {"point": {"line": 1, "word": "= -1"}}]}},
+    {"cap": {"en": "104 is even, so (-1)^104 = 1", "hg": "104 even hai, isliye (-1)^104 = 1", "hi": "104 ईवन है, इसलिए (-1)^104 = 1"}, "say": {"en": "One hundred four is an even number, so the answer is positive.", "hi": "वन हंड्रेड फोर ईवन नंबर है, इसलिए आंसर पॉज़िटिव आएगा।"}, "anim": {"lines": ["104 = 2 × 52", "(-1)^104 = 1"], "highlight": [1], "cues": [{"point": {"line": 0, "word": "2 × 52"}}, {"point": {"line": 1, "word": "= 1"}}]}},
+    {"cap": {"en": "Put the values back in the question", "hg": "Values question me wapas rakho", "hi": "वैल्यू क्वेश्चन में वापस रखो"}, "say": {"en": "Now we put the two values back. The question becomes minus one plus one.", "hi": "अब हम दोनों वैल्यू वापस रखते हैं। क्वेश्चन बन जाता है माइनस वन प्लस वन।"}, "anim": {"lines": ["(-1)^103 + (-1)^104", "= -1 + 1"], "highlight": [1], "numberline": {"min": -3, "max": 3, "dots": [{"v": -1, "label": "-1", "color": "red"}, {"v": 1, "label": "1", "color": "blue"}]}, "cues": [{"point": {"line": 1, "word": "-1"}}, {"point": {"value": -1}}, {"point": {"value": 1}}]}},
+    {"cap": {"en": "Add: -1 + 1 = 0", "hg": "Jodo: -1 + 1 = 0", "hi": "जोड़ो: -1 + 1 = 0"}, "say": {"en": "Start at minus one. Plus one means one step to the right. We land on zero.", "hi": "माइनस वन से स्टार्ट करो। प्लस वन का मतलब एक स्टेप राइट। हम ज़ीरो पर पहुँचते हैं।"}, "anim": {"lines": ["(-1)^103 + (-1)^104", "= -1 + 1", "= 0"], "highlight": [2], "numberline": {"min": -3, "max": 3, "dots": [{"v": -1, "label": "-1", "color": "red"}, {"v": 1, "label": "1", "color": "blue"}]}, "cues": [{"point": {"value": -1}}, {"hop": {"from": -1, "to": 0}}, {"dot": {"v": 0, "label": "0", "color": "green"}}]}},
+    {"cap": {"en": "Answer: (-1)^103 + (-1)^104 = 0", "hg": "Answer: (-1)^103 + (-1)^104 = 0", "hi": "आंसर: (-1)^103 + (-1)^104 = 0"}, "say": {"en": "So the answer is zero. Remember: an odd power of minus one is minus one, an even power is plus one.", "hi": "तो आंसर है ज़ीरो। याद रखो, माइनस वन की ऑड पावर माइनस वन और ईवन पावर प्लस वन होती है।"}, "anim": {"lines": ["(-1)^103 + (-1)^104 = 0", "(-1)^5 + (-1)^8 = -1 + 1 = 0"], "highlight": [0], "note": "Answer: 0", "cues": [{"point": {"line": 0, "word": "= 0"}}, {"point": {"line": 1, "word": "-1 + 1"}}]}}
+  ]
+};
+
+// The last two steps of a True/False video for (-1)^103 + (-1)^104 = 0 (they are identical to steps 8 and 9 of integers-power-true-false-demo.json).
+const MV_TF_SHORT = [
+  {"cap": {"en": "Compare: left side 0, right side 0", "hg": "Compare: left side 0, right side 0", "hi": "कंपेयर: लेफ्ट साइड 0, राइट साइड 0"}, "say": {"en": "The left side is zero. The right side is also zero. Both sides are equal.", "hi": "लेफ्ट साइड ज़ीरो है। राइट साइड भी ज़ीरो है। दोनों साइड इक्वल हैं।"}, "anim": {"lines": ["(-1)^103 + (-1)^104", "= 0", "0 = 0"], "highlight": [2], "cues": [{"point": {"line": 1, "word": "= 0"}}, {"point": {"line": 2}}]}},
+  {"cap": {"en": "Answer: True", "hg": "Answer: True", "hi": "आंसर: ट्रू"}, "say": {"en": "Left side equals right side, so the statement is True. Remember: odd power of -1 is -1, even power is 1.", "hi": "लेफ्ट और राइट साइड इक्वल हैं, इसलिए स्टेटमेंट ट्रू है। याद रखो, माइनस वन की ऑड पावर माइनस वन और ईवन पावर वन होती है।"}, "anim": {"lines": ["(-1)^103 + (-1)^104 = 0"], "highlight": [0], "note": "Answer: True (0 = 0)", "cues": [{"point": {"line": 0, "word": "= 0"}}]}}
+];
+
+const MV_POW_RE = /\^|\bpowers?\b|\bsquares?\b|\bcubes?\b|\u0918\u093E\u0924/i;   // ^ (superscripts are already turned into ^ by prepQuestion)
+const mvKind = raw => ({ pow: MV_POW_RE.test(raw), tf: MV.isTrueFalse(raw) });
+
+const MV_POWER_RECIPE = `POWERS (this question has a power)
+- Powers ARE supported here. Write a power with ^ in the board lines, for example (-1)^103 or 2^5. The base is a whole number or a bracketed whole-number expression. The exponent is a plain whole number from 0 to 200. Every result must have at most 15 digits.
+- NOT supported (reply with the unsupported JSON): negative or decimal exponents, roots (square root, cube root), letters or variables, a power of a fraction.
+- Brackets matter: (-2)^2 = 4 but -2^2 = -4. Always write a negative base in brackets. Never write a chain like 2^3^2.
+- Follow this recipe instead of the number-line steps in HOW MUCH DETAIL (6 to 9 steps): (1) the question; (2) what a power means: repeated multiplication, with a small line such as 2^3 = 2 × 2 × 2 = 8; (3) the pattern for a negative base: odd power gives a negative answer, even power gives a positive answer (show it as complete equation lines like (-1)^1 = -1, (-1)^2 = 1); (4) each power on its OWN line (for a big exponent show why it is odd or even: 103 = 2 × 51 + 1); (5) put the values back and add / subtract / multiply the terms; (6) the final answer with a one-line rule to remember.
+- Do NOT demand a number line. Skip it when the numbers are big. For powers of -1 you may use one (min -3, max 3) to show -1 and 1; otherwise use lines and pen cues only.
+- Every board line is still checked by a program, so each line must be pure numeric (digits, + - × ÷ ^ and brackets, "=" at the start of working lines).
+- The example above shows the style for (-1)^103 + (-1)^104.`;
+
+const MV_TF_RECIPE = `TRUE / FALSE (the question is a statement like "<expression> = <number>; True or False?")
+- Make the video for the statement. Steps: (1) the question; (2) the plan: work out the left side, then compare it with the number on the right; (3 to 6) work out the left side step by step (use the POWERS recipe if it has powers); (7) compare the left value with the number on the right side; (8) the final answer with the reason in the spoken text. 7 to 9 steps in total.
+- The FIRST board line of step 1 is the full statement exactly as asked, for example "(-1)^103 + (-1)^104 = 0". It may be False; this is the only line where the two sides may differ (later steps may repeat it). Working lines are the left-side expression on its own, then lines that start with "=" and have the same value as the left side. Never write the right-side number into a line that starts with "=" unless it equals the left value.
+- In the compare step you may add a line like "0 = 5" (left value = claimed number).
+- The note of the LAST step is exactly "Answer: True" or "Answer: False", optionally with a short bracket: "Answer: True (0 = 0)" or "Answer: False (0 ≠ 5)" (left value, then the claimed number). The program works out the truth itself and rejects a wrong note, so calculate carefully.
+- Explain the answer in all three languages (cap.en, cap.hg, cap.hi, say.en, say.hi) in the last two steps: left equals right means True, left not equal to right means False.
+- Example of the LAST TWO steps for (-1)^103 + (-1)^104 = 0 (answer True):
+${JSON.stringify(MV_TF_SHORT)}
+- If the statement uses <, >, ≠, letters or several statements, reply unsupported (for several statements do the first one only).`;
 
 const MV_SYSTEM = `You make detailed whiteboard maths videos for school students (Class 6-8, Assam, textbook style). A student pastes ONE textbook question; you reply with the video plan.
 Reply with ONE JSON object only. No markdown, no commentary.
@@ -1001,9 +1045,26 @@ const MV_STYLE = {
   1: '- Spoken style (say.hi) and the Hindi caption (cap.hi): ENGLISH WORDS LEVEL = FEW. The ONLY English words allowed are plus, minus, into, equal to, written in Devanagari as प्लस, माइनस, इनटू, इक्वल टू. Everything else is Hindi: numbers as Hindi number-words (शून्य, एक, दो, तीन, चार, पाँच, छह, सात, आठ, नौ, दस, ग्यारह, बारह...), and उत्तर, प्रश्न, कदम, छलाँग, दाईं ओर, बाईं ओर, संख्या रेखा, चिह्न, धन, ऋण (for "positive" and "negative"). Example: "माइनस आठ प्लस पाँच इक्वल टू माइनस तीन।". Never use digits in say.hi. In cap.hg (Roman) keep English only for plus, minus, into, equal to; other words in Hindi (Roman letters).',
   3: '- Spoken style (say.hi) and the Hindi caption (cap.hi): ENGLISH WORDS LEVEL = MANY. Use English for as many words as possible, spelled in Devanagari: प्लस, माइनस, इनटू, डिवाइडेड बाय, इक्वल टू, नंबर लाइन, जंप, स्टेप, आंसर, क्वेश्चन, पॉज़िटिव, नेगेटिव, राइट, लेफ्ट, साइन, चेक, रूल, एक्साम्पल. Write every number as an English number-word in Devanagari (वन, टू, थ्री, फोर, फाइव, सिक्स, सेवन, एट, नाइन, टेन, इलेवन, ट्वेल्व...). Only small joining words stay Hindi (का, की, है, हम, को, में, से, तो, और, पर). Example: "माइनस एट प्लस फाइव इक्वल टू माइनस थ्री। नंबर लाइन पर राइट जंप करो।". Never use digits in say.hi. In cap.hg (Roman) use plenty of English words too.'
 };
-function mvSystem(level) {
-  if (level === 2 || !MV_STYLE[level] || !MV_STYLE_LINE) return MV_SYSTEM;
-  return MV_SYSTEM.replace(MV_STYLE_LINE, MV_STYLE[level]) +
+// Base prompt for this question: the normal prompt, or (for powers / True-False) the same prompt with the power example and the recipes.
+function mvBase(raw) {
+  const k = mvKind(raw || '');
+  if (!k.pow && !k.tf) return MV_SYSTEM;
+  let sys = MV_SYSTEM;
+  if (k.pow) {
+    sys = sys.split(JSON.stringify(MV_EXAMPLE)).join(JSON.stringify(MV_EXAMPLE_POW))
+      .replace('(for (-8) + 5)', () => '(for (-1)^103 + (-1)^104)')
+      .replace('(only numbers, + - × ÷ and brackets; no letters or variables, no geometry figures)', () => '(only numbers, + - × ÷, powers written with ^ and brackets; no letters or variables, no roots, no geometry figures)')
+      .replace('Use + - × ÷ and brackets only;', () => 'Use + - × ÷, ^ (power) and brackets only;');
+    sys += '\n\n' + MV_POWER_RECIPE;
+  }
+  if (k.tf) sys += '\n\n' + MV_TF_RECIPE;
+  return sys;
+}
+// The English-words override works the same for every variant: only the "Spoken style" line is swapped.
+function mvSystem(level, raw) {
+  const base = mvBase(raw);
+  if (level === 2 || !MV_STYLE[level] || !MV_STYLE_LINE) return base;
+  return base.replace(MV_STYLE_LINE, () => MV_STYLE[level]) +
     '\nIMPORTANT: the example above shows the NORMAL English-words level in say.hi and cap.hi. For this reply follow the ENGLISH WORDS LEVEL rule in FIELDS instead of the example\'s word choice, but keep the example\'s structure, depth, number of steps and cues.';
 }
 
@@ -1013,7 +1074,7 @@ function mvQuality(plan, raw) {
   if (steps.length < 6) out.push('Too short. Make the video more detailed: 6 to 9 steps, one idea per step (you gave ' + steps.length + ').');
   const nums = (raw.match(/\d+/g) || []).map(Number);
   const mult = /[×*÷\/]|[\d)]\s*x\s*[\d(]/i.test(raw);
-  const reach = nums.length ? (mult ? nums.reduce((a, b) => a * b, 1) : nums.reduce((a, b) => a + b, 0)) : 99;
+  const reach = nums.length && !MV_POW_RE.test(raw) ? (mult ? nums.reduce((a, b) => a * b, 1) : nums.reduce((a, b) => a + b, 0)) : 99;   // power questions: never demand a number line (exponents are not multiplied like numbers)
   const nl = steps.filter(s => s.anim && s.anim.numberline).length;
   const cues = steps.reduce((n, s) => n + (((s.anim || {}).cues) || []).length, 0);
   if (reach <= 20 && nl < 3) out.push('Use the number line (anim.numberline) in at least 3 steps; the numbers are small enough.');
@@ -1021,6 +1082,21 @@ function mvQuality(plan, raw) {
   return out;
 }
 
+
+// Questions we do not try: several options to choose from, or a True/False statement whose numbers are out of range. Answered at once, no AI call.
+const MV_OPT_CUE = /\b(?:circle|choose|select|tick|underline|odd one)\b|whose answer|which (?:one|of)|correct (?:option|answer)|\boptions?\b|\u091A\u0941\u0928\u094B|\u0918\u0947\u0930\u094B|\u0935\u093F\u0915\u0932\u094D\u092A/i;
+function mvMultiOption(t) {
+  if (!MV_OPT_CUE.test(t)) return false;
+  if (['a', 'b', 'c'].every(l => new RegExp('(^|[\\s,;:])\\(?' + l + '\\)', 'i').test(t))) return true;   // (a) ... (b) ... (c)
+  const list = t.slice(t.lastIndexOf(':') + 1).split(/\s*(?:;|,|\bor\b)\s*/i).filter(x => /\d/.test(x));  // "...: 40 / 8, 15 - 10, 3 x 2"
+  return t.includes(':') && list.length >= 3;
+}
+function mvPrecheck(raw) {
+  if (mvMultiOption(raw)) return 'Isme kai options hain, abhi ek-ek option alag question ke roop mein daalo. Jaise: 40 ÷ 8 ka answer batao.';
+  const q = MV.parseTF(raw);
+  if (q.tf && q.err) return 'Is statement mein power ya number bahut bada hai (exponent 0 se 200 tak, result 15 digits tak, exponent negative nahi). Chhota number daalo.';
+  return '';
+}
 
 function mvParse(text) {
   let t = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
@@ -1031,12 +1107,15 @@ function mvParse(text) {
 
 app.post('/api/mathvideo/generate', async (req, res) => {
   if (!guardAI(req, res)) return;
-  const raw = String((req.body || {}).text || '').replace(/\s+/g, ' ').trim();
-  if (raw.length < 8) return res.status(400).json({ error: 'Question thoda aur likho (kam se kam 8 akshar).' });
-  if (raw.length > 400) return res.status(400).json({ error: 'Question bahut lamba hai. 400 akshar tak likho.' });
+  const typed = String((req.body || {}).text || '').replace(/\s+/g, ' ').trim();
+  if (typed.length < 8) return res.status(400).json({ error: 'Question thoda aur likho (kam se kam 8 akshar).' });
+  if (typed.length > 400) return res.status(400).json({ error: 'Question bahut lamba hai. 400 akshar tak likho.' });
+  const raw = MV.prepQuestion(typed);   // superscripts / ** / flattened powers -> ^N, before the AI sees the question
   const eng = [0, 1, 2, 3].includes(+(req.body || {}).eng) ? +(req.body || {}).eng : 2;   // English-words level from the student
   const norm = mvNorm(raw) + (eng === 2 ? '' : '|e' + eng);
   if (MV_CACHE.has(norm)) return res.json({ ...MV_CACHE.get(norm), cached: true });
+  const pre = mvPrecheck(raw);
+  if (pre) { const out = { unsupported: true, reason: pre }; MV_CACHE.set(norm, out); return res.json(out); }   // cached per normalised question + level, like every unsupported answer
 
   const email = String((req.user && req.user.email) || '').toLowerCase();
   if (!MV_ADMINS.includes(email)) {
@@ -1058,7 +1137,7 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(mvSystem(eng), prompt, { json: true, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
+    const r = await gemini(mvSystem(eng, raw), prompt, { json: true, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
@@ -1068,7 +1147,7 @@ app.post('/api/mathvideo/generate', async (req, res) => {
       return res.json(out);
     }
     plan.id = 'ask-' + crypto.createHash('sha1').update(norm).digest('hex').slice(0, 20);
-    const v = MV.validate(plan);
+    const v = MV.validate(plan, { question: raw });   // True/False plans are checked against the statement in the question
     // soft problems: spoken-Hindi issues and too-short / motionless plans. Retry if there is time; the last try is always accepted.
     const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : mvQuality(plan, raw));
     if (!v.errors.length) best = plan;                                    // newest valid plan = fallback if a later try fails

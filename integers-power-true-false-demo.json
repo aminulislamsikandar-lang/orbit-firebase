@@ -1,0 +1,357 @@
+{
+  "id": "integers-power-true-false-demo",
+  "type": "equation",
+  "version": 1,
+  "title": {
+    "en": "(-1)^103 + (-1)^104 = 0: True or False?",
+    "hg": "(-1)^103 + (-1)^104 = 0: True ya False?",
+    "hi": "(-1)^103 + (-1)^104 = 0: ट्रू या फॉल्स?"
+  },
+  "steps": [
+    {
+      "cap": {
+        "en": "Question: (-1)^103 + (-1)^104 = 0. True or False?",
+        "hg": "Question: (-1)^103 + (-1)^104 = 0. True ya False?",
+        "hi": "क्वेश्चन: (-1)^103 + (-1)^104 = 0. ट्रू या फॉल्स?"
+      },
+      "say": {
+        "en": "We must check: (-1)^103 + (-1)^104 = 0. Is this True or False?",
+        "hi": "हमें चेक करना है कि माइनस वन की पावर वन हंड्रेड थ्री प्लस माइनस वन की पावर वन हंड्रेड फोर, ज़ीरो के बराबर है या नहीं।"
+      },
+      "anim": {
+        "lines": [
+          "(-1)^103 + (-1)^104 = 0"
+        ],
+        "highlight": [
+          0
+        ],
+        "cues": [
+          {
+            "point": {
+              "line": 0,
+              "word": "(-1)^103"
+            }
+          },
+          {
+            "point": {
+              "line": 0,
+              "word": "(-1)^104"
+            }
+          },
+          {
+            "point": {
+              "line": 0,
+              "word": "= 0"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "cap": {
+        "en": "Plan: work out the left side, then compare",
+        "hg": "Plan: left side nikalo, phir right side se compare karo",
+        "hi": "प्लान: लेफ्ट साइड निकालो, फिर राइट साइड से कंपेयर करो"
+      },
+      "say": {
+        "en": "First we find the value of the left side. Then we compare it with the number on the right side.",
+        "hi": "पहले हम लेफ्ट साइड की वैल्यू निकालते हैं। फिर उसे राइट साइड के नंबर से कंपेयर करते हैं।"
+      },
+      "anim": {
+        "lines": [
+          "(-1)^103 + (-1)^104 = 0"
+        ],
+        "highlight": [],
+        "cues": [
+          {
+            "point": {
+              "line": 0,
+              "word": "(-1)^103 + (-1)^104"
+            }
+          },
+          {
+            "point": {
+              "line": 0,
+              "word": "= 0"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "cap": {
+        "en": "A power means repeated multiplication",
+        "hg": "Power ka matlab: baar-baar guna karna",
+        "hi": "पावर का मतलब: बार-बार गुणा करना"
+      },
+      "say": {
+        "en": "A power tells us how many times to multiply the number by itself. Here minus one is multiplied three times.",
+        "hi": "पावर बताती है कि नंबर को खुद से कितनी बार गुणा करना है। यहाँ माइनस वन को थ्री टाइम्स गुणा किया है।"
+      },
+      "anim": {
+        "lines": [
+          "(-1)^3 = (-1) × (-1) × (-1)",
+          "(-1)^3 = -1"
+        ],
+        "highlight": [
+          1
+        ],
+        "cues": [
+          {
+            "point": {
+              "line": 0,
+              "word": "(-1) × (-1) × (-1)"
+            }
+          },
+          {
+            "point": {
+              "line": 1,
+              "word": "= -1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "cap": {
+        "en": "103 is odd, so (-1)^103 = -1",
+        "hg": "103 odd hai, isliye (-1)^103 = -1",
+        "hi": "103 ऑड है, इसलिए (-1)^103 = -1"
+      },
+      "say": {
+        "en": "One hundred three is an odd number. A negative base with an odd power gives a negative answer.",
+        "hi": "वन हंड्रेड थ्री ऑड नंबर है। नेगेटिव बेस की ऑड पावर का आंसर नेगेटिव आता है।"
+      },
+      "anim": {
+        "lines": [
+          "103 = 2 × 51 + 1",
+          "(-1)^103 = -1"
+        ],
+        "highlight": [
+          1
+        ],
+        "cues": [
+          {
+            "point": {
+              "line": 0,
+              "word": "+ 1"
+            }
+          },
+          {
+            "point": {
+              "line": 1,
+              "word": "= -1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "cap": {
+        "en": "104 is even, so (-1)^104 = 1",
+        "hg": "104 even hai, isliye (-1)^104 = 1",
+        "hi": "104 ईवन है, इसलिए (-1)^104 = 1"
+      },
+      "say": {
+        "en": "One hundred four is an even number. A negative base with an even power gives a positive answer.",
+        "hi": "वन हंड्रेड फोर ईवन नंबर है। नेगेटिव बेस की ईवन पावर का आंसर पॉज़िटिव आता है।"
+      },
+      "anim": {
+        "lines": [
+          "104 = 2 × 52",
+          "(-1)^104 = 1"
+        ],
+        "highlight": [
+          1
+        ],
+        "cues": [
+          {
+            "point": {
+              "line": 0,
+              "word": "2 × 52"
+            }
+          },
+          {
+            "point": {
+              "line": 1,
+              "word": "= 1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "cap": {
+        "en": "Put the values in the left side",
+        "hg": "Left side me values rakho",
+        "hi": "लेफ्ट साइड में वैल्यू रखो"
+      },
+      "say": {
+        "en": "Now the left side becomes minus one plus one. Both numbers are on the number line.",
+        "hi": "अब लेफ्ट साइड बन जाती है माइनस वन प्लस वन। दोनों नंबर नंबर लाइन पर हैं।"
+      },
+      "anim": {
+        "lines": [
+          "(-1)^103 + (-1)^104",
+          "= -1 + 1"
+        ],
+        "highlight": [
+          1
+        ],
+        "numberline": {
+          "min": -3,
+          "max": 3,
+          "dots": [
+            {
+              "v": -1,
+              "label": "-1",
+              "color": "red"
+            },
+            {
+              "v": 1,
+              "label": "1",
+              "color": "blue"
+            }
+          ]
+        },
+        "cues": [
+          {
+            "point": {
+              "line": 1,
+              "word": "-1"
+            }
+          },
+          {
+            "point": {
+              "value": -1
+            }
+          },
+          {
+            "point": {
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "cap": {
+        "en": "Add: -1 + 1 = 0",
+        "hg": "Jodo: -1 + 1 = 0",
+        "hi": "जोड़ो: -1 + 1 = 0"
+      },
+      "say": {
+        "en": "Start at minus one. Plus one means one step to the right. We land on zero.",
+        "hi": "माइनस वन से स्टार्ट करो। प्लस वन का मतलब एक स्टेप राइट। हम ज़ीरो पर पहुँचते हैं।"
+      },
+      "anim": {
+        "lines": [
+          "(-1)^103 + (-1)^104",
+          "= -1 + 1",
+          "= 0"
+        ],
+        "highlight": [
+          2
+        ],
+        "numberline": {
+          "min": -3,
+          "max": 3,
+          "dots": [
+            {
+              "v": -1,
+              "label": "-1",
+              "color": "red"
+            },
+            {
+              "v": 1,
+              "label": "1",
+              "color": "blue"
+            }
+          ]
+        },
+        "cues": [
+          {
+            "point": {
+              "value": -1
+            }
+          },
+          {
+            "hop": {
+              "from": -1,
+              "to": 0
+            }
+          },
+          {
+            "dot": {
+              "v": 0,
+              "label": "0",
+              "color": "green"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "cap": {
+        "en": "Compare: left side 0, right side 0",
+        "hg": "Compare: left side 0, right side 0",
+        "hi": "कंपेयर: लेफ्ट साइड 0, राइट साइड 0"
+      },
+      "say": {
+        "en": "The left side is zero. The right side is also zero. Both sides are equal.",
+        "hi": "लेफ्ट साइड ज़ीरो है। राइट साइड भी ज़ीरो है। दोनों साइड इक्वल हैं।"
+      },
+      "anim": {
+        "lines": [
+          "(-1)^103 + (-1)^104",
+          "= 0",
+          "0 = 0"
+        ],
+        "highlight": [
+          2
+        ],
+        "cues": [
+          {
+            "point": {
+              "line": 1,
+              "word": "= 0"
+            }
+          },
+          {
+            "point": {
+              "line": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "cap": {
+        "en": "Answer: True",
+        "hg": "Answer: True",
+        "hi": "आंसर: ट्रू"
+      },
+      "say": {
+        "en": "Left side equals right side, so the statement is True. Remember: odd power of -1 is -1, even power is 1.",
+        "hi": "लेफ्ट और राइट साइड इक्वल हैं, इसलिए स्टेटमेंट ट्रू है। याद रखो, माइनस वन की ऑड पावर माइनस वन और ईवन पावर वन होती है।"
+      },
+      "anim": {
+        "lines": [
+          "(-1)^103 + (-1)^104 = 0"
+        ],
+        "highlight": [
+          0
+        ],
+        "note": "Answer: True (0 = 0)",
+        "cues": [
+          {
+            "point": {
+              "line": 0,
+              "word": "= 0"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
