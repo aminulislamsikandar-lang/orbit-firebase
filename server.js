@@ -418,7 +418,7 @@ async function gemini(system, prompt, opts = {}) {
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-              signal: AbortSignal.timeout(Math.min(15000, left)),
+              signal: AbortSignal.timeout(Math.min(opts.reqMs || 15000, left)),   // per-request limit; long outputs (maths videos) pass a bigger reqMs
               body: JSON.stringify({
                 systemInstruction: { parts: [{ text: system }] },
                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -1046,7 +1046,7 @@ app.post('/api/mathvideo/generate', async (req, res) => {
     cur.n++; MV_USE.set(req.user.uid, cur);
   }
 
-  const t0 = Date.now(), TOTAL = 75000;
+  const t0 = Date.now(), TOTAL = 82000;
   let prompt = 'Question:\n"""\n' + raw + '\n"""', lastErrors = [], lastStatus = 0, best = null;
   const mvDone = (plan, how) => {
     const out = { plan };
@@ -1058,7 +1058,7 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(mvSystem(eng), prompt, { json: true, temperature: 0.2, maxTokens: 8192, budgetMs: Math.min(left, attempt === 1 ? 40000 : 30000) });
+    const r = await gemini(mvSystem(eng), prompt, { json: true, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
