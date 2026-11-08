@@ -179,9 +179,9 @@
     var st = { i: 0, playing: false, token: 0, timer: 0 };
     var lang = ls(LANG_KEY) || "hg";
     if (!LANGS.some(function (o) { return o[0] === lang; })) lang = "hg";
-    var eng = engFor(lang);
-    // caption / title: us language ka apna text ho to slider ke hisaab se English words adjust (hg ka Roman text aur English fallback jaisa hai waisa)
-    function lt(o) { var c = rcode(lang); return c && lang !== "hg" && o && o[lang] ? adjustEnglish(o[lang], c, eng) : tx(o, lang); }
+    // caption / title: exactly the text in the plan. No English-words slider in the player any more: the level is chosen on the
+    // Get Video page and only changes how the AI WRITES the text, so nothing is swapped at playback time.
+    function lt(o) { return tx(o, lang); }
 
     var root = el("div", { style: "position:fixed;inset:0;z-index:2000;background:var(--bg,#fff);color:var(--tx,#111);overflow:auto;padding:12px 14px 40px" });
     root.setAttribute("role", "dialog"); root.setAttribute("aria-modal", "true");
@@ -207,25 +207,13 @@
       var tn = document.createTextNode(label);
       return { wrap: el("label", { style: "font-size:12px;display:block" }, [tn, el("br"), s]), s: s, lab: tn };
     }
-    var langSel = sel("Language", function () { lang = langSel.s.value; ls(LANG_KEY, lang); title.textContent = lt(plan.title); syncEng(); fillVoices(); show(st.i); if (st.playing) { stopSpeech(); speak(); } });
+    var langSel = sel("Language", function () { lang = langSel.s.value; ls(LANG_KEY, lang); title.textContent = lt(plan.title); fillVoices(); show(st.i); if (st.playing) { stopSpeech(); speak(); } });
     LANGS.forEach(function (o) { langSel.s.appendChild(el("option", { value: o[0], text: o[1] })); });
     langSel.s.value = lang;
     function regionalCode() { return rcode(lang); }
     var voiceSel = sel("Voice", function () { var c = regionalCode(); if (c) ls(voiceKey(c), voiceSel.s.value); if (st.playing) { stopSpeech(); speak(); } });
-    var enSel = sel("English voice (numbers & words)", function () { ls(EN_KEY, enSel.s.value); if (st.playing) { stopSpeech(); speak(); } });
-    var engIn = el("input", { type: "range", min: "0", max: "3", step: "1", value: String(eng), style: "width:170px;display:block;margin:4px 0 0" });
-    var engLab = document.createTextNode("");
-    var engWrap = el("label", { style: "font-size:12px;display:block" }, [engLab, el("br"), engIn,
-      el("div", { style: "display:flex;justify-content:space-between;width:170px;font-size:11px;color:var(--mut,#666)" }, [el("span", { text: "Kam" }), el("span", { text: "Zyada" })])]);
-    function syncEng() { eng = engFor(lang); engIn.value = String(eng); engLab.nodeValue = "English words: " + ENG_NAMES[eng]; engWrap.style.display = rcode(lang) ? "" : "none"; }
-    engIn.oninput = function () {                                   // drag karte waqt label + caption turant badle
-      eng = +engIn.value; engLab.nodeValue = "English words: " + ENG_NAMES[eng];
-      var c = rcode(lang); if (c) ls("mvEng_" + c, String(eng));
-      title.textContent = lt(plan.title); cap.textContent = lt(plan.steps[st.i].cap);
-    };
-    engIn.onchange = function () { if (st.playing) { stopSpeech(); speak(); } };   // chhodne par awaaz naye level se dobara
-    var opts = el("div", { style: "display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:6px 0" }, [langSel.wrap, voiceSel.wrap, enSel.wrap, engWrap]);
-    syncEng();
+    var enSel = sel("English voice", function () { ls(EN_KEY, enSel.s.value); if (st.playing) { stopSpeech(); speak(); } });
+    var opts = el("div", { style: "display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:6px 0" }, [langSel.wrap, voiceSel.wrap, enSel.wrap]);
 
     [top, board, cap, bar, opts, msg, prog].forEach(function (n) { inner.appendChild(n); });
     root.appendChild(inner); document.body.appendChild(root);
@@ -253,7 +241,7 @@
         }
       } else voiceSel.wrap.style.display = "none";
       var ev = enVoices();
-      if (ev.length) {
+      if (ev.length && !code) {
         enSel.wrap.style.display = ""; fill(enSel, ev, EN_KEY);
         if (!ls(EN_KEY)) { var inn = ev.filter(function (v) { return /en-IN/i.test(v.lang); })[0]; if (inn) enSel.s.value = inn.name; }
       } else enSel.wrap.style.display = "none";
@@ -395,13 +383,13 @@
       text = code === "en" ? say.en : (say[code] || (code === "hi" ? say.en : ""));
       if (code !== "en" && !text) { code = "en"; text = say.en; }                 // is video me ye language nahi: English line
       text = text || "";
-      if (code !== "en") text = adjustEnglish(text, code, eng);                   // slider: kitne maths words English me
       runCues(Math.max(3000, text.length * 72));                                  // pen/arrow cues awaaz ki length me failte hain
-      var parts = splitRuns(text, code);
+      // ONE piece, ONE voice: the whole sentence is read by the language voice, so the voice never switches in the middle of a line
+      var parts = /\S/.test(text) ? [{ t: text.trim(), en: code === "en" }] : [];
       if (!g.speechSynthesis || !parts.length) { st.timer = setTimeout(function () { advance(tok); }, 3500); return; }
       g.speechSynthesis.cancel();
       var k = 0;
-      (function next() {                                                          // pieces ek ke baad ek: English phrase English voice me, baaki apni language me
+      (function next() {
         if (tok !== st.token) return;
         if (k >= parts.length) return advance(tok);
         var p = parts[k++], u = new SpeechSynthesisUtterance(p.t), v = voiceFor(p.en ? "en" : code);
