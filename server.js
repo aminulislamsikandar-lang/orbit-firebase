@@ -917,42 +917,110 @@ const MV_USE = new Map();      // uid -> {day, n}
 const mvNorm = t => String(t || '').toLowerCase().replace(/[−–—]/g, '-').replace(/[×✕·]/g, '*').replace(/÷/g, '/').replace(/\s+/g, '');
 const mvDay = () => new Date().toISOString().slice(0, 10);
 
-const MV_SYSTEM = `You make short whiteboard maths videos for school students (Class 6-8, Assam, textbook style).
+// One complete, validated example. It is serialised into the prompt, so the AI always sees valid JSON in our exact format.
+const MV_EXAMPLE = {
+  id: 'ask', type: 'equation', version: 1,
+  title: { en: '(-8) + 5 on the number line', hg: '(-8) + 5 number line par', hi: '(-8) + 5 नंबर लाइन पर' },
+  steps: [
+    { cap: { en: 'Question: (-8) + 5', hg: 'Question: (-8) + 5', hi: 'क्वेश्चन: (-8) + 5' },
+      say: { en: 'Our question is minus eight plus five.', hi: 'हमारा क्वेश्चन है, माइनस एट प्लस फाइव।' },
+      anim: { lines: ['(-8) + 5'], highlight: [0], cues: [{ point: { line: 0, word: '(-8)' } }, { point: { line: 0, word: '5' } }] } },
+    { cap: { en: 'Plus 5 means: move 5 steps to the right', hg: 'Plus 5 ka matlab: 5 step right (daayein) chalo', hi: 'प्लस 5 का मतलब: 5 स्टेप राइट चलो' },
+      say: { en: 'Plus five means, we move five steps to the right.', hi: 'प्लस फाइव का मतलब है, हम फाइव स्टेप राइट की तरफ चलते हैं।' },
+      anim: { lines: ['(-8) + 5'], highlight: [], cues: [{ point: { line: 0, word: '+ 5' } }] } },
+    { cap: { en: 'Draw the number line and mark -8', hg: 'Number line banao aur -8 mark karo', hi: 'नंबर लाइन बनाओ और -8 मार्क करो' },
+      say: { en: 'Now we draw a number line. We start at minus eight.', hi: 'अब हम नंबर लाइन बनाते हैं। हम माइनस एट से स्टार्ट करते हैं।' },
+      anim: { lines: ['(-8) + 5'], highlight: [],
+        numberline: { min: -10, max: 5, dots: [{ v: -8, label: '-8', color: 'red' }] },
+        cues: [{ point: { value: -8 } }] } },
+    { cap: { en: 'Jump 5 steps to the right', hg: 'Right taraf 5 step jump karo', hi: 'राइट की तरफ 5 स्टेप जंप करो' },
+      say: { en: 'We jump five steps to the right. We land on minus three.', hi: 'हम फाइव स्टेप राइट जंप करते हैं। हम माइनस थ्री पर पहुँचते हैं।' },
+      anim: { lines: ['(-8) + 5'], highlight: [],
+        numberline: { min: -10, max: 5, dots: [{ v: -8, label: '-8', color: 'red' }] },
+        cues: [{ hop: { from: -8, to: -3 } }, { dot: { v: -3, label: '-3', color: 'green' } }] } },
+    { cap: { en: 'Shortcut: subtract, keep the sign of the bigger number', hg: 'Shortcut: ghatao, bade number ka sign rakho', hi: 'शॉर्टकट: घटाओ, बड़े नंबर का साइन रखो' },
+      say: { en: 'Shortcut. Eight minus five is three. The bigger number has a minus sign, so the answer is negative.', hi: 'शॉर्टकट। एट माइनस फाइव इक्वल टू थ्री। बड़े नंबर पर माइनस है, तो आंसर नेगेटिव आएगा।' },
+      anim: { lines: ['(-8) + 5', '= -(8 - 5)', '= -3'], highlight: [1],
+        cues: [{ point: { line: 1, word: '8 - 5' } }, { point: { line: 2, word: '-3' } }] } },
+    { cap: { en: 'Check on the number line: we reached -3', hg: 'Number line par check: hum -3 par aaye', hi: 'नंबर लाइन पर चेक: हम -3 पर आए' },
+      say: { en: 'The number line also shows minus three. Both ways give the same answer.', hi: 'नंबर लाइन भी माइनस थ्री दिखाती है। दोनों तरीकों से सेम आंसर आता है।' },
+      anim: { lines: ['(-8) + 5', '= -3'], highlight: [1],
+        numberline: { min: -10, max: 5, dots: [{ v: -8, label: '-8', color: 'red' }, { v: -3, label: '-3', color: 'green' }] },
+        cues: [{ point: { line: 1, word: '-3' } }, { point: { value: -3 } }] } },
+    { cap: { en: 'Answer: (-8) + 5 = -3', hg: 'Answer: (-8) + 5 = -3', hi: 'आंसर: (-8) + 5 = -3' },
+      say: { en: 'So, minus eight plus five is equal to minus three. Remember: the bigger number decides the sign.', hi: 'तो, माइनस एट प्लस फाइव इक्वल टू माइनस थ्री। याद रखो, बड़ा नंबर साइन तय करता है।' },
+      anim: { lines: ['(-8) + 5 = -3', '(-2) + 6 = 4'], highlight: [0], note: 'Answer: -3',
+        cues: [{ point: { line: 0, word: '-3' } }, { point: { line: 1, word: '4' } }] } }
+  ]
+};
+
+const MV_SYSTEM = `You make detailed whiteboard maths videos for school students (Class 6-8, Assam, textbook style). A student pastes ONE textbook question; you reply with the video plan.
 Reply with ONE JSON object only. No markdown, no commentary.
 
 If the question is not a school maths question, or it cannot be solved with plain number arithmetic (only numbers, + - × ÷ and brackets; no letters or variables, no geometry figures), reply exactly:
 {"unsupported": true, "reason": "<one short Hinglish sentence in Roman letters>"}
+If the question has several parts (i), (ii)..., make the video for the first part only.
 
-Otherwise reply with a plan in this exact shape:
-{
- "id": "ask",
- "type": "equation",
- "version": 1,
- "title": {"en": "...", "hg": "...", "hi": "..."},
- "steps": [
-  {
-   "cap": {"en": "...", "hg": "...", "hi": "..."},
-   "say": {"en": "...", "hi": "..."},
-   "anim": {
-    "lines": ["(-8) + 5", "= -3"],
-    "highlight": [1],
-    "note": "Answer: -3",
-    "numberline": {"min": -10, "max": 5, "dots": [{"v": -8, "label": "-8", "color": "red"}]},
-    "cues": [{"hop": {"from": -8, "to": -3}}]
-   }
-  }
- ]
-}
-Meaning of the fields:
-- "en" = simple English, "hg" = Hinglish in Roman letters, "hi" = Hindi in Devanagari script. "say" is what is spoken aloud.
-- In "say.hi" write every number as Hindi words (no digits), for example ऋण आठ, पाँच.
-- Each cap/say/title text is at most 140 characters. Use 3 to 7 steps (never more than 12).
-- "lines": 1 to 6 short strings (each at most 60 characters) shown on the board, in order. highlight = zero-based indexes of the lines to emphasise.
-- Maths lines are checked by a program, so they must be pure numeric: first line is the expression, later lines start with "=" and must have exactly the same value. Use the symbols + - × ÷ and brackets. Do not put words, units or letters inside a maths line. Words belong in cap/say.
-- The last step's "note" must be "Answer: <number>" and match the working. If the question has several parts, make the video for the first part only.
-- "numberline" (optional): integers only, min and max between -20 and 20, at most 12 dots; colors red, green, blue or orange. With a number line use at most 4 lines.
-- "cues" (optional, at most 8): each cue has exactly one key. {"point": {"line": 0, "word": "text that appears in that line"}} or {"point": {"value": 3}} (number line), {"hop": {"from": -8, "to": -3}} (number line, integers inside min..max), {"dot": {"v": 2, "label": "2", "color": "green"}}.
+Otherwise reply with a plan in this exact shape. Here is one complete, valid example (for (-8) + 5). Copy its style, depth and level of detail:
+${JSON.stringify(MV_EXAMPLE)}
+
+FIELDS
+- "en" = simple English, "hg" = Hinglish in Roman letters, "hi" = Hindi in Devanagari. "say" is what is spoken aloud.
+- Spoken style (say.hi): friendly Hinglish written in Devanagari, using English words for maths: प्लस, माइनस, इनटू, इक्वल टू, क्वेश्चन, आंसर, जंप, स्टेप. Write every number as an English number-word in Devanagari (वन, टू, थ्री, फोर, फाइव, सिक्स, सेवन, एट, नाइन, टेन, इलेवन, ट्वेल्व...). Never use digits in say.hi. Say "क्वेश्चन", never "सवाल".
+- Each cap/say/title text is at most 140 characters. "say" = 1 or 2 short sentences.
+- "lines": 1 to 6 short strings (each at most 60 characters) shown on the board; with a number line use at most 4 lines. highlight = zero-based indexes of lines to emphasise (use [] if none).
+- Maths lines are checked by a program, so they must be pure numeric: first line is the expression, later working lines start with "=" and must have exactly the same value. Use + - × ÷ and brackets only; no words, units or letters in a line. Words belong in cap/say.
+- Put the final result in the LAST step: "note": "Answer: <number>", and it must match the working.
+
+HOW MUCH DETAIL (very important)
+- Use 6 to 9 steps, one idea per step: (1) the question, (2) what the operation means, (3) draw the number line and mark the start, (4) the jumps, (5) a shortcut or rule with a numeric working, (6) check on the number line, (7) the final answer with a one-line rule and a second similar example line.
+- The board is redrawn at every step. So in each step repeat the lines you still need, and put every dot already reached into "numberline.dots" of that step.
+
+NUMBER LINE (use it whenever every number involved fits between -20 and 20)
+- "numberline": {"min","max","dots"}: integers only, min >= -20, max <= 20, max - min <= 20, a little space on both sides of the numbers used, at most 12 dots, colours red / green / blue / orange. Use red for negative numbers, blue for positive, green for the final answer.
+- How to show each operation:
+  * a + b: dot at a, then one hop from a to a+b (right if b is positive, left if b is negative), then a green dot at the answer.
+  * a - b: first rewrite as a + (opposite of b) in the lines (for example 7 - (-3) then = 7 + 3 then = 10), then hop from a to the answer.
+  * a × b (small, answer within -20..20, b positive): repeated addition. One hop of size a per repeat, each hop followed by a dot. Cues allow 8 per step, so show at most 4 hops per step and split longer ones over two steps. If b is negative, do not use hops. The first line is still the question itself, for example (-3) × (-4). Then show a pattern, one complete equation per line (the program checks each one), for example (-3) × 2 = -6, (-3) × 1 = -3, (-3) × 0 = 0, and continue it over the next steps until you reach the question; finish with a line = 12 (the answer).
+  * a ÷ b: ask how many jumps of size b take us from 0 to a; hop that many times. Also check by multiplication in a line.
+  * Several terms: go left to right, one hop per term.
+- If the numbers do not fit in -20..20, skip the number line and explain with "lines" and pen cues only.
+
+PEN / ARROW CUES ("cues", at most 8 per step; each cue has exactly one key; they run in order while the voice speaks)
+- {"point": {"line": 0, "word": "text that appears in that line"}}: the pen underlines that word. Without "word" the whole line is underlined.
+- {"point": {"value": 3}}: the pen goes to that number on the number line.
+- {"hop": {"from": -8, "to": -3}}: a curved arrow jumps between two numbers (both inside min..max).
+- {"dot": {"v": 2, "label": "2", "color": "green"}}: a new dot appears (label at most 10 characters).
+- Every step should have 1 to 4 cues. Keep the number of cues about equal to the number of spoken sentences or parts, in the order they are spoken: first point to where we start, then hop, then dot. A hop is usually followed by a dot at the place we land.
 - No HTML, no links, no emoji. Keep every explanation correct and simple. Never invent facts.`;
+
+// "English words" level chosen by the student in Get Video (0 none, 1 few, 2 normal, 3 many). It changes how the AI WRITES say.hi / cap.hi / cap.hg.
+const MV_STYLE_LINE = MV_SYSTEM.split('\n').find(l => l.startsWith('- Spoken style (say.hi)'));
+const MV_STYLE = {
+  0: '- Spoken style (say.hi) and the Hindi caption (cap.hi): ENGLISH WORDS LEVEL = NONE. Write pure, simple Hindi in Devanagari with NO English words and no English words spelled in Devanagari. Write every number as a Hindi number-word (शून्य, एक, दो, तीन, चार, पाँच, छह, सात, आठ, नौ, दस, ग्यारह, बारह, तेरह, चौदह, पंद्रह, सोलह, सत्रह, अठारह, उन्नीस, बीस, तीस...). Use: ऋण (negative / minus sign), धन (positive), जोड़, घटाओ, गुणा, भाग, बराबर, उत्तर, प्रश्न, कदम, छलाँग, दाईं ओर, बाईं ओर, संख्या रेखा, चिह्न. Example: "ऋण आठ जोड़ पाँच बराबर ऋण तीन।". Never use digits in say.hi. Also write cap.hg (Roman Hinglish) with Hindi words in Roman letters (rin, dhan, jod, guna, bhaag, barabar, uttar, prashn, kadam, sankhya rekha) and no English maths words.',
+  1: '- Spoken style (say.hi) and the Hindi caption (cap.hi): ENGLISH WORDS LEVEL = FEW. The ONLY English words allowed are plus, minus, into, equal to, written in Devanagari as प्लस, माइनस, इनटू, इक्वल टू. Everything else is Hindi: numbers as Hindi number-words (शून्य, एक, दो, तीन, चार, पाँच, छह, सात, आठ, नौ, दस, ग्यारह, बारह...), and उत्तर, प्रश्न, कदम, छलाँग, दाईं ओर, बाईं ओर, संख्या रेखा, चिह्न, धन, ऋण (for "positive" and "negative"). Example: "माइनस आठ प्लस पाँच इक्वल टू माइनस तीन।". Never use digits in say.hi. In cap.hg (Roman) keep English only for plus, minus, into, equal to; other words in Hindi (Roman letters).',
+  3: '- Spoken style (say.hi) and the Hindi caption (cap.hi): ENGLISH WORDS LEVEL = MANY. Use English for as many words as possible, spelled in Devanagari: प्लस, माइनस, इनटू, डिवाइडेड बाय, इक्वल टू, नंबर लाइन, जंप, स्टेप, आंसर, क्वेश्चन, पॉज़िटिव, नेगेटिव, राइट, लेफ्ट, साइन, चेक, रूल, एक्साम्पल. Write every number as an English number-word in Devanagari (वन, टू, थ्री, फोर, फाइव, सिक्स, सेवन, एट, नाइन, टेन, इलेवन, ट्वेल्व...). Only small joining words stay Hindi (का, की, है, हम, को, में, से, तो, और, पर). Example: "माइनस एट प्लस फाइव इक्वल टू माइनस थ्री। नंबर लाइन पर राइट जंप करो।". Never use digits in say.hi. In cap.hg (Roman) use plenty of English words too.'
+};
+function mvSystem(level) {
+  if (level === 2 || !MV_STYLE[level] || !MV_STYLE_LINE) return MV_SYSTEM;
+  return MV_SYSTEM.replace(MV_STYLE_LINE, MV_STYLE[level]) +
+    '\nIMPORTANT: the example above shows the NORMAL English-words level in say.hi and cap.hi. For this reply follow the ENGLISH WORDS LEVEL rule in FIELDS instead of the example\'s word choice, but keep the example\'s structure, depth, number of steps and cues.';
+}
+
+// Quality gate on top of validate(): too-short or motionless plans are sent back to the AI once or twice (the last try is always accepted).
+function mvQuality(plan, raw) {
+  const out = [], steps = plan.steps || [];
+  if (steps.length < 6) out.push('Too short. Make the video more detailed: 6 to 9 steps, one idea per step (you gave ' + steps.length + ').');
+  const nums = (raw.match(/\d+/g) || []).map(Number);
+  const mult = /[×*÷\/]|[\d)]\s*x\s*[\d(]/i.test(raw);
+  const reach = nums.length ? (mult ? nums.reduce((a, b) => a * b, 1) : nums.reduce((a, b) => a + b, 0)) : 99;
+  const nl = steps.filter(s => s.anim && s.anim.numberline).length;
+  const cues = steps.reduce((n, s) => n + (((s.anim || {}).cues) || []).length, 0);
+  if (reach <= 20 && nl < 3) out.push('Use the number line (anim.numberline) in at least 3 steps; the numbers are small enough.');
+  if (cues < 4) out.push('Add more pen/arrow cues (anim.cues: point, hop, dot) so something moves in most steps.');
+  return out;
+}
+
 
 function mvParse(text) {
   let t = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
@@ -966,7 +1034,8 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   const raw = String((req.body || {}).text || '').replace(/\s+/g, ' ').trim();
   if (raw.length < 8) return res.status(400).json({ error: 'Question thoda aur likho (kam se kam 8 akshar).' });
   if (raw.length > 400) return res.status(400).json({ error: 'Question bahut lamba hai. 400 akshar tak likho.' });
-  const norm = mvNorm(raw);
+  const eng = [0, 1, 2, 3].includes(+(req.body || {}).eng) ? +(req.body || {}).eng : 2;   // English-words level from the student
+  const norm = mvNorm(raw) + (eng === 2 ? '' : '|e' + eng);
   if (MV_CACHE.has(norm)) return res.json({ ...MV_CACHE.get(norm), cached: true });
 
   const email = String((req.user && req.user.email) || '').toLowerCase();
@@ -978,11 +1047,18 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   }
 
   const t0 = Date.now(), TOTAL = 75000;
-  let prompt = 'Question:\n"""\n' + raw + '\n"""', lastErrors = [], lastStatus = 0;
+  let prompt = 'Question:\n"""\n' + raw + '\n"""', lastErrors = [], lastStatus = 0, best = null;
+  const mvDone = (plan, how) => {
+    const out = { plan };
+    MV_CACHE.set(norm, out);
+    if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
+    console.log('MathVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps');
+    return res.json(out);
+  };
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(MV_SYSTEM, prompt, { json: true, temperature: 0.2, maxTokens: 8192, budgetMs: Math.min(left, attempt === 1 ? 40000 : 30000) });
+    const r = await gemini(mvSystem(eng), prompt, { json: true, temperature: 0.2, maxTokens: 8192, budgetMs: Math.min(left, attempt === 1 ? 40000 : 30000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
@@ -993,18 +1069,15 @@ app.post('/api/mathvideo/generate', async (req, res) => {
     }
     plan.id = 'ask-' + crypto.createHash('sha1').update(norm).digest('hex').slice(0, 20);
     const v = MV.validate(plan);
-    const soft = v.warnings.filter(w => /digits|Devanagari/.test(w));     // spoken Hindi problems: retry if there is time
-    if (!v.errors.length && !(soft.length && attempt < 3)) {
-      const out = { plan };
-      MV_CACHE.set(norm, out);
-      if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
-      console.log('MathVideo ok', attempt, 'try', (Date.now() - t0) + 'ms');
-      return res.json(out);
-    }
+    // soft problems: spoken-Hindi issues and too-short / motionless plans. Retry if there is time; the last try is always accepted.
+    const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : mvQuality(plan, raw));
+    if (!v.errors.length) best = plan;                                    // newest valid plan = fallback if a later try fails
+    if (!v.errors.length && !(soft.length && attempt < 3)) return mvDone(plan, 'try ' + attempt);
     lastErrors = v.errors.length ? v.errors : soft;
     console.error('MathVideo invalid (try ' + attempt + '):', lastErrors.slice(0, 4).join(' | '));
     prompt = 'Question:\n"""\n' + raw + '\n"""\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
   }
+  if (best) return mvDone(best, 'fallback');                              // a valid (if plainer) plan beats an error
   if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
   res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Question ko seedha number wala likh ke dobara try karo.' });
 });

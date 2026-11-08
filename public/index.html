@@ -798,10 +798,11 @@ async function copy(id){
 }
 
 // ---- Get Video: student pastes a maths question, AI makes a whiteboard video, the admin approves it for everyone ----
-const GV={text:'',busy:false,msg:'',err:false,plan:null};
+const GV={text:'',busy:false,msg:'',err:false,plan:null,eng:(()=>{try{const v=+localStorage.getItem('gvEng');return v>=0&&v<=3&&localStorage.getItem('gvEng')!==null?v:2}catch(e){return 2}})()};
+const GV_ENG=[['Bilkul kam','Sab kuch Hindi mein: numbers bhi Hindi words mein (ऋण तीन गुणा चार).'],['Kam','Sirf plus, minus, into, equal to English mein; baaki Hindi.'],['Normal','Maths words English mein, baaki Hindi (jaisa pehle tha).'],['Zyada','Zyada se zyada English words: number line, jump, step, answer...']];
 const gvNorm=t=>String(t||'').toLowerCase().replace(/[−–—]/g,'-').replace(/[×✕·]/g,'*').replace(/÷/g,'/').replace(/\s+/g,'');
-async function gvKey(t){            // same question (spaces/case ignored) -> same 40-character id
- const n=gvNorm(t);
+async function gvKey(t,eng){            // same question (spaces/case ignored) + same English-words level -> same 40-character id (level 2 keeps the old id)
+ const n=gvNorm(t)+(eng===2||eng==null?'':'|e'+eng);
  try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(n));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,40)}
  catch(e){let h=5381;for(const ch of n)h=((h<<5)+h+ch.charCodeAt(0))>>>0;return h.toString(16).padStart(8,'0').repeat(5).slice(0,40)}
 }
@@ -809,6 +810,9 @@ function gvHTML(){
  return `<h1 style="font-size:26px;margin-top:14px">Get Video</h1>
  <p class="mut" style="margin-top:6px">Maths ka question yahan paste karo (Class 6-8, numbers wala). Whiteboard video ban jayega.</p>
  <textarea id="gvText" maxlength="400" rows="4" placeholder="Jaise: (−8) + 5 ka answer batao" aria-label="Maths question" style="width:100%;margin-top:12px;padding:12px;border:1px solid var(--ln);border-radius:12px;background:var(--card);color:var(--tx);font:inherit;resize:vertical">${esc(GV.text)}</textarea>
+ <div style="margin-top:12px"><label for="gvEng" style="font-weight:600">English words: <span id="gvEngLab">${GV_ENG[GV.eng][0]}</span></label>
+ <input id="gvEng" type="range" min="0" max="3" step="1" value="${GV.eng}" ${GV.busy?'disabled':''} aria-label="Video mein English words kitne hon" style="width:100%;accent-color:var(--ac,#e4572e);margin-top:6px">
+ <p class="mut" id="gvEngHint" style="margin:2px 0 0;font-size:13px">${GV_ENG[GV.eng][1]}</p></div>
  <button class="btn" data-act="gvgo" ${GV.busy?'disabled':''}>${GV.busy?'Video ban raha hai…':'Get Video'}</button>
  ${GV.msg?`<p class="${GV.err?'err':'mut'}" role="status" style="margin-top:12px">${esc(GV.msg)}</p>`:''}
  ${GV.plan&&!GV.busy?`<button class="btn" data-act="gvplay">Video dobara chalao</button>`:''}
@@ -823,12 +827,12 @@ async function gvRun(){
  if(!window.MathVideoPlayer||!window.CLOUD||!window.CLOUD.mathVideo){GV.err=true;GV.msg='Video system load nahi hua. Page refresh karo.';draw();return}
  GV.busy=true;GV.err=false;GV.plan=null;GV.msg='Library mein dhoondh raha hoon…';draw();
  try{
-  const key=await gvKey(text);
+  const key=await gvKey(text,GV.eng);
   let plan=null,known=false;
   try{plan=await window.CLOUD.mathVideo.askedGet(key);known=!!plan}catch(e){}
   if(!plan){
    GV.msg='AI video bana raha hai. 20 se 40 second lag sakte hain…';draw();
-   const r=await api('/api/mathvideo/generate',{text});
+   const r=await api('/api/mathvideo/generate',{text,eng:GV.eng});
    if(r.unsupported){GV.err=true;GV.msg=r.reason||'Is type ka video abhi nahi ban sakta.';GV.busy=false;draw();return}
    plan=r.plan;
    try{window.CLOUD.mathVideo.pendingAdd(key,text,plan).catch(()=>{})}catch(e){}   // goes to the admin for review; fails quietly if someone already sent the same question
@@ -840,6 +844,8 @@ async function gvRun(){
  }catch(e){GV.err=true;GV.msg=errMsg(e);GV.busy=false;draw()}
 }
 document.addEventListener('input',e=>{if(e.target&&e.target.id==='gvText')GV.text=e.target.value});
+document.addEventListener('input',e=>{if(e.target&&e.target.id==='gvEng'){GV.eng=+e.target.value;try{localStorage.setItem('gvEng',String(GV.eng))}catch(x){}
+ const l=document.getElementById('gvEngLab'),h=document.getElementById('gvEngHint');if(l)l.textContent=GV_ENG[GV.eng][0];if(h)h.textContent=GV_ENG[GV.eng][1]}});
 
 document.addEventListener('click',e=>{
  const openQ=Object.keys(UI).filter(k=>UI[k].qm);

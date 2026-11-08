@@ -6,7 +6,10 @@
 (function (g) {
   "use strict";
   var NS = "http://www.w3.org/2000/svg";
-  var LANG_KEY = "mvLang", VOICE_KEY = "mvVoice";
+  var LANG_KEY = "mvLang", VOICE_KEY = "mvVoice", EN_KEY = "mvVoiceEn";
+  var LANGS = [["hg", "Hinglish"], ["en", "English"], ["hi", "Hindi"], ["as", "অসমীয়া (Assamese)"], ["bn", "বাংলা (Bengali)"]];
+  var LANG_NAME = { hi: "Hindi", as: "Assamese", bn: "Bengali" };
+  function voiceKey(code) { return code === "hi" ? VOICE_KEY : VOICE_KEY + "_" + code; }   // "mvVoice" (Hindi) purani key jaisi hi rahi
 
   function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} return null; }
   function el(tag, props, kids) {
@@ -23,14 +26,136 @@
   }
 
   /* ---------- voices ---------- */
-  function hiVoices() {
+  function voicesWith(code) {
     if (!g.speechSynthesis) return [];
-    return g.speechSynthesis.getVoices().filter(function (v) { return /^hi([-_]|$)/i.test(v.lang); });
+    var re = new RegExp("^" + code + "([-_]|$)", "i");
+    return g.speechSynthesis.getVoices().filter(function (v) { return re.test(v.lang); });
   }
-  function enVoices() {
-    if (!g.speechSynthesis) return [];
-    return g.speechSynthesis.getVoices().filter(function (v) { return /^en([-_]|$)/i.test(v.lang); });
+  function hiVoices() { return voicesWith("hi"); }
+  function enVoices() { return voicesWith("en"); }
+  // Voices that will really be used for a language. Assamese uses a Bengali voice if no Assamese voice is installed (almost the same script).
+  function pickList(code) { var l = voicesWith(code); if (!l.length && code === "as") l = voicesWith("bn"); return l; }
+
+  // Caption / title text for a language (falls back to English when the plan has no text for it)
+  function tx(o, lang) { return (o && (o[lang] || o.en || o.hg)) || ""; }
+
+
+  /* ---------- "English words" slider: kitne maths words English me, kitne apni language me ----------
+     Level 0 Bilkul kam : numbers, plus/minus/into/equal to aur teaching words (answer, jump...) apni language me
+     Level 1 Kam        : plus / minus / into / equal to English me, baaki apni language me
+     Level 2 Normal     : + numbers bhi English me (default)
+     Level 3 Zyada      : + teaching words (number line, jump, step, answer, question, positive, negative, right, left, sign) bhi English me
+     Ye shabd-list (GLOSSARY) seedhi edit ki ja sakti hai: ek line = ek shabd. Isse ek shabd ki saari spellings (English, transliteration, apni language)
+     ek hi shabd maani jaati hain, aur level ke hisaab se wahi form dikhti / bolti hai. Jo shabd list me nahi hai wo jaisa hai waisa rehta hai. */
+  var ENG_NAMES = ["Bilkul kam", "Kam", "Normal", "Zyada"], ENG_DEFAULT = 2;
+  // N = numbers: [english, hindi, assamese, bengali, [hindi spellings in Devanagari]]
+  var G_NUM = [
+    ["zero", "शून्य", "শূন্য", "শূন্য", ["ज़ीरो", "जीरो"]], ["one", "एक", "এক", "এক", ["वन"]], ["two", "दो", "দুই", "দুই", ["टू"]],
+    ["three", "तीन", "তিনি", "তিন", ["थ्री"]], ["four", "चार", "চাৰি", "চার", ["फोर"]], ["five", "पाँच", "পাঁচ", "পাঁচ", ["फाइव", "पांच"]],
+    ["six", "छह", "ছয়", "ছয়", ["सिक्स"]], ["seven", "सात", "সাত", "সাত", ["सेवन"]], ["eight", "आठ", "আঠ", "আট", ["एट"]],
+    ["nine", "नौ", "ন", "নয়", ["नाइन"]], ["ten", "दस", "দহ", "দশ", ["टेन"]], ["eleven", "ग्यारह", "এঘাৰ", "এগারো", ["इलेवन"]],
+    ["twelve", "बारह", "বাৰ", "বারো", ["ट्वेल्व"]], ["thirteen", "तेरह", "তেৰ", "তেরো", ["थर्टीन"]], ["fourteen", "चौदह", "চৌদ্দ", "চৌদ্দ", ["फोर्टीन"]],
+    ["fifteen", "पंद्रह", "পোন্ধৰ", "পনেরো", ["फिफ्टीन", "पन्द्रह"]], ["sixteen", "सोलह", "ষোল", "ষোলো", ["सिक्सटीन"]],
+    ["seventeen", "सत्रह", "সোতৰ", "সতেরো", ["सेवेंटीन"]], ["eighteen", "अठारह", "আঠৰ", "আঠারো", ["एटीन"]],
+    ["nineteen", "उन्नीस", "ঊনৈশ", "ঊনিশ", ["नाइनटीन"]], ["twenty", "बीस", "কুৰি", "কুড়ি", ["ट्वेंटी"]]
+  ];
+  // O = operation words. nat: text, or [sign, between-two-numbers] (minus: "minus three" / "eight minus five")
+  var G_OPS = [
+    { en: ["plus"], nat: { hi: "जोड़", as: "যোগ", bn: "যোগ" }, al: { hi: ["प्लस"] } },
+    { en: ["minus"], nat: { hi: ["ऋण", "घटा"], as: ["ঋণাত্মক", "বিয়োগ"], bn: ["ঋণাত্মক", "বিয়োগ"] }, al: { hi: ["माइनस"] } },
+    { en: ["into"], nat: { hi: "गुणा", as: "পূৰণ", bn: "গুণ" }, al: { hi: ["इनटू"] } },
+    { en: ["equal to", "equals"], nat: { hi: "बराबर", as: "সমান", bn: "সমান" }, al: { hi: ["इक्वल टू"] } }
+  ];
+  // T = teaching words. loan = how it is usually written in the language's own script, nat = pure native word
+  var G_TERMS = [
+    { en: ["number line"], loan: { hi: "नंबर लाइन", as: "নম্বৰ লাইন", bn: "নাম্বার লাইন" }, nat: { hi: "संख्या रेखा", as: "সংখ্যা ৰেখা", bn: "সংখ্যারেখা" }, al: { hi: ["नम्बर लाइन"], bn: ["নম্বর লাইন"], as: ["নাম্বাৰ লাইন"] } },
+    { en: ["jump", "jumps"], loan: { hi: "जंप", as: "জাম্প", bn: "জাম্প" }, nat: { hi: "छलांग", bn: "লাফ" }, al: { hi: ["जम्प"] } },
+    { en: ["step", "steps"], loan: { hi: "स्टेप", as: "ষ্টেপ", bn: "স্টেপ" }, nat: { hi: "कदम", as: "পদক্ষেপ", bn: "ধাপ" }, al: { as: ["স্টেপ"] } },
+    { en: ["answer"], loan: { hi: "आंसर", as: "আন্সাৰ", bn: "আনসার" }, nat: { hi: "उत्तर", as: "উত্তৰ", bn: "উত্তর" }, al: { hi: ["आन्सर"] } },
+    { en: ["question"], loan: { hi: "क्वेश्चन", as: "কোৱেশ্চন", bn: "কোয়েশ্চেন" }, nat: { hi: "प्रश्न", as: "প্ৰশ্ন", bn: "প্রশ্ন" }, al: {} },
+    { en: ["positive"], loan: { hi: "पॉज़िटिव", as: "পজিটিভ", bn: "পজিটিভ" }, nat: { hi: "धनात्मक", as: "ধনাত্মক", bn: "ধনাত্মক" }, al: { hi: ["पॉजिटिव"] } },
+    { en: ["negative"], loan: { hi: "नेगेटिव", as: "নেগেটিভ", bn: "নেগেটিভ" }, nat: { hi: "ऋणात्मक", as: "ঋণাত্মক", bn: "ঋণাত্মক" }, al: {} },
+    { en: ["right"], loan: { hi: "राइट", as: "ৰাইট", bn: "রাইট" }, nat: { hi: "दाईं", bn: "ডান" }, al: {} },
+    { en: ["left"], loan: { hi: "लेफ्ट", as: "লেফ্ট", bn: "লেফট" }, nat: { hi: "बाईं", bn: "বাম" }, al: {} },
+    { en: ["sign"], loan: { hi: "साइन", as: "চাইন", bn: "সাইন" }, nat: { hi: "चिह्न", as: "চিন", bn: "চিহ্ন" }, al: {} }
+  ];
+  var GKEYS = { hi: {}, as: {}, bn: {} };
+  (function () {
+    function add(L, form, c) { GKEYS[L][String(form).toLowerCase()] = c; }
+    ["hi", "as", "bn"].forEach(function (L, li) {
+      G_NUM.forEach(function (r) {
+        var c = { cls: "N", en: r[0], enForms: [r[0]], nat: {} }; c.nat[L] = r[1 + li];
+        add(L, r[0], c); if (L === "hi") r[4].forEach(function (a) { add(L, a, c); });
+      });
+      G_OPS.forEach(function (o) {
+        var c = { cls: "O", en: o.en[0], enForms: o.en, nat: o.nat };
+        o.en.forEach(function (f) { add(L, f, c); }); (o.al[L] || []).forEach(function (a) { add(L, a, c); });
+      });
+      G_TERMS.forEach(function (t) {
+        var c = { cls: "T", en: t.en[0], enForms: t.en, nat: t.nat, loan: t.loan };
+        t.en.forEach(function (f) { add(L, f, c); });
+        [t.loan[L], t.nat[L]].concat(t.al[L] || []).forEach(function (f) { if (f) add(L, f, c); });
+      });
+    });
+  })();
+  // Numbers / plus / minus ki native spellings (do, ten...) jaan-boojh kar keys me nahi: "दो" ka matlab "give" bhi hota hai, "বাৰ" ka matlab "times" bhi.
+  var WORD_RE = /([A-Za-z]+|[\u0900-\u0963\u0966-\u097F\u0980-\u09FF]+)/;
+  function renderWord(c, surface, code, level, afterNum) {
+    if (c.cls === "T") {                                    // teaching words: sirf dono kinaaron par badalte hain; Normal(2) me jaisa AI ne likha waisa
+      if (level >= 3) return c.enForms.indexOf(surface.toLowerCase()) >= 0 ? surface : c.en;
+      if (level === 2) return surface;
+      var latin = /^[A-Za-z]/.test(surface);
+      if (level === 1) return latin ? (c.loan[code] || surface) : surface;
+      return c.nat[code] || c.loan[code] || surface;        // level 0
+    }
+    if (c.cls === "O" ? level >= 1 : level >= 2) return c.enForms.indexOf(surface.toLowerCase()) >= 0 ? surface : c.en;
+    var n = c.nat[code];
+    if (Array.isArray(n)) n = afterNum ? n[1] : n[0];
+    return n || surface;
   }
+  function adjustEnglish(text, code, level) {
+    var K = GKEYS[code]; text = String(text == null ? "" : text);
+    if (!K || !(level >= 0 && level <= 3)) return text;
+    var parts = text.split(WORD_RE), out = [], lastNum = false;
+    for (var i = 0; i < parts.length; i++) {
+      if (i % 2 === 0) { out.push(parts[i]); if (/\S/.test(parts[i])) lastNum = false; continue; }
+      var hit = null;
+      for (var k = 3; k >= 1 && !hit; k--) {
+        var key = [], ok = true;
+        for (var j = 0; j < k; j++) {
+          var idx = i + 2 * j;
+          if (idx >= parts.length || (j > 0 && !/^\s+$/.test(parts[idx - 1]))) { ok = false; break; }
+          key.push(parts[idx]);
+        }
+        if (!ok) continue;
+        var c = K[key.join(" ").toLowerCase()];
+        if (c) hit = { c: c, k: k, surface: key.join(" ") };
+      }
+      if (!hit) { out.push(parts[i]); lastNum = false; continue; }
+      out.push(renderWord(hit.c, hit.surface, code, level, lastNum));
+      lastNum = hit.c.cls === "N";
+      i += 2 * (hit.k - 1);
+    }
+    var res = out.join("");
+    if (code === "hi" && level === 0) res = res.replace(/जोड़ (करते|करो|करना|करें|करता|करती)/g, function (m, v) { return { "करते": "जोड़ते", "करो": "जोड़ो", "करना": "जोड़ना", "करें": "जोड़ें", "करता": "जोड़ता", "करती": "जोड़ती" }[v]; });   // "जोड़ करते हैं" -> "जोड़ते हैं"
+    return res;
+  }
+  function rcode(lang) { return lang === "en" ? null : lang === "as" ? "as" : lang === "bn" ? "bn" : "hi"; }   // hg bolta hai Hindi voice me
+  function engFor(lang) { var c = rcode(lang), v = c ? parseInt(ls("mvEng_" + c), 10) : NaN; return v >= 0 && v <= 3 ? v : ENG_DEFAULT; }
+
+  /* Spoken line -> pieces. English runs (maths phrases, numbers, plus / minus / into / equal to, written in Latin letters)
+     are read by an English voice, everything else by the language's own voice. Eg "हमारा क्वेश्चन है, minus eight plus five।" */
+  function splitRuns(text, code) {
+    text = String(text || "");
+    if (code === "en") return /\S/.test(text) ? [{ t: text.trim(), en: true }] : [];
+    var out = [], bits = text.split(/([A-Za-z][A-Za-z0-9'\u2019 ,.\-]*[A-Za-z0-9]|[A-Za-z])/);
+    bits.forEach(function (b, i) {
+      if (i % 2) { b = b.trim(); if (b) out.push({ t: b, en: true }); }
+      else if (/[^\s.,;:!?'"()\u0964\u0965\-\u2013\u2014]/.test(b)) out.push({ t: b.trim(), en: false });
+    });
+    return out;
+  }
+
   function voicesReady(cb) {
     if (!g.speechSynthesis) return cb();
     if (g.speechSynthesis.getVoices().length) return cb();
@@ -53,12 +178,15 @@
     if (!plan || !plan.steps || !plan.steps.length) return;
     var st = { i: 0, playing: false, token: 0, timer: 0 };
     var lang = ls(LANG_KEY) || "hg";
-    if (["hg", "en", "hi"].indexOf(lang) < 0) lang = "hg";
+    if (!LANGS.some(function (o) { return o[0] === lang; })) lang = "hg";
+    var eng = engFor(lang);
+    // caption / title: us language ka apna text ho to slider ke hisaab se English words adjust (hg ka Roman text aur English fallback jaisa hai waisa)
+    function lt(o) { var c = rcode(lang); return c && lang !== "hg" && o && o[lang] ? adjustEnglish(o[lang], c, eng) : tx(o, lang); }
 
     var root = el("div", { style: "position:fixed;inset:0;z-index:2000;background:var(--bg,#fff);color:var(--tx,#111);overflow:auto;padding:12px 14px 40px" });
     root.setAttribute("role", "dialog"); root.setAttribute("aria-modal", "true");
     var inner = el("div", { style: "max-width:680px;margin:0 auto" });
-    var title = el("h2", { style: "font-size:18px;margin:6px 0", text: (plan.title && (plan.title[lang] || plan.title.en)) || "" });
+    var title = el("h2", { style: "font-size:18px;margin:6px 0", text: lt(plan.title) });
     var closeBtn = el("button", { type: "button", text: "Close", style: "padding:8px 14px;border:0;border-radius:10px;background:var(--card,#eee);color:inherit;cursor:pointer" });
     var top = el("div", { style: "display:flex;justify-content:space-between;align-items:center;gap:8px" }, [title, closeBtn]);
 
@@ -76,29 +204,60 @@
     function sel(label, onchange) {
       var s = el("select", { style: "padding:8px;border-radius:10px;border:1px solid var(--ln,#999);background:var(--card,#fff);color:inherit;max-width:100%" });
       s.onchange = onchange;
-      return { wrap: el("label", { style: "font-size:12px;display:block" }, [document.createTextNode(label), el("br"), s]), s: s };
+      var tn = document.createTextNode(label);
+      return { wrap: el("label", { style: "font-size:12px;display:block" }, [tn, el("br"), s]), s: s, lab: tn };
     }
-    var langSel = sel("Language", function () { lang = langSel.s.value; ls(LANG_KEY, lang); title.textContent = (plan.title && (plan.title[lang] || plan.title.en)) || ""; show(st.i); if (st.playing) { stopSpeech(); speak(); } });
-    [["hg", "Hinglish"], ["en", "English"], ["hi", "Hindi"]].forEach(function (o) { langSel.s.appendChild(el("option", { value: o[0], text: o[1] })); });
+    var langSel = sel("Language", function () { lang = langSel.s.value; ls(LANG_KEY, lang); title.textContent = lt(plan.title); syncEng(); fillVoices(); show(st.i); if (st.playing) { stopSpeech(); speak(); } });
+    LANGS.forEach(function (o) { langSel.s.appendChild(el("option", { value: o[0], text: o[1] })); });
     langSel.s.value = lang;
-    var voiceSel = sel("Hindi voice", function () { ls(VOICE_KEY, voiceSel.s.value); if (st.playing) { stopSpeech(); speak(); } });
-    var opts = el("div", { style: "display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:6px 0" }, [langSel.wrap, voiceSel.wrap]);
+    function regionalCode() { return rcode(lang); }
+    var voiceSel = sel("Voice", function () { var c = regionalCode(); if (c) ls(voiceKey(c), voiceSel.s.value); if (st.playing) { stopSpeech(); speak(); } });
+    var enSel = sel("English voice (numbers & words)", function () { ls(EN_KEY, enSel.s.value); if (st.playing) { stopSpeech(); speak(); } });
+    var engIn = el("input", { type: "range", min: "0", max: "3", step: "1", value: String(eng), style: "width:170px;display:block;margin:4px 0 0" });
+    var engLab = document.createTextNode("");
+    var engWrap = el("label", { style: "font-size:12px;display:block" }, [engLab, el("br"), engIn,
+      el("div", { style: "display:flex;justify-content:space-between;width:170px;font-size:11px;color:var(--mut,#666)" }, [el("span", { text: "Kam" }), el("span", { text: "Zyada" })])]);
+    function syncEng() { eng = engFor(lang); engIn.value = String(eng); engLab.nodeValue = "English words: " + ENG_NAMES[eng]; engWrap.style.display = rcode(lang) ? "" : "none"; }
+    engIn.oninput = function () {                                   // drag karte waqt label + caption turant badle
+      eng = +engIn.value; engLab.nodeValue = "English words: " + ENG_NAMES[eng];
+      var c = rcode(lang); if (c) ls("mvEng_" + c, String(eng));
+      title.textContent = lt(plan.title); cap.textContent = lt(plan.steps[st.i].cap);
+    };
+    engIn.onchange = function () { if (st.playing) { stopSpeech(); speak(); } };   // chhodne par awaaz naye level se dobara
+    var opts = el("div", { style: "display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:6px 0" }, [langSel.wrap, voiceSel.wrap, enSel.wrap, engWrap]);
+    syncEng();
 
     [top, board, cap, bar, opts, msg, prog].forEach(function (n) { inner.appendChild(n); });
     root.appendChild(inner); document.body.appendChild(root);
 
     function fillVoices() {
-      var hv = hiVoices(); voiceSel.s.textContent = "";
-      if (!g.speechSynthesis) { voiceSel.wrap.style.display = "none"; msg.textContent = "Is browser me awaaz (text-to-speech) support nahi hai. Video bina awaaz ke chalega."; return; }
-      if (!hv.length) {
-        voiceSel.wrap.style.display = "none";
-        msg.textContent = "Is device me Hindi (hi-IN) voice install nahi hai, isliye awaaz English accent me aayegi.\nWindows: Settings > Time & language > Speech > Add voices > Hindi. Phir browser band karke dobara kholo.";
-        return;
+      voiceSel.s.textContent = ""; enSel.s.textContent = ""; msg.textContent = "";
+      if (!g.speechSynthesis) { voiceSel.wrap.style.display = "none"; enSel.wrap.style.display = "none"; msg.textContent = "Is browser me awaaz (text-to-speech) support nahi hai. Video bina awaaz ke chalega."; return; }
+      var code = regionalCode(), notes = [];
+      function fill(sl, list, key) {
+        list.forEach(function (v) { sl.s.appendChild(el("option", { value: v.name, text: v.name + " (" + v.lang + ")" })); });
+        var want = ls(key);
+        if (want && list.some(function (v) { return v.name === want; })) sl.s.value = want;
       }
-      voiceSel.wrap.style.display = ""; msg.textContent = "";
-      var want = ls(VOICE_KEY);
-      hv.forEach(function (v) { voiceSel.s.appendChild(el("option", { value: v.name, text: v.name + " (" + v.lang + ")" })); });
-      if (want && hv.some(function (v) { return v.name === want; })) voiceSel.s.value = want;
+      if (code) {
+        var rl = pickList(code), nm = LANG_NAME[code];
+        voiceSel.lab.nodeValue = nm + " voice";
+        if (!rl.length) {
+          voiceSel.wrap.style.display = "none";
+          notes.push(code === "hi"
+            ? "Is device me Hindi (hi-IN) voice install nahi hai, isliye awaaz English accent me aayegi.\nWindows: Settings > Time & language > Speech > Add voices > Hindi. Phir browser band karke dobara kholo."
+            : "Is device me " + nm + " voice install nahi hai, isliye awaaz English me aayegi.\nPhone/PC ki Text-to-speech settings me " + nm + " voice add karke browser dobara kholo.");
+        } else {
+          voiceSel.wrap.style.display = ""; fill(voiceSel, rl, voiceKey(code));
+          if (code === "as" && !voicesWith("as").length) notes.push("Is device me Assamese (as-IN) voice nahi hai, isliye Bengali voice use ho rahi hai. Kuch Assamese shabd thode alag sunai de sakte hain.");
+        }
+      } else voiceSel.wrap.style.display = "none";
+      var ev = enVoices();
+      if (ev.length) {
+        enSel.wrap.style.display = ""; fill(enSel, ev, EN_KEY);
+        if (!ls(EN_KEY)) { var inn = ev.filter(function (v) { return /en-IN/i.test(v.lang); })[0]; if (inn) enSel.s.value = inn.name; }
+      } else enSel.wrap.style.display = "none";
+      msg.textContent = notes.join("\n");
     }
     voicesReady(fillVoices);
     // Chrome voices der se / kai baar load karta hai: list dobara bharte rahenge (voiceschanged + 2s, 5s par)
@@ -210,8 +369,8 @@
       penShape.appendChild(svg("polygon", { points: "0,0 9,3 44,38 38,44 3,9", fill: "#f5a623", stroke: "#8a5a00", "stroke-width": 1.5, "stroke-linejoin": "round" }));
       penShape.appendChild(svg("polygon", { points: "0,0 9,3 3,9", fill: "#333" }));
       pen.appendChild(penShape); board.appendChild(pen);
-      cap.textContent = (s.cap && (s.cap[lang] || s.cap.en)) || "";
-      prog.textContent = "Step " + (i + 1) + " / " + plan.steps.length;
+      cap.textContent = lt(s.cap);
+      prog.textContent = "Step " + (i + 1) + " / " + plan.steps.length + ((lang === "as" || lang === "bn") && !(s.say && s.say[lang]) ? "  •  Is video me " + LANG_NAME[lang] + " nahi hai, English dikha raha hoon" : "");
       bPrev.disabled = i === 0; bNext.disabled = i === plan.steps.length - 1;
       bPlay.textContent = st.playing ? "Pause" : "Play";
       runCues(((s.anim && s.anim.cues) || []).length * 1800 + 500);
@@ -225,24 +384,31 @@
         if (st.i < plan.steps.length - 1) { show(st.i + 1); speak(); } else { st.playing = false; bPlay.textContent = "Play"; }
       }, 700);
     }
+    function voiceFor(code) {
+      var list = code === "en" ? enVoices() : pickList(code), sel2 = code === "en" ? enSel : voiceSel, name = sel2.s.value;
+      return list.filter(function (v) { return v.name === name; })[0] ||
+        (code === "en" ? list.filter(function (v) { return /en-IN/i.test(v.lang); })[0] : null) || list[0] || null;
+    }
     function speak() {
-      var tok = ++st.token, s = plan.steps[st.i];
-      var useHi = lang !== "en", text = useHi ? (s.say && s.say.hi) : (s.say && s.say.en);
-      var hv = hiVoices(), hasHi = hv.length > 0;
-      if (useHi && !hasHi) text = (s.say && s.say.en) || text;   // Hindi voice nahi: English line, English accent
-      runCues(Math.max(3000, (text || "").length * 72));       // pen/arrow cues awaaz ki length me failte hain
-      if (!g.speechSynthesis || !text) { st.timer = setTimeout(function () { advance(tok); }, 3500); return; }
+      var tok = ++st.token, s = plan.steps[st.i], say = s.say || {}, code = regionalCode() || "en", text;
+      if (code !== "en" && !pickList(code).length) code = "en";                   // is language ki voice nahi: English line, English awaaz
+      text = code === "en" ? say.en : (say[code] || (code === "hi" ? say.en : ""));
+      if (code !== "en" && !text) { code = "en"; text = say.en; }                 // is video me ye language nahi: English line
+      text = text || "";
+      if (code !== "en") text = adjustEnglish(text, code, eng);                   // slider: kitne maths words English me
+      runCues(Math.max(3000, text.length * 72));                                  // pen/arrow cues awaaz ki length me failte hain
+      var parts = splitRuns(text, code);
+      if (!g.speechSynthesis || !parts.length) { st.timer = setTimeout(function () { advance(tok); }, 3500); return; }
       g.speechSynthesis.cancel();
-      var u = new SpeechSynthesisUtterance(text);
-      if (useHi && hasHi) {
-        u.lang = "hi-IN"; var name = voiceSel.s.value;
-        u.voice = hv.filter(function (v) { return v.name === name; })[0] || hv[0];
-      } else {
-        u.lang = "en-IN"; var ev = enVoices().filter(function (v) { return /en-IN/i.test(v.lang); })[0] || enVoices()[0];
-        if (ev) u.voice = ev;
-      }
-      u.rate = 0.95; u.onend = function () { advance(tok); }; u.onerror = function () { advance(tok); };
-      g.speechSynthesis.speak(u);
+      var k = 0;
+      (function next() {                                                          // pieces ek ke baad ek: English phrase English voice me, baaki apni language me
+        if (tok !== st.token) return;
+        if (k >= parts.length) return advance(tok);
+        var p = parts[k++], u = new SpeechSynthesisUtterance(p.t), v = voiceFor(p.en ? "en" : code);
+        if (v) { u.voice = v; u.lang = v.lang; } else u.lang = p.en ? "en-IN" : (code === "hi" ? "hi-IN" : code + "-IN");
+        u.rate = p.en ? 0.9 : 0.95; u.onend = next; u.onerror = next;
+        g.speechSynthesis.speak(u);
+      })();
     }
     function play() { st.playing = true; bPlay.textContent = "Pause"; speak(); }
     function pause() { st.playing = false; stopSpeech(); bPlay.textContent = "Play"; }
@@ -256,7 +422,7 @@
     show(0);
   }
 
-  g.MathVideoPlayer = { open: open, close: close, debug: function () { var cc = null, ctx = null; try { cc = curCh(); var q0 = null; (cc.ch.sections || []).some(function (s) { return (s.questions || []).some(function (q) { q0 = q; return true; }); }); ctx = q0 && mvCtx(q0); } catch (e) {} return { loaded: Object.keys(LOADED), videos: Object.keys(MV), retry: RETRY, lastError: LASTERR, prefix: ctx && ctx.prefix, base: ctx && window.MathVideo.makeCode(ctx.f) }; } };
+  g.MathVideoPlayer = { open: open, close: close, _split: splitRuns, _adjust: adjustEnglish, debug: function () { var cc = null, ctx = null; try { cc = curCh(); var q0 = null; (cc.ch.sections || []).some(function (s) { return (s.questions || []).some(function (q) { q0 = q; return true; }); }); ctx = q0 && mvCtx(q0); } catch (e) {} return { loaded: Object.keys(LOADED), videos: Object.keys(MV), retry: RETRY, lastError: LASTERR, prefix: ctx && ctx.prefix, base: ctx && window.MathVideo.makeCode(ctx.f) }; } };
 
   /* ---------- student side ---------- */
   var SCHOOL = { nashib: "nashibali" };            // app org id -> code me school
