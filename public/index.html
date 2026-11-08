@@ -428,7 +428,7 @@ function tblHTML(q){
 }
 function qHTML(q){
  const a=ANS[q.id]||{},txt=srcText(q.id),has=!!a.text,open=has&&!!OPEN[q.id],qm=!!ui(q.id).qm;
- return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic qdots ${has?'':'nochev'}" data-act="qm" data-id="${q.id}" aria-haspopup="menu" aria-expanded="${!!qm}" title="Aur options" aria-label="Question options">${I.more}</button>${qm?`<div class="qmenu" role="menu"><button class="qmi" role="menuitem" data-act="pin" data-id="${q.id}">${I.pin}<span>${isPinned(q.id)?'Pin hatao':'Pin karo'}</span></button><button class="qmi" role="menuitem" data-act="qtr" data-id="${q.id}">${I.tr}<span>${ui(q.id).qt?'Translation chhupao':'Translate question'}</span></button></div>`:''}<div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}${isPinned(q.id)?`<span class="pmark" title="Pinned" role="img" aria-label="Pinned">${I.pin}</span>`:''}</div>${q.text?`<p dir="auto">${esc(q.text)}</p>`:''}
+ return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic qdots ${has?'':'nochev'}" data-act="qm" data-id="${q.id}" aria-haspopup="menu" aria-expanded="${!!qm}" title="Aur options" aria-label="Question options">${I.more}</button>${qm?`<div class="qmenu" role="menu"><button class="qmi" role="menuitem" data-act="pin" data-id="${q.id}">${I.pin}<span>${isPinned(q.id)?'Pin hatao':'Pin karo'}</span></button><button class="qmi" role="menuitem" data-act="qtr" data-id="${q.id}">${I.tr}<span>${ui(q.id).qt?'Translation chhupao':'Translate question'}</span></button><button class="qmi" role="menuitem" data-act="qcp" data-id="${q.id}">${ui(q.id).qcp==='ok'?I.ok:I.cp}<span>${ui(q.id).qcp==='ok'?'Copy ho gaya':ui(q.id).qcp==='err'?'Copy nahi hua':'Copy question'}</span></button></div>`:''}<div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}${isPinned(q.id)?`<span class="pmark" title="Pinned" role="img" aria-label="Pinned">${I.pin}</span>`:''}</div>${q.text?`<p dir="auto">${esc(q.text)}</p>`:''}
  ${tblHTML(q)}
  ${(q.parts||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}
  ${(q.options||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}</div>${has?`<span class="chev ${open?'open':''}">${I.chev}</span>`:''}</div>
@@ -790,6 +790,17 @@ function say(id){
  ut.onend=ut.onerror=()=>{u.say=false;draw()};
  u.say=true;speechSynthesis.speak(ut);draw();
 }
+// 3-dot menu "Copy question": copies the question text (with its parts / options) so it can be pasted into Get Video.
+async function qCopy(id){
+ const u=ui(id),q=qFor(id),txt=q?qSrc(q):'';
+ let ok=false;
+ if(txt){
+  try{await navigator.clipboard.writeText(txt);ok=true}
+  catch(e){try{const t=document.createElement('textarea');t.value=txt;t.setAttribute('readonly','');t.style.cssText='position:fixed;opacity:0;top:0';document.body.appendChild(t);t.select();ok=document.execCommand('copy');t.remove()}catch(x){}}
+ }
+ u.qcp=ok?'ok':'err';draw();
+ setTimeout(()=>{u.qcp=null;u.qm=false;draw()},1200);
+}
 async function copy(id){
  const u=ui(id);
  try{await navigator.clipboard.writeText(plain(shown(id)));u.copied=true;u.msg=''}
@@ -870,6 +881,7 @@ document.addEventListener('click',e=>{
  else if(act==='pin'){ui(id).qm=false;pin(id)}
  else if(act==='qm'){const u=ui(id),was=u.qm;for(const k in UI)UI[k].qm=false;u.qm=!was;draw()}
  else if(act==='qtr'){const u=ui(id);if(u.qt){u.qt=null;u.qm=false;draw()}else qTr(id,dLang(id))}
+ else if(act==='qcp')qCopy(id);
  else if(act==='qtrset')qTr(id,b.dataset.to);
  else if(act==='setl'){ST.tlang=b.dataset.v;LS.cid='';stSave();draw()}
  else if(act==='more'){const u=ui(id);u.more=!u.more;draw()}
