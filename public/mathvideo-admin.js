@@ -264,6 +264,53 @@
     [h("h3", { text: "Math Video (code se)" }), fbox, code, area, bar, msg,
      h("div", { text: "Saved videos:", style: "font-size:12px;margin-top:8px" }), list].forEach(function (n) { el.appendChild(n); });
     refresh();
+
+    /* ---- student requests (Get Video): review, approve into the public library, or reject ---- */
+    if (store.pendingList) {
+      var cur = null;
+      var pbox = h("div", { style: "margin-top:18px;padding-top:12px;border-top:1px solid rgba(128,128,128,.35)" });
+      var plist = h("div", { style: "display:flex;flex-direction:column;gap:6px;margin-top:8px" });
+      var pq = h("div", { style: "font-size:13px;margin:8px 0;white-space:pre-wrap" });
+      var pbar = h("div", { style: "display:flex;flex-wrap:wrap;gap:8px" });
+      var planOnly = function () {
+        var p; try { p = JSON.parse(area.value); } catch (e) { say(["JSON galat hai: " + e.message]); return null; }
+        var r = validate(p);
+        if (r.errors.length) { say(["Nahi ho sakta:"].concat(r.errors)); return null; }
+        say(["Valid hai (" + p.steps.length + " steps)"].concat(r.warnings.map(function (w) { return "Dhyan: " + w; })), true);
+        return p;
+      };
+      var pbtn = function (label, fn) { var b = h("button", { text: label, type: "button", style: "padding:10px 14px;border-radius:10px;border:0;background:rgba(128,128,128,.18);color:inherit;cursor:pointer" }); b.onclick = fn; pbar.appendChild(b); };
+      var prefresh = function () {
+        store.pendingList().then(function (items) {
+          plist.textContent = "";
+          items.forEach(function (it) {
+            var b = h("button", { text: String(it.text || "").slice(0, 80), type: "button", style: "text-align:left;padding:8px 10px;border-radius:10px;border:0;background:rgba(128,128,128,.14);color:inherit;font-size:13px;cursor:pointer" });
+            b.onclick = function () { cur = it; pq.textContent = "Student ka question:\n" + it.text; area.value = JSON.stringify(it.plan, null, 2); say(["Request load hui. Preview dekho, phir Approve ya Reject."], true); };
+            plist.appendChild(b);
+          });
+          if (!items.length) plist.textContent = "Abhi koi pending request nahi.";
+        }, function (e) { plist.textContent = "Pending list load nahi hui: " + (e && e.message ? e.message : e); });
+      };
+      if (opts.preview) pbtn("Preview", function () { var p = planOnly(); if (p) opts.preview(p); });
+      pbtn("Approve for Get Video", function () {
+        if (!cur) return say(["Pehle list se ek request chuno"]);
+        var p = planOnly(); if (!p) return;
+        var id = cur.id, text = cur.text;
+        store.askedSet(id, text, p).then(function () { return store.pendingDel(id); }).then(function () {
+          say(["Approved. Ab ye question paste karne par sabhi students ko turant milega."], true); cur = null; pq.textContent = ""; prefresh();
+        }, function (e) { say(["Approve fail: " + (e && e.message ? e.message : e)]); });
+      });
+      pbtn("Reject (delete)", function () {
+        if (!cur) return say(["Pehle list se ek request chuno"]);
+        if (!confirm("Ye request delete karni hai?")) return;
+        var id = cur.id;
+        store.pendingDel(id).then(function () { say(["Request delete ho gayi."], true); cur = null; pq.textContent = ""; prefresh(); }, function (e) { say(["Delete fail: " + (e && e.message ? e.message : e)]); });
+      });
+      pbtn("Refresh", prefresh);
+      [h("h3", { text: "Student requests (pending)" }), h("div", { text: "Approve = Get Video library mein jata hai. Textbook question ke menu mein bhi dalna ho to upar code bharke Save dabao.", style: "font-size:12px;margin-top:4px" }), plist, pq, pbar].forEach(function (n) { pbox.appendChild(n); });
+      el.appendChild(pbox);
+      prefresh();
+    }
   }
 
   var api = { validate: validate, mountAdmin: mountAdmin, makeCode: makeCode, calc: calc, CODE_RE: CODE_RE };

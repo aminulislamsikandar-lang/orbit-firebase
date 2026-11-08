@@ -39,6 +39,15 @@ window.CLOUD = {
     set(code, plan) { return setDoc(doc(db, 'mathVideos', code), JSON.parse(JSON.stringify(plan))); },
     del(code) { return deleteDoc(doc(db, 'mathVideos', code)); },
     async list() { const s = await getDocs(collection(db, 'mathVideos')); const a = []; s.forEach(d => a.push(d.id)); return a; },
+    // Get Video: approved library (mathVideoAsked, doc id = hash of the question) + student requests waiting for admin review (mathVideoPending)
+    async askedGet(key) { const s = await getDoc(doc(db, 'mathVideoAsked', key)); return s.exists() ? s.data().plan || null : null; },
+    askedSet(key, text, plan) { return setDoc(doc(db, 'mathVideoAsked', key), JSON.parse(JSON.stringify({ text, plan }))); },
+    pendingAdd(key, text, plan) {
+      const u = auth.currentUser; if (!u) return Promise.reject(new Error('login'));
+      return setDoc(doc(db, 'mathVideoPending', key), JSON.parse(JSON.stringify({ text, plan, uid: u.uid, ts: Date.now() })));
+    },
+    async pendingList() { const s = await getDocs(collection(db, 'mathVideoPending')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); a.sort((x, y) => (y.ts || 0) - (x.ts || 0)); return a; },
+    pendingDel(key) { return deleteDoc(doc(db, 'mathVideoPending', key)); },
     async byPrefix(prefix) {
       const q = query(collection(db, 'mathVideos'), where(documentId(), '>=', prefix), where(documentId(), '<', prefix + '\uf8ff'));
       const s = await getDocs(q); const m = {}; s.forEach(d => { m[d.id] = d.data(); }); return m;

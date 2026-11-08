@@ -612,7 +612,8 @@ function draw(){
   const empty=VIEW==='fav'?'Abhi koi answer save nahi hua. Kisi answer ke neeche heart dabao.':'Abhi koi question pin nahi hua. Question ke upar pin icon dabao.';
   const entries=d.courses.flatMap(c=>c.chapters.map(ch=>({c,ch})));
   body=head1(TITLES[VIEW])+listHTML(fn,empty,entries,true)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
- }else if(VIEW==='settings')body=settingsHTML();
+ }else if(VIEW==='getvideo')body=gvHTML();
+ else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
  $('#app').innerHTML=`<div class="top"><button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button><div class="logo">${LOGO}Orbit Tutorial</div></div>${body}`;
@@ -622,7 +623,7 @@ function draw(){
 function drawSide(){
  const item=(v,ico,label,badge)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}
+ ${item('home','home','Home')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}
  <div class="sline"></div>
  ${item('pyq','pyq','PYQ')}${item('pass','pass','Pass mark')}${item('topper','topper','Topper')}${item('faculty','fac','Faculty')}${item('dev','dev','Developer')}
  <div class="sgap"></div><div class="sline"></div>
@@ -796,6 +797,50 @@ async function copy(id){
  draw();setTimeout(()=>{u.copied=false;draw()},1500);
 }
 
+// ---- Get Video: student pastes a maths question, AI makes a whiteboard video, the admin approves it for everyone ----
+const GV={text:'',busy:false,msg:'',err:false,plan:null};
+const gvNorm=t=>String(t||'').toLowerCase().replace(/[−–—]/g,'-').replace(/[×✕·]/g,'*').replace(/÷/g,'/').replace(/\s+/g,'');
+async function gvKey(t){            // same question (spaces/case ignored) -> same 40-character id
+ const n=gvNorm(t);
+ try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(n));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,40)}
+ catch(e){let h=5381;for(const ch of n)h=((h<<5)+h+ch.charCodeAt(0))>>>0;return h.toString(16).padStart(8,'0').repeat(5).slice(0,40)}
+}
+function gvHTML(){
+ return `<h1 style="font-size:26px;margin-top:14px">Get Video</h1>
+ <p class="mut" style="margin-top:6px">Maths ka question yahan paste karo (Class 6-8, numbers wala). Whiteboard video ban jayega.</p>
+ <textarea id="gvText" maxlength="400" rows="4" placeholder="Jaise: (−8) + 5 ka answer batao" aria-label="Maths question" style="width:100%;margin-top:12px;padding:12px;border:1px solid var(--ln);border-radius:12px;background:var(--card);color:var(--tx);font:inherit;resize:vertical">${esc(GV.text)}</textarea>
+ <button class="btn" data-act="gvgo" ${GV.busy?'disabled':''}>${GV.busy?'Video ban raha hai…':'Get Video'}</button>
+ ${GV.msg?`<p class="${GV.err?'err':'mut'}" role="status" style="margin-top:12px">${esc(GV.msg)}</p>`:''}
+ ${GV.plan&&!GV.busy?`<button class="btn" data-act="gvplay">Video dobara chalao</button>`:''}
+ <p class="mut" style="margin-top:22px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
+}
+async function gvRun(){
+ if(GV.busy)return;
+ const ta=document.getElementById('gvText');if(ta)GV.text=ta.value;
+ const text=GV.text.replace(/\s+/g,' ').trim();
+ if(text.length<8){GV.err=true;GV.plan=null;GV.msg='Question thoda aur likho (kam se kam 8 akshar).';draw();return}
+ if(!navigator.onLine){GV.err=true;GV.msg='Internet nahi hai. Video banane ke liye online aao.';draw();return}
+ if(!window.MathVideoPlayer||!window.CLOUD||!window.CLOUD.mathVideo){GV.err=true;GV.msg='Video system load nahi hua. Page refresh karo.';draw();return}
+ GV.busy=true;GV.err=false;GV.plan=null;GV.msg='Library mein dhoondh raha hoon…';draw();
+ try{
+  const key=await gvKey(text);
+  let plan=null,known=false;
+  try{plan=await window.CLOUD.mathVideo.askedGet(key);known=!!plan}catch(e){}
+  if(!plan){
+   GV.msg='AI video bana raha hai. 20 se 40 second lag sakte hain…';draw();
+   const r=await api('/api/mathvideo/generate',{text});
+   if(r.unsupported){GV.err=true;GV.msg=r.reason||'Is type ka video abhi nahi ban sakta.';GV.busy=false;draw();return}
+   plan=r.plan;
+   try{window.CLOUD.mathVideo.pendingAdd(key,text,plan).catch(()=>{})}catch(e){}   // goes to the admin for review; fails quietly if someone already sent the same question
+  }
+  GV.plan=plan;
+  GV.msg=known?'Ye video check ho chuka hai.':'Ye video AI ne abhi banaya hai aur abhi check nahi hua. Apni kitab se mila lo.';
+  GV.busy=false;draw();
+  window.MathVideoPlayer.open(plan);
+ }catch(e){GV.err=true;GV.msg=errMsg(e);GV.busy=false;draw()}
+}
+document.addEventListener('input',e=>{if(e.target&&e.target.id==='gvText')GV.text=e.target.value});
+
 document.addEventListener('click',e=>{
  const openQ=Object.keys(UI).filter(k=>UI[k].qm);
  if(openQ.length&&!(e.target.closest&&e.target.closest('.qmenu,[data-act="qm"]'))){openQ.forEach(k=>{UI[k].qm=false});draw()}
@@ -814,6 +859,8 @@ document.addEventListener('click',e=>{
  else if(act==='lsall'){const x=curCh();if(x)lessonAll(x.c,x.ch)}
  else if(act==='rul'){const x=curCh();if(x)rulesGo(x.c,x.ch,+b.dataset.si)}
  else if(act==='nav')go(b.dataset.v);
+ else if(act==='gvgo')gvRun();
+ else if(act==='gvplay'){if(GV.plan&&window.MathVideoPlayer)window.MathVideoPlayer.open(GV.plan)}
  else if(act==='pin'){ui(id).qm=false;pin(id)}
  else if(act==='qm'){const u=ui(id),was=u.qm;for(const k in UI)UI[k].qm=false;u.qm=!was;draw()}
  else if(act==='qtr'){const u=ui(id);if(u.qt){u.qt=null;u.qm=false;draw()}else qTr(id,dLang(id))}

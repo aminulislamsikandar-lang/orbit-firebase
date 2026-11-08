@@ -401,8 +401,9 @@ function limited(ip) {
 // waits a moment and moves on. Stays under 55s so the browser never gives up first.
 async function gemini(system, prompt, opts = {}) {
   const t0 = Date.now();
-  const DEADLINE = t0 + 55000;
+  const DEADLINE = t0 + (opts.budgetMs || 55000);
   let lastStatus = 0;
+  let useJson = !!opts.json;
   const start = keyStart++ % Math.max(KEYS.length, 1);
   const order = KEYS.map((_, i) => KEYS[(start + i) % KEYS.length]);
   for (const model of MODELS) {
@@ -421,7 +422,7 @@ async function gemini(system, prompt, opts = {}) {
               body: JSON.stringify({
                 systemInstruction: { parts: [{ text: system }] },
                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                generationConfig: { temperature: opts.temperature ?? 0.3, maxOutputTokens: opts.maxTokens || 4096 }
+                generationConfig: { temperature: opts.temperature ?? 0.3, maxOutputTokens: opts.maxTokens || 4096, ...(useJson ? { responseMimeType: 'application/json' } : {}) }
               })
             }
           );
@@ -434,6 +435,7 @@ async function gemini(system, prompt, opts = {}) {
           }
           lastStatus = r.status;
           console.error('Gemini error', r.status, model, 'key#' + (KEYS.indexOf(apiKey) + 1), JSON.stringify(j).slice(0, 300));
+          if (r.status === 400 && useJson && attempt === 1) { useJson = false; continue; } // model refused JSON mode: retry as plain text
           if (r.status === 429) break; // this key is out of quota: try the next key right away
           if ((r.status === 503 || r.status === 500) && attempt === 1) {
             await new Promise(ok => setTimeout(ok, 1200));
@@ -900,6 +902,111 @@ app.post('/api/video', async (req, res) => {
     console.error('B2 sign failed', e.message);
     res.status(502).json({ error: 'Video ka link nahi ban paya. Dobara try karo.' });
   }
+});
+
+
+// ---- Get Video: student pastes a maths question, AI makes a video plan (JSON) ----------------------------
+// The plan is checked by the same validator the admin panel uses (public/mathvideo-admin.js), including the
+// arithmetic check. If it fails, the errors are sent back to the AI and it tries again (within a time budget).
+// Students see their own result at once; it is saved as "pending" and only becomes public after the admin approves.
+const MV = require('./public/mathvideo-admin.js');
+const MV_ADMINS = (process.env.MV_ADMIN_EMAILS || 'aminulislamsikandar@gmail.com').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+const MV_DAILY = Math.max(1, parseInt(process.env.MV_DAILY || '5', 10) || 5);   // AI videos per student per day (admin: unlimited)
+const MV_CACHE = new Map();    // normalized question -> plan (or {unsupported}), so the same question never calls the AI twice
+const MV_USE = new Map();      // uid -> {day, n}
+const mvNorm = t => String(t || '').toLowerCase().replace(/[−–—]/g, '-').replace(/[×✕·]/g, '*').replace(/÷/g, '/').replace(/\s+/g, '');
+const mvDay = () => new Date().toISOString().slice(0, 10);
+
+const MV_SYSTEM = `You make short whiteboard maths videos for school students (Class 6-8, Assam, textbook style).
+Reply with ONE JSON object only. No markdown, no commentary.
+
+If the question is not a school maths question, or it cannot be solved with plain number arithmetic (only numbers, + - × ÷ and brackets; no letters or variables, no geometry figures), reply exactly:
+{"unsupported": true, "reason": "<one short Hinglish sentence in Roman letters>"}
+
+Otherwise reply with a plan in this exact shape:
+{
+ "id": "ask",
+ "type": "equation",
+ "version": 1,
+ "title": {"en": "...", "hg": "...", "hi": "..."},
+ "steps": [
+  {
+   "cap": {"en": "...", "hg": "...", "hi": "..."},
+   "say": {"en": "...", "hi": "..."},
+   "anim": {
+    "lines": ["(-8) + 5", "= -3"],
+    "highlight": [1],
+    "note": "Answer: -3",
+    "numberline": {"min": -10, "max": 5, "dots": [{"v": -8, "label": "-8", "color": "red"}]},
+    "cues": [{"hop": {"from": -8, "to": -3}}]
+   }
+  }
+ ]
+}
+Meaning of the fields:
+- "en" = simple English, "hg" = Hinglish in Roman letters, "hi" = Hindi in Devanagari script. "say" is what is spoken aloud.
+- In "say.hi" write every number as Hindi words (no digits), for example ऋण आठ, पाँच.
+- Each cap/say/title text is at most 140 characters. Use 3 to 7 steps (never more than 12).
+- "lines": 1 to 6 short strings (each at most 60 characters) shown on the board, in order. highlight = zero-based indexes of the lines to emphasise.
+- Maths lines are checked by a program, so they must be pure numeric: first line is the expression, later lines start with "=" and must have exactly the same value. Use the symbols + - × ÷ and brackets. Do not put words, units or letters inside a maths line. Words belong in cap/say.
+- The last step's "note" must be "Answer: <number>" and match the working. If the question has several parts, make the video for the first part only.
+- "numberline" (optional): integers only, min and max between -20 and 20, at most 12 dots; colors red, green, blue or orange. With a number line use at most 4 lines.
+- "cues" (optional, at most 8): each cue has exactly one key. {"point": {"line": 0, "word": "text that appears in that line"}} or {"point": {"value": 3}} (number line), {"hop": {"from": -8, "to": -3}} (number line, integers inside min..max), {"dot": {"v": 2, "label": "2", "color": "green"}}.
+- No HTML, no links, no emoji. Keep every explanation correct and simple. Never invent facts.`;
+
+function mvParse(text) {
+  let t = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { return null; }
+}
+
+app.post('/api/mathvideo/generate', async (req, res) => {
+  if (!guardAI(req, res)) return;
+  const raw = String((req.body || {}).text || '').replace(/\s+/g, ' ').trim();
+  if (raw.length < 8) return res.status(400).json({ error: 'Question thoda aur likho (kam se kam 8 akshar).' });
+  if (raw.length > 400) return res.status(400).json({ error: 'Question bahut lamba hai. 400 akshar tak likho.' });
+  const norm = mvNorm(raw);
+  if (MV_CACHE.has(norm)) return res.json({ ...MV_CACHE.get(norm), cached: true });
+
+  const email = String((req.user && req.user.email) || '').toLowerCase();
+  if (!MV_ADMINS.includes(email)) {
+    const u = MV_USE.get(req.user.uid), day = mvDay();
+    const cur = u && u.day === day ? u : { day, n: 0 };
+    if (cur.n >= MV_DAILY) return res.status(429).json({ error: `Aaj ki video limit (${MV_DAILY}) poori ho gayi. Kal dobara try karo.` });
+    cur.n++; MV_USE.set(req.user.uid, cur);
+  }
+
+  const t0 = Date.now(), TOTAL = 75000;
+  let prompt = 'Question:\n"""\n' + raw + '\n"""', lastErrors = [], lastStatus = 0;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const left = TOTAL - (Date.now() - t0);
+    if (left < 8000) break;
+    const r = await gemini(MV_SYSTEM, prompt, { json: true, temperature: 0.2, maxTokens: 8192, budgetMs: Math.min(left, attempt === 1 ? 40000 : 30000) });
+    if (!r.text) { lastStatus = r.status; break; }
+    const plan = mvParse(r.text);
+    if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
+    if (plan.unsupported) {
+      const out = { unsupported: true, reason: String(plan.reason || 'Is type ka video abhi nahi ban sakta.').slice(0, 200) };
+      MV_CACHE.set(norm, out);
+      return res.json(out);
+    }
+    plan.id = 'ask-' + crypto.createHash('sha1').update(norm).digest('hex').slice(0, 20);
+    const v = MV.validate(plan);
+    const soft = v.warnings.filter(w => /digits|Devanagari/.test(w));     // spoken Hindi problems: retry if there is time
+    if (!v.errors.length && !(soft.length && attempt < 3)) {
+      const out = { plan };
+      MV_CACHE.set(norm, out);
+      if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
+      console.log('MathVideo ok', attempt, 'try', (Date.now() - t0) + 'ms');
+      return res.json(out);
+    }
+    lastErrors = v.errors.length ? v.errors : soft;
+    console.error('MathVideo invalid (try ' + attempt + '):', lastErrors.slice(0, 4).join(' | '));
+    prompt = 'Question:\n"""\n' + raw + '\n"""\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
+  }
+  if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
+  res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Question ko seedha number wala likh ke dobara try karo.' });
 });
 
 const PORT = process.env.PORT || 3000;
