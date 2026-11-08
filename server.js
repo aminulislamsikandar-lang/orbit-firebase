@@ -39,13 +39,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 const KEYS = [...new Set([...(process.env.GEMINI_API_KEYS || '').split(','), process.env.GEMINI_API_KEY || ''].map(k => k.trim()).filter(Boolean))];
 const KEY = KEYS[0];
 let keyStart = 0; // round-robin so load is spread across keys
-// Models are tried in this order. Set GEMINI_MODEL in Render to choose the first one.
+// Models are tried in priority order: first one first. Set GEMINI_MODELS in Render, comma separated,
+// e.g. GEMINI_MODELS=gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.8-flash
+// (old GEMINI_MODEL still works and is put first). For each model ALL keys are tried before moving to the next model.
 const MODELS = [...new Set([
-  process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
-  'gemini-3.5-flash-lite',
-  'gemini-3.6-flash',
-  'gemini-3.8-flash'
-])];
+  process.env.GEMINI_MODEL || '',
+  ...(process.env.GEMINI_MODELS || '').split(','),
+  ...(process.env.GEMINI_MODELS ? [] : ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash'])
+].map(m => m.trim()).filter(Boolean))];
 
 // id -> {q, course, ch}. The client only ever sends an id (never free text),
 // so nobody can use this server as a free general-purpose AI with your key.
