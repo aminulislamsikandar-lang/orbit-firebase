@@ -149,5 +149,207 @@ t('multi-option without letters -> clear reason', /kai options/.test(sv.mvPreche
   t('no pre-check block for "' + q.slice(0, 30) + '"', sv.mvPrecheck(q) === ''));
 t('True/False with a too-big power -> pre-check reason', /bahut bada/.test(sv.mvPrecheck('9^20 = 5; True or False?')));
 
-console.log('\n' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+/* ---------- 5. Hidden question id: Copy question -> Get Video -> admin form auto-fill ---------- */
+async function hiddenIdTests() {
+  console.log('--- 5. Hidden question id (copy -> paste -> admin form) ---');
+  const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
+  const courses = require(path.join(ROOT, 'questions-public.js')).courses;
+  const mathsQs = [];
+  courses.filter(c => c.subject === 'Mathematics').forEach(c => c.chapters.forEach(ch => (ch.sections || []).forEach(s => s.questions.forEach(q => mathsQs.push({ c, ch, q })))));
+  const IDX = {}; courses.forEach(c => c.chapters.forEach(ch => (ch.sections || []).forEach(s => s.questions.forEach(q => { IDX[q.id] = { course: c, ch, q }; }))));
+  const secOf = (ch, q) => (ch.sections || []).findIndex(sec => sec.questions.indexOf(q) >= 0) + 1;
+  const infoOf = (c, ch, q) => ({ id: q.id, cls: c.class, subject: c.subject, medium: c.medium, chNo: ch.no, secNo: secOf(ch, q), qNo: q.no });
+  const qSrc = q => [q.text].concat(q.parts || [], q.options || []).filter(Boolean).join('\n');
+
+  // 5a. tag / untag
+  const A4 = IDX['m7c1-a4'].q, A4txt = qSrc(A4);
+  const tagged = MV.tagQuestion(A4txt, 'm7c1-a4');
+  t('tag is invisible: text + only zero-width characters added', tagged.replace(/[\uFEFF\u200B\u200C\u200D\u2060]/g, '') === A4txt && tagged.length > A4txt.length);
+  t('untag gives back the clean text and the id', eq(MV.untagQuestion(tagged), { text: A4txt, qid: 'm7c1-a4' }));
+  t('text without a tag is unchanged', eq(MV.untagQuestion('(-8) + 5 ka answer batao'), { text: '(-8) + 5 ka answer batao', qid: '' }));
+  t('tagging twice keeps only the new id', MV.untagQuestion(MV.tagQuestion(tagged, 'm7c1-b2')).qid === 'm7c1-b2' && MV.untagQuestion(MV.tagQuestion(tagged, 'm7c1-b2')).text === A4txt);
+  t('bad id is not tagged', MV.tagQuestion('abc', 'bad id!') === 'abc' && MV.tagQuestion('abc', '') === 'abc');
+  t('tag pasted after other text is still found', MV.untagQuestion('hello ' + tagged).qid === 'm7c1-a4');
+  t('library key: tagged paste == typed question', MV.normQuestion(MV.untagQuestion(tagged).text) === MV.normQuestion(A4txt));
+  const Z = ['\u200B', '\u200C', '\u200D', '\u2060'], ch = c => Z[(c >> 6) & 3] + Z[(c >> 4) & 3] + Z[(c >> 2) & 3] + Z[c & 3];
+  const fake = '\uFEFF' + ch(1) + ch(2) + '\uFEFF' + 'hello';   // decodes to control characters
+  t('tag that decodes to junk is removed, no id', eq(MV.untagQuestion(fake), { text: 'hello', qid: '' }));
+  t('too-short invisible run is left alone', MV.untagQuestion('\uFEFF\u200B\u200C\uFEFFhi').qid === '');
+  t('longest allowed id still fits the 570 box (162 + 400)', MV.tagQuestion('x'.repeat(400), 'a'.repeat(40)).length <= 570);
+
+  // 5b. every maths question: round trip + admin fields + unique valid codes
+  let allOk = true, codes = new Set(), dup = '', badCode = '';
+  mathsQs.forEach(({ c, ch, q }) => {
+    const rt = MV.untagQuestion(MV.tagQuestion(qSrc(q), q.id));
+    if (rt.qid !== q.id || rt.text !== qSrc(q)) allOk = false;
+    const f = MV.qFields(infoOf(c, ch, q));
+    if (!f) { allOk = false; return; }
+    const code = MV.makeCode({ school: 'nashibali', cls: f.cls, medium: f.medium, subject: f.subject, ex: f.ex, q: f.q, part: f.part });
+    if (!MV.CODE_RE.test(code)) badCode = badCode || (q.id + ' -> ' + code);
+    if (codes.has(code)) dup = dup || (q.id + ' -> ' + code);
+    codes.add(code);
+  });
+  t('all ' + mathsQs.length + ' maths questions: id round trip + fields found', allOk && mathsQs.length > 100);
+  t('every maths code passes CODE_RE', badCode === '', badCode);
+  t('no two maths questions get the same code', dup === '', dup);
+  t('m7c1-a4 -> class7 / math / englishmedium / EX:1.1 / Q4', eq(MV.qFields({ cls: 7, subject: 'Mathematics', medium: undefined, chNo: 1, secNo: 1, qNo: 4 }), { cls: 'class7', subject: 'math', medium: 'englishmedium', ex: '1.1', q: '4', part: '' }));
+  t('qFields from the real index: m7c1-a4 and m6c1-mm1 (section 9)', (f => f && f.ex === '1.1' && f.q === '4')(MV.qFields(infoOf(IDX['m7c1-a4'].course, IDX['m7c1-a4'].ch, IDX['m7c1-a4'].q))) && (f => f && f.ex === '1.9' && f.q === '1')(MV.qFields(infoOf(IDX['m6c1-mm1'].course, IDX['m6c1-mm1'].ch, IDX['m6c1-mm1'].q))));
+  t('qFields: missing section / question number -> null', MV.qFields({ cls: 7, subject: 'Mathematics', chNo: 1, qNo: 4 }) === null && MV.qFields({ cls: 7, subject: 'Mathematics', chNo: 1, secNo: 1 }) === null);
+  t('unknown medium: still filled; the admin form ignores a value its Medium list does not have', (f => f && f.medium === 'klingonmedium' && f.ex === '1.1')(MV.qFields({ cls: 7, subject: 'Mathematics', medium: 'Klingon', chNo: 1, secNo: 1, qNo: 4 })));
+
+  // 5c. index.html glue: mvQFields, qCopy and gvRun are cut out of the real file and run with stubs
+  const grab = (from, to) => { const i = html.indexOf(from), j = html.indexOf(to, i); if (i < 0 || j < 0) throw new Error('marker missing: ' + from); return html.slice(i, j); };
+  const mvq = grab('window.mvQFields=', '\nasync function copy(id)');
+  const winA = { MathVideo: MV };
+  const mvQFields = new vm.Script('(function(window,IDX){' + mvq + '\nreturn window.mvQFields;})').runInThisContext()(winA, IDX);
+  t('window.mvQFields(m7c1-a4) -> admin fields', (f => f && f.ex === '1.1' && f.q === '4' && f.cls === 'class7' && f.medium === 'englishmedium')(mvQFields('m7c1-a4')));
+  t('window.mvQFields(unknown id) -> null', mvQFields('nope') === null);
+
+  const qcopySrc = grab('async function qCopy(id){', '// Used by the admin Math Video panel');
+  async function copyOf(qid) {
+    let written = null; const UI = {};
+    const run = new vm.Script('(function(ui,qFor,qSrc,courseOfId,window,navigator,draw,setTimeout,document){' + qcopySrc + '\nreturn qCopy;})').runInThisContext();
+    const qCopy = run(id => UI[id] || (UI[id] = {}), id => (IDX[id] || {}).q, qSrc, id => (IDX[id] || {}).course, { MathVideo: MV },
+      { clipboard: { writeText: async x => { written = x; } } }, () => {}, () => 0, {});
+    await qCopy(qid); return written;
+  }
+  const copiedMath = await copyOf('m7c1-a4');
+  t('Copy question (maths): clean text + hidden id', eq(MV.untagQuestion(copiedMath), { text: A4txt, qid: 'm7c1-a4' }) && copiedMath !== A4txt);
+  const sciId = courses.find(c => c.subject === 'Science').chapters[0].sections[0].questions[0].id;
+  const copiedSci = await copyOf(sciId);
+  t('Copy question (science): plain text, no hidden characters', copiedSci === qSrc(IDX[sciId].q) && !/[\uFEFF\u200B\u200C\u200D\u2060]/.test(copiedSci));
+
+  const gvSrc = grab('const gvNorm=', 'document.addEventListener(\'input\',e=>{if(e.target&&e.target.id===\'gvText\')');
+  async function runGv(pasted, eng, sub) {
+    const calls = { api: null, pending: null, played: false }, GV = { sub: sub || 'Mathematics', tx: { Mathematics: '', Science: '' }, text: pasted, busy: false, msg: '', err: false, plan: null, eng: eng == null ? 2 : eng };
+    const planStub = { id: 'p', steps: [] };
+    const win = { MathVideo: MV, MathVideoPlayer: { open: () => { calls.played = true; } },
+      CLOUD: { mathVideo: { askedGet: async () => null, pendingAdd: (k, x, p, qid) => { calls.pending = { k, x, p, qid, store: 'math' }; return Promise.resolve(); } },
+        scienceVideo: { askedGet: async () => null, pendingAdd: (k, x, p, qid) => { calls.pending = { k, x, p, qid, store: 'science' }; return Promise.resolve(); } } } };
+    const mk = new vm.Script('(function(window,GV,document,navigator,draw,api,errMsg,crypto,TextEncoder,IDX){' + gvSrc + '\nreturn {gvRun,gvKey};})').runInThisContext();
+    const fns = mk(win, GV, { getElementById: () => null }, { onLine: true }, () => {}, async (u, body) => { calls.api = body; calls.url = u; return { plan: planStub }; }, e => String(e), globalThis.crypto, TextEncoder, IDX);
+    await fns.gvRun(); return { calls, GV, gvKey: fns.gvKey };
+  }
+  const r1 = await runGv(tagged);
+  const typed = await runGv(A4txt);
+  t('Get Video: AI gets the clean question (no hidden characters)', r1.calls.api && r1.calls.api.text === A4txt.replace(/\s+/g, ' ').trim() && !/[\uFEFF\u200B\u200C\u200D\u2060]/.test(r1.calls.api.text));
+  t('Get Video: request is saved with the textbook id', r1.calls.pending && r1.calls.pending.qid === 'm7c1-a4' && r1.calls.pending.x === r1.calls.api.text);
+  t('Get Video: library key is the same for tagged paste and typed text', r1.calls.pending.k === typed.calls.pending.k && /^[0-9a-f]{40}$/.test(r1.calls.pending.k));
+  t('Get Video: typed text -> request saved without a textbook id', typed.calls.pending && !typed.calls.pending.qid);
+  const longTagged = MV.tagQuestion('1 + 2 = 3. '.repeat(40), 'm7c1-a4');
+  const r2 = await runGv(longTagged);
+  t('Get Video: clean text over 400 characters is refused, AI not called', r2.GV.err === true && /lamba/.test(r2.GV.msg) && r2.calls.api === null);
+  t('textarea box fits question + hidden id (maths) and the longest science question', /id="gvText" maxlength="760"/.test(html));
+
+  // 5c2. only app questions, per subject; the science box
+  const SQ = courses.filter(c => c.subject === 'Science').flatMap(c => c.chapters.flatMap(ch => (ch.sections || []).flatMap(sec => sec.questions)));
+  const sq = SQ.find(q => !q.parts && !q.options && q.text.length > 25) || SQ[0];
+  const ok1 = await runGv(sq.text, 2, 'Science');
+  t('Science box: an app science question goes to /api/sciencevideo/generate', ok1.calls.api && ok1.calls.url === '/api/sciencevideo/generate' && ok1.calls.api.text === sq.text.replace(/\s+/g, ' ').trim() && ok1.calls.api.eng === undefined);
+  t('Science box: request is saved in the science store without a textbook id', ok1.calls.pending && ok1.calls.pending.store === 'science' && !ok1.calls.pending.qid);
+  t('Science box: library key differs from the maths key for the same words', ok1.calls.pending.k !== (await ok1.gvKey(sq.text, 2)) && /^[0-9a-f]{40}$/.test(ok1.calls.pending.k));
+  const bad1 = await runGv(sq.text, 2, 'Mathematics');
+  t('Maths box: an app SCIENCE question is refused, AI not called', bad1.GV.err === true && /sirf app ke Maths/.test(bad1.GV.msg) && bad1.calls.api === null);
+  const bad2 = await runGv(A4txt, 2, 'Science');
+  t('Science box: an app MATHS question is refused, AI not called', bad2.GV.err === true && /sirf app ke Science/.test(bad2.GV.msg) && bad2.calls.api === null);
+  const bad3 = await runGv('(-8) + 5 ka answer batao', 2, 'Mathematics');
+  t('Maths box: typed text that is not an app question is refused', bad3.GV.err === true && bad3.calls.api === null && bad3.calls.pending === null);
+  const bad4 = await runGv('What is the capital of France and why is it famous', 2, 'Science');
+  t('Science box: any other typed text is refused', bad4.GV.err === true && bad4.calls.api === null);
+  const part = await runGv(A4txt + ' hello', 2, 'Mathematics');
+  t('Maths box: app question + extra words is refused', part.GV.err === true && part.calls.api === null);
+  t('Maths box: the app question with a hidden id still goes through', r1.GV.err === false || r1.calls.api !== null);
+  const gvh = html.slice(html.indexOf('function gvHTML(){'), html.indexOf('async function gvRun(){'));
+  t('Get Video page has a Maths / Science switch and hides the English-words slider for science', /data-act="gvsub"/.test(gvh) && /\$\{sci\?'':`<div style="margin-top:12px"><label for="gvEng"/.test(gvh));
+  t('click handler wires the switch', /act==='gvsub'\)gvSwitch/.test(html));
+
+  // 5c3. server: bank check + science prompt + science plan format
+  const srv = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
+  const cut = (from, to) => { const i = srv.indexOf(from), j = srv.indexOf(to, i); if (i < 0 || j < 0) throw new Error('server marker missing: ' + from); return srv.slice(i, j); };
+  const QUIZ = require(path.join(ROOT, 'questions.js'));
+  const bank = new vm.Script('(function(QUIZ,MV){' + cut('const MV_BANK', "app.post('/api/mathvideo/generate'") + '\nreturn {mvKnown,mvBank,MV_UNKNOWN_MSG};})').runInThisContext()(QUIZ, MV);
+  const mq = mathsQs[0].q, mqSrc = qSrc(mq);
+  t('server bank: every app maths question is known as Mathematics', mathsQs.every(({ q }) => bank.mvKnown(qSrc(q), 'Mathematics')));
+  t('server bank: every app science question is known as Science', SQ.every(q => bank.mvKnown(qSrc(q), 'Science')));
+  t('server bank: a maths question is NOT known as Science, and the reverse', !bank.mvKnown(mqSrc, 'Science') && !bank.mvKnown(qSrc(sq), 'Mathematics'));
+  t('server bank: typed / changed text is refused', !bank.mvKnown('(-8) + 5 ka answer batao', 'Mathematics') && !bank.mvKnown(mqSrc + ' extra', 'Mathematics') && !bank.mvKnown('', 'Science'));
+  t('server bank: spaces and capital letters do not matter', !!bank.mvKnown('  ' + mqSrc.toUpperCase().replace(/ /g, '   ') + ' ', 'Mathematics'));
+  t('server bank: part-only paste (without the main question line) is refused', (() => { const x = mathsQs.find(({ q }) => (q.parts || []).length > 1); return !x || !bank.mvKnown(x.q.parts[1], 'Mathematics'); })());
+  t('server bank: part (ii) with the main question line is accepted', (() => { const x = mathsQs.find(({ q }) => (q.parts || []).length > 1); return !x || !!bank.mvKnown(x.q.text + '\n' + x.q.parts[1], 'Mathematics'); })());
+  t('server: maths route checks the bank before the cache, the AI and the daily quota', (h => h.indexOf('mvKnown(typed') > 0 && h.indexOf('mvKnown(typed') < h.indexOf('MV_CACHE.has') && h.indexOf('mvKnown(typed') < h.indexOf('MV_USE.get'))(cut("app.post('/api/mathvideo/generate'", "app.post('/api/sciencevideo/generate'")));
+  t('server: science route checks the bank before the cache, the AI and the daily quota', (h => h.indexOf("mvKnown(typed, 'Science')") > 0 && h.indexOf("mvKnown(typed, 'Science')") < h.indexOf('MV_CACHE.has') && h.indexOf("mvKnown(typed, 'Science')") < h.indexOf('MV_USE.get'))(cut("app.post('/api/sciencevideo/generate'", 'const PORT')));
+  const sciCode = new vm.Script('(function(){' + cut('const SCI_EXAMPLE', 'app.post(\'/api/sciencevideo/generate\'') + '\nreturn {SCI_EXAMPLE,SCI_SYSTEM,sciQuality};})').runInThisContext()();
+  const sv = MV.validate(sciCode.SCI_EXAMPLE);
+  t('science example plan passes the validator with no errors', sv.errors.length === 0, sv.errors.join(' | '));
+  t('science example plan: no digits / Devanagari warnings, and the science notice is shown', sv.warnings.filter(w => /digits|Devanagari/.test(w)).length === 0 && sv.warnings.some(w => /Science video/.test(w)));
+  t('science example plan passes the quality gate', sciCode.sciQuality(sciCode.SCI_EXAMPLE).length === 0);
+  t('science prompt contains the example, the "unsupported" escape and the notes rule', sciCode.SCI_SYSTEM.indexOf(JSON.stringify(sciCode.SCI_EXAMPLE)) > 0 && /"unsupported": true/.test(sciCode.SCI_SYSTEM) && /Never invent facts/.test(sciCode.SCI_SYSTEM));
+  t('science quality gate: 2 steps / no cues is rejected', sciCode.sciQuality({ steps: [{ anim: { cues: [] } }, { anim: { cues: [] } }] }).length === 2);
+  const bad = clone(sciCode.SCI_EXAMPLE); bad.steps[2].anim.numberline = { min: 0, max: 5, dots: [] };
+  t('science plan with a number line is rejected', MV.validate(bad).errors.some(e => /number line/.test(e)));
+  const hop = clone(sciCode.SCI_EXAMPLE); hop.steps[0].anim.cues = [{ hop: { from: 1, to: 2 } }];
+  t('science plan with a hop cue is rejected', MV.validate(hop).errors.length > 0);
+  const wrongT = clone(sciCode.SCI_EXAMPLE); wrongT.type = 'poem';
+  t('unknown plan type is rejected', MV.validate(wrongT).errors.some(e => /type/.test(e)));
+
+  // 5d. admin panel: click a request -> form fills by itself (fake DOM, no browser)
+  const store = (items) => ({ log: [], get: async () => null, set: async function (c, p) { this.log.push(['set', c, p]); }, del: async () => {}, list: async () => [],
+    pendingList: async () => items, askedSet: async () => {}, pendingDel: async () => {} });
+  const mkEl = tag => ({ tagName: tag.toUpperCase(), children: [], options: [], style: {}, value: '', textContent: '', appendChild(c) { this.children.push(c); if (this.tagName === 'SELECT') this.options.push(c); return c; } });
+  global.document = { createElement: mkEl, createTextNode: x => ({ text: x }) };
+  let saves = 0; global.localStorage = { getItem: () => null, setItem: () => { saves++; } }; global.confirm = () => true;
+  const all = n => [n].concat(...(n.children || []).map(all));
+  async function mount(items, optsExtra) {
+    const root = mkEl('div'), st = store(items);
+    MV.mountAdmin(root, st, Object.assign({}, optsExtra));
+    await new Promise(r => setTimeout(r, 5));
+    const els = all(root);
+    const fieldOf = label => els.find(e => e.tagName === 'LABEL' && e.children[0] && e.children[0].text === label).children[1];
+    const code = els.find(e => e.placeholder === 'code yahan apne aap ban jayega'), area = els.find(e => e.placeholder === 'Yahan plan JSON paste karo');
+    const btn = text => els.find(e => e.tagName === 'BUTTON' && String(e.textContent).indexOf(text) === 0);
+    const pq = els.find(e => e.tagName === 'DIV' && /^font-size:13px;margin:8px 0;white-space:pre-wrap/.test((e.style && e.style.cssText) || ''));   // the request box (the status line "msg" has the same words in another order)
+    return { st, els, code, area, btn, pq, ex: fieldOf('Exercise / Example'), q: fieldOf('Question'), part: fieldOf('Part (khali bhi chalega)'), cls: fieldOf('Class'), subject: fieldOf('Subject'), medium: fieldOf('Medium'), school: fieldOf('School') };
+  }
+  const planOK = clone(demo);
+  const reqs = [{ id: 'k1', text: A4txt, plan: planOK, qid: 'm7c1-a4' }, { id: 'k2', text: '2^5 + 3^2', plan: planOK }, { id: 'k3', text: 'x', plan: planOK, qid: 'zz-unknown9' }];
+  const M = await mount(reqs, { qFields: mvQFields });
+  t('request button shows the textbook id', !!M.btn('[m7c1-a4] '));
+  saves = 0; M.btn('[m7c1-a4] ').onclick();
+  t('click request: Exercise / Question / Class / Subject / Medium filled', M.ex.value === '1.1' && M.q.value === '4' && M.cls.value === 'class7' && M.subject.value === 'math' && M.medium.value === 'englishmedium' && M.part.value === '');
+  t('click request: code is built', M.code.value === 'nashibali-class7-englishmedium-math-EX:1.1-Q4', M.code.value);
+  t('click request: plan JSON is loaded and question + id shown', JSON.parse(M.area.value).type === 'equation' && /Textbook question: m7c1-a4/.test(M.pq.textContent) && /Code apne aap bhar gaya/.test(M.pq.textContent));
+  t('auto-fill does not overwrite the admin remembered defaults', saves === 0, 'setItem calls: ' + saves);
+  M.btn('Save').onclick(); await new Promise(r => setTimeout(r, 5));
+  t('Save right after the click uses the auto-filled code (no retyping)', M.st.log.length === 1 && M.st.log[0][1] === 'nashibali-class7-englishmedium-math-EX:1.1-Q4' && M.st.log[0][2].type === 'equation');
+  M.btn('2^5').onclick();
+  t('next request without id: old Exercise / Question / code cleared', M.ex.value === '' && M.q.value === '' && M.part.value === '' && M.code.value === '' && M.pq.textContent.indexOf('Textbook question') < 0);
+  M.btn('[zz-unknown9]').onclick();
+  t('unknown textbook id: nothing guessed, admin told to fill by hand', M.ex.value === '' && /nahi bhar paye/.test(M.pq.textContent));
+  M.school.value = 'otherschool'; M.btn('[m7c1-a4] ').onclick();
+  t('School stays what the admin typed', M.code.value === 'otherschool-class7-englishmedium-math-EX:1.1-Q4', M.code.value);
+  const M2 = await mount(reqs, {});
+  M2.btn('[m7c1-a4] ').onclick();
+  t('no qFields option: no crash, nothing filled', M2.ex.value === '' && /nahi bhar paye/.test(M2.pq.textContent));
+  delete global.document; delete global.localStorage; delete global.confirm;
+
+  // 5e. rules + service worker + cloud.js
+  const rules = fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8'), pend = rules.slice(rules.indexOf('match /mathVideoPending/'), rules.indexOf('match /subscriptions/'));
+  t('rules: pending allows only text, plan, uid, ts, qid', /hasOnly\(\['text', 'plan', 'uid', 'ts', 'qid'\]\)/.test(pend));
+  t('rules: qid must be a string of at most 40 characters', /get\('qid', ''\) is string/.test(pend) && /get\('qid', ''\)\.size\(\) <= 40/.test(pend));
+  t('rules: approved library keys unchanged (text, plan only)', /match \/mathVideoAsked\/\{key\}[\s\S]*?hasOnly\(\['text', 'plan'\]\)/.test(rules));
+  const cloud = fs.readFileSync(path.join(ROOT, 'public/cloud.js'), 'utf8');
+  t('cloud.js: qid is added to the request only when present', /pendingAdd\(key, text, plan, qid\)/.test(cloud) && /if \(qid\) d\.qid = qid/.test(cloud));
+  t('sw.js: SHELL version is v19', /const SHELL = 'orbit-shell-v19'/.test(fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8')));
+  const rsci = rules.slice(rules.indexOf('match /scienceVideoAsked/'), rules.indexOf('match /subscriptions/'));
+  t('rules: science library is admin-write, signed-in read, type science, text <= 700', /scienceVideoAsked\/\{key\}[\s\S]*?allow read: if request\.auth != null;[\s\S]*?allow create, update: if isAdmin\(\)[\s\S]*?hasOnly\(\['text', 'plan'\]\)[\s\S]*?plan\.type == 'science'[\s\S]*?size\(\) <= 700/.test(rsci));
+  t('rules: science pending = students add only, admin reads / deletes, own uid, key = 40 hex', /match \/sciencePending\/\{key\}[\s\S]*?hasOnly\(\['text', 'plan', 'uid', 'ts'\]\)[\s\S]*?uid == request\.auth\.uid[\s\S]*?plan\.type == 'science'[\s\S]*?allow read, delete: if isAdmin\(\)/.test(rsci) && /\[0-9a-f\]\{40\}/.test(rsci));
+  t('rules: maths collections still only accept type equation', /mathVideoAsked[\s\S]*?plan\.type == 'equation'/.test(rules) && /mathVideoPending[\s\S]*?plan\.type == 'equation'/.test(rules));
+  t('cloud.js: scienceVideo store uses scienceVideoAsked + sciencePending', /scienceVideo: \{/.test(cloud) && /'scienceVideoAsked'/.test(cloud) && /'sciencePending'/.test(cloud));
+  t('team.js passes the science store to the admin panel', /science: window\.CLOUD\.scienceVideo/.test(fs.readFileSync(path.join(ROOT, 'public/team.js'), 'utf8')));
+  t('team.js passes qFields to the admin panel', /qFields: function \(id\) \{ return window\.mvQFields/.test(fs.readFileSync(path.join(ROOT, 'public/team.js'), 'utf8')));
+}
+
+hiddenIdTests().then(() => {
+  console.log('\n' + pass + ' passed, ' + fail + ' failed');
+  process.exit(fail ? 1 : 0);
+}).catch(e => { console.log('FAIL  section 5 crashed -> ' + (e && e.stack || e)); process.exit(1); });

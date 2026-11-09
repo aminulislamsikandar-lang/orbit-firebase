@@ -792,7 +792,9 @@ function say(id){
 }
 // 3-dot menu "Copy question": copies the question text (with its parts / options) so it can be pasted into Get Video.
 async function qCopy(id){
- const u=ui(id),q=qFor(id),txt=q?qSrc(q):'';
+ const u=ui(id),q=qFor(id);let txt=q?qSrc(q):'';
+ // Maths questions carry their textbook id as invisible characters in front of the text. Get Video cuts it out again and the admin form fills Exercise / Question from it.
+ if(txt&&window.MathVideo&&window.MathVideo.tagQuestion&&(courseOfId(id)||{}).subject==='Mathematics')txt=window.MathVideo.tagQuestion(txt,q.id);
  let ok=false;
  if(txt){
   try{await navigator.clipboard.writeText(txt);ok=true}
@@ -801,6 +803,8 @@ async function qCopy(id){
  u.qcp=ok?'ok':'err';draw();
  setTimeout(()=>{u.qcp=null;u.qm=false;draw()},1200);
 }
+// Used by the admin Math Video panel: textbook question id -> Class / Subject / Medium / Exercise / Question (null if unknown).
+window.mvQFields=qid=>{const x=IDX[qid];return x&&window.MathVideo&&window.MathVideo.qFields?window.MathVideo.qFields({id:qid,cls:x.course.class,subject:x.course.subject,medium:x.course.medium,chNo:x.ch.no,secNo:(x.ch.sections||[]).findIndex(s=>s.questions.indexOf(x.q)>=0)+1,qNo:x.q.no}):null};
 async function copy(id){
  const u=ui(id);
  try{await navigator.clipboard.writeText(plain(shown(id)));u.copied=true;u.msg=''}
@@ -809,21 +813,30 @@ async function copy(id){
 }
 
 // ---- Get Video: student pastes a maths question, AI makes a whiteboard video, the admin approves it for everyone ----
-const GV={text:'',busy:false,msg:'',err:false,plan:null,eng:(()=>{try{const v=+localStorage.getItem('gvEng');return v>=0&&v<=3&&localStorage.getItem('gvEng')!==null?v:2}catch(e){return 2}})()};
+const GV={sub:'Mathematics',tx:{Mathematics:'',Science:''},text:'',busy:false,msg:'',err:false,plan:null,eng:(()=>{try{const v=+localStorage.getItem('gvEng');return v>=0&&v<=3&&localStorage.getItem('gvEng')!==null?v:2}catch(e){return 2}})()};
 const GV_ENG=[['Bilkul kam','Sab kuch Hindi mein: numbers bhi Hindi words mein (ऋण तीन गुणा चार).'],['Kam','Sirf plus, minus, into, equal to English mein; baaki Hindi.'],['Normal','Maths words English mein, baaki Hindi (jaisa pehle tha).'],['Zyada','Zyada se zyada English words: number line, jump, step, answer...']];
 const gvNorm=t=>window.MathVideo&&window.MathVideo.normQuestion?window.MathVideo.normQuestion(t):String(t||'').toLowerCase().replace(/[−–—]/g,'-').replace(/[×✕·]/g,'*').replace(/÷/g,'/').replace(/\s+/g,'');   // same normaliser as the server (superscripts / ** become ^N), so the library key matches
-async function gvKey(t,eng){            // same question (spaces/case ignored) + same English-words level -> same 40-character id (level 2 keeps the old id)
- const n=gvNorm(t)+(eng===2||eng==null?'':'|e'+eng);
+async function gvKey(t,eng,pre){            // same question (spaces/case ignored) + same English-words level -> same 40-character id (level 2 keeps the old id); science ids start with 's|'
+ const n=(pre||'')+gvNorm(t)+(eng===2||eng==null?'':'|e'+eng);
  try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(n));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,40)}
  catch(e){let h=5381;for(const ch of n)h=((h<<5)+h+ch.charCodeAt(0))>>>0;return h.toString(16).padStart(8,'0').repeat(5).slice(0,40)}
 }
+// Get Video takes only questions that exist in the app, for the chosen subject (the server checks the same).
+function gvKnown(text,sub){
+ const M=window.MathVideo;if(!M||!M.linesMatch)return true;   // checker missing: the server still decides
+ for(const id in IDX){const x=IDX[id];if(x.course.subject!==sub)continue;if(M.linesMatch(text,[x.q.text].concat(x.q.parts||[],x.q.options||[]).filter(Boolean)))return true}
+ return false;
+}
+const GV_SUB={Mathematics:{label:'Maths',noun:'Maths',store:'mathVideo',url:'/api/mathvideo/generate'},Science:{label:'Science',noun:'Science',store:'scienceVideo',url:'/api/sciencevideo/generate'}};
 function gvHTML(){
+ const S=GV.sub,sci=S==='Science';
  return `<h1 style="font-size:26px;margin-top:14px">Get Video</h1>
- <p class="mut" style="margin-top:6px">Maths ka question yahan paste karo (Class 6-8, numbers wala; powers aur True/False bhi chalenge). Whiteboard video ban jayega.</p>
- <textarea id="gvText" maxlength="400" rows="4" placeholder="Jaise: (−8) + 5 ka answer batao" aria-label="Maths question" style="width:100%;margin-top:12px;padding:12px;border:1px solid var(--ln);border-radius:12px;background:var(--card);color:var(--tx);font:inherit;resize:vertical">${esc(GV.text)}</textarea>
- <div style="margin-top:12px"><label for="gvEng" style="font-weight:600">English words: <span id="gvEngLab">${GV_ENG[GV.eng][0]}</span></label>
+ <div role="tablist" style="display:flex;gap:8px;margin-top:12px">${Object.keys(GV_SUB).map(k=>`<button class="btn" role="tab" aria-selected="${k===S}" data-act="gvsub" data-v="${k}" ${GV.busy?'disabled':''} style="${k===S?'':'opacity:.55'}">${GV_SUB[k].label}</button>`).join('')}</div>
+ <p class="mut" style="margin-top:10px">${sci?'Science':'Maths'} ka question app me question ke bagal ke 3 dots se <b>Copy question</b> karo aur yahan paste karo. Sirf app ke ${sci?'Science':'Maths'} questions chalenge. ${sci?'Whiteboard video book ke notes se banega.':'Powers aur True/False bhi chalenge. Whiteboard video ban jayega.'}</p>
+ <textarea id="gvText" maxlength="760" rows="4" placeholder="${sci?'Yahan copy kiya hua Science question paste karo':'Yahan copy kiya hua Maths question paste karo'}" aria-label="${sci?'Science':'Maths'} question" style="width:100%;margin-top:12px;padding:12px;border:1px solid var(--ln);border-radius:12px;background:var(--card);color:var(--tx);font:inherit;resize:vertical">${esc(GV.text)}</textarea>
+ ${sci?'':`<div style="margin-top:12px"><label for="gvEng" style="font-weight:600">English words: <span id="gvEngLab">${GV_ENG[GV.eng][0]}</span></label>
  <input id="gvEng" type="range" min="0" max="3" step="1" value="${GV.eng}" ${GV.busy?'disabled':''} aria-label="Video mein English words kitne hon" style="width:100%;accent-color:var(--ac,#e4572e);margin-top:6px">
- <p class="mut" id="gvEngHint" style="margin:2px 0 0;font-size:13px">${GV_ENG[GV.eng][1]}</p></div>
+ <p class="mut" id="gvEngHint" style="margin:2px 0 0;font-size:13px">${GV_ENG[GV.eng][1]}</p></div>`}
  <button class="btn" data-act="gvgo" ${GV.busy?'disabled':''}>${GV.busy?'Video ban raha hai…':'Get Video'}</button>
  ${GV.msg?`<p class="${GV.err?'err':'mut'}" role="status" style="margin-top:12px">${esc(GV.msg)}</p>`:''}
  ${GV.plan&&!GV.busy?`<button class="btn" data-act="gvplay">Video dobara chalao</button>`:''}
@@ -831,22 +844,26 @@ function gvHTML(){
 }
 async function gvRun(){
  if(GV.busy)return;
+ const sub=GV.sub,sci=sub==='Science',SB=GV_SUB[sub];
  const ta=document.getElementById('gvText');if(ta)GV.text=ta.value;
- const text=GV.text.replace(/\s+/g,' ').trim();
+ const un=window.MathVideo&&window.MathVideo.untagQuestion?window.MathVideo.untagQuestion(GV.text):{text:GV.text,qid:''};   // cut the hidden textbook id out first: the key and the AI only see the clean question
+ const text=un.text.replace(/\s+/g,' ').trim(),qid=un.qid;
  if(text.length<8){GV.err=true;GV.plan=null;GV.msg='Question thoda aur likho (kam se kam 8 akshar).';draw();return}
+ if(text.length>(sci?700:400)){GV.err=true;GV.plan=null;GV.msg='Question bahut lamba hai. '+(sci?700:400)+' akshar se chhota rakho.';draw();return}
+ if(!gvKnown(text,sub)){GV.err=true;GV.plan=null;GV.msg='Is box me sirf app ke '+SB.noun+' ke questions chalte hain. Question ke bagal ke 3 dots me "Copy question" dabao aur yahan paste karo.';draw();return}
  if(!navigator.onLine){GV.err=true;GV.msg='Internet nahi hai. Video banane ke liye online aao.';draw();return}
- if(!window.MathVideoPlayer||!window.CLOUD||!window.CLOUD.mathVideo){GV.err=true;GV.msg='Video system load nahi hua. Page refresh karo.';draw();return}
+ if(!window.MathVideoPlayer||!window.CLOUD||!window.CLOUD[SB.store]){GV.err=true;GV.msg='Video system load nahi hua. Page refresh karo.';draw();return}
  GV.busy=true;GV.err=false;GV.plan=null;GV.msg='Library mein dhoondh raha hoon…';draw();
  try{
-  const key=await gvKey(text,GV.eng);
+  const key=await gvKey(text,sci?null:GV.eng,sci?'s|':'');
   let plan=null,known=false;
-  try{plan=await window.CLOUD.mathVideo.askedGet(key);known=!!plan}catch(e){}
+  try{plan=await window.CLOUD[SB.store].askedGet(key);known=!!plan}catch(e){}
   if(!plan){
    GV.msg='AI video bana raha hai. 20 se 40 second lag sakte hain…';draw();
-   const r=await api('/api/mathvideo/generate',{text,eng:GV.eng});
+   const r=await api(SB.url,sci?{text}:{text,eng:GV.eng});
    if(r.unsupported){GV.err=true;GV.msg=r.reason||'Is type ka video abhi nahi ban sakta.';GV.busy=false;draw();return}
    plan=r.plan;
-   try{window.CLOUD.mathVideo.pendingAdd(key,text,plan).catch(()=>{})}catch(e){}   // goes to the admin for review; fails quietly if someone already sent the same question
+   try{window.CLOUD[SB.store].pendingAdd(key,text,plan,sci?'':qid).catch(()=>{})}catch(e){}   // goes to the admin for review (with the textbook id, if the question was copied from the app); fails quietly if someone already sent the same question
   }
   GV.plan=plan;
   GV.msg=known?'Ye video check ho chuka hai.':'Ye video AI ne abhi banaya hai aur abhi check nahi hua. Apni kitab se mila lo.';
@@ -855,6 +872,7 @@ async function gvRun(){
  }catch(e){GV.err=true;GV.msg=errMsg(e);GV.busy=false;draw()}
 }
 document.addEventListener('input',e=>{if(e.target&&e.target.id==='gvText')GV.text=e.target.value});
+function gvSwitch(sub){if(GV.busy||!GV_SUB[sub]||sub===GV.sub)return;const ta=document.getElementById('gvText');if(ta)GV.text=ta.value;GV.tx[GV.sub]=GV.text;GV.sub=sub;GV.text=GV.tx[sub]||'';GV.msg='';GV.err=false;GV.plan=null;draw()}
 document.addEventListener('input',e=>{if(e.target&&e.target.id==='gvEng'){GV.eng=+e.target.value;try{localStorage.setItem('gvEng',String(GV.eng))}catch(x){}
  const l=document.getElementById('gvEngLab'),h=document.getElementById('gvEngHint');if(l)l.textContent=GV_ENG[GV.eng][0];if(h)h.textContent=GV_ENG[GV.eng][1]}});
 
@@ -877,6 +895,7 @@ document.addEventListener('click',e=>{
  else if(act==='rul'){const x=curCh();if(x)rulesGo(x.c,x.ch,+b.dataset.si)}
  else if(act==='nav')go(b.dataset.v);
  else if(act==='gvgo')gvRun();
+ else if(act==='gvsub')gvSwitch(b.dataset.v);
  else if(act==='gvplay'){if(GV.plan&&window.MathVideoPlayer)window.MathVideoPlayer.open(GV.plan)}
  else if(act==='pin'){ui(id).qm=false;pin(id)}
  else if(act==='qm'){const u=ui(id),was=u.qm;for(const k in UI)UI[k].qm=false;u.qm=!was;draw()}

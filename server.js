@@ -1105,11 +1105,25 @@ function mvParse(text) {
   try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { return null; }
 }
 
+// Get Video accepts ONLY questions that exist in the app (the same text "Copy question" gives). Typed text or another subject is refused.
+const MV_BANK = {};
+function mvBank(subject) {
+  if (MV_BANK[subject]) return MV_BANK[subject];
+  const out = [];
+  QUIZ.courses.filter(c => c.subject === subject).forEach(course => course.chapters.forEach(ch => (ch.sections || []).forEach(s => s.questions.forEach(q => {
+    out.push({ q, course, ch, lines: [q.text].concat(q.parts || [], q.options || []).filter(Boolean) });
+  }))));
+  return (MV_BANK[subject] = out);
+}
+function mvKnown(text, subject) { return mvBank(subject).find(r => MV.linesMatch(text, r.lines)) || null; }
+const MV_UNKNOWN_MSG = subject => `Is box me sirf app ke ${subject === 'Science' ? 'Science' : 'Maths'} ke questions chalte hain. Question ke bagal ke 3 dots me "Copy question" dabao aur yahan paste karo.`;
+
 app.post('/api/mathvideo/generate', async (req, res) => {
   if (!guardAI(req, res)) return;
   const typed = String((req.body || {}).text || '').replace(/\s+/g, ' ').trim();
   if (typed.length < 8) return res.status(400).json({ error: 'Question thoda aur likho (kam se kam 8 akshar).' });
   if (typed.length > 400) return res.status(400).json({ error: 'Question bahut lamba hai. 400 akshar tak likho.' });
+  if (!MV_ADMINS.includes(String((req.user && req.user.email) || '').toLowerCase()) && !mvKnown(typed, 'Mathematics')) return res.status(400).json({ error: MV_UNKNOWN_MSG('Mathematics') });   // only app maths questions (admins may test anything)
   const raw = MV.prepQuestion(typed);   // superscripts / ** / flattened powers -> ^N, before the AI sees the question
   const eng = [0, 1, 2, 3].includes(+(req.body || {}).eng) ? +(req.body || {}).eng : 2;   // English-words level from the student
   const norm = mvNorm(raw) + (eng === 2 ? '' : '|e' + eng);
@@ -1159,6 +1173,121 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   if (best) return mvDone(best, 'fallback');                              // a valid (if plainer) plan beats an error
   if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
   res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Question ko seedha number wala likh ke dobara try karo.' });
+});
+
+// ---- Science Get Video ---------------------------------------------------------------------------------
+// Only questions that exist in the app's Science books are accepted (mvKnown). The AI works from the textbook notes of that chapter.
+const SCI_EXAMPLE = {
+  id: 'ask', type: 'science', version: 1,
+  title: { en: 'Photosynthesis: how plants make food', hg: 'Photosynthesis: plants khana kaise banate hain', hi: 'फोटोसिंथेसिस: पौधे खाना कैसे बनाते हैं' },
+  steps: [
+    { cap: { en: 'Question: how do plants make their food?', hg: 'Question: plants apna khana kaise banate hain?', hi: 'क्वेश्चन: पौधे अपना खाना कैसे बनाते हैं?' },
+      say: { en: 'Our question is, how do plants make their food?', hi: 'हमारा क्वेश्चन है, पौधे अपना खाना कैसे बनाते हैं?' },
+      anim: { lines: ['How do plants make food?'], highlight: [0], cues: [{ point: { line: 0, word: 'plants' } }, { point: { line: 0, word: 'food' } }] } },
+    { cap: { en: 'The process is called photosynthesis', hg: 'Is process ka naam photosynthesis hai', hi: 'इस प्रोसेस का नाम फोटोसिंथेसिस है' },
+      say: { en: 'Plants make food by a process called photosynthesis.', hi: 'पौधे फोटोसिंथेसिस नाम के प्रोसेस से खाना बनाते हैं।' },
+      anim: { lines: ['How do plants make food?', 'Process: photosynthesis'], highlight: [1], cues: [{ point: { line: 1, word: 'photosynthesis' } }] } },
+    { cap: { en: 'What the plant takes in', hg: 'Plant kya kya leta hai', hi: 'पौधा क्या क्या लेता है' },
+      say: { en: 'The leaves take carbon dioxide from the air. The roots take water from the soil.', hi: 'पत्तियाँ हवा से कार्बन डाइऑक्साइड लेती हैं। जड़ें मिट्टी से पानी लेती हैं।' },
+      anim: { lines: ['Takes in:', 'carbon dioxide (air)', 'water (soil)'], highlight: [1, 2], cues: [{ point: { line: 1, word: 'carbon dioxide' } }, { point: { line: 2, word: 'water' } }] } },
+    { cap: { en: 'Sunlight and chlorophyll', hg: 'Sunlight aur chlorophyll', hi: 'सनलाइट और क्लोरोफिल' },
+      say: { en: 'The green chlorophyll in the leaves catches sunlight. This energy is used to make food.', hi: 'पत्तियों का हरा क्लोरोफिल सनलाइट को पकड़ता है। इसी एनर्जी से खाना बनता है।' },
+      anim: { lines: ['Takes in:', 'carbon dioxide (air)', 'water (soil)', 'Energy: sunlight + chlorophyll'], highlight: [3], cues: [{ point: { line: 3, word: 'sunlight' } }, { point: { line: 3, word: 'chlorophyll' } }] } },
+    { cap: { en: 'What the plant makes', hg: 'Plant kya banata hai', hi: 'पौधा क्या बनाता है' },
+      say: { en: 'The plant makes glucose, which is its food. It also gives out oxygen.', hi: 'पौधा ग्लूकोज़ बनाता है, यही उसका खाना है। वो ऑक्सीजन भी बाहर निकालता है।' },
+      anim: { lines: ['Makes:', 'glucose (food)', 'oxygen (gas given out)'], highlight: [1, 2], cues: [{ point: { line: 1, word: 'glucose' } }, { point: { line: 2, word: 'oxygen' } }] } },
+    { cap: { en: 'Summary in one line', hg: 'Ek line mein summary', hi: 'एक लाइन में समरी' },
+      say: { en: 'So, carbon dioxide and water, with sunlight, make glucose and oxygen.', hi: 'तो, कार्बन डाइऑक्साइड और पानी, सनलाइट की मदद से, ग्लूकोज़ और ऑक्सीजन बनाते हैं।' },
+      anim: { lines: ['carbon dioxide + water', '-> (sunlight, chlorophyll)', 'glucose + oxygen'], highlight: [2], note: 'Photosynthesis', cues: [{ point: { line: 0, word: 'carbon dioxide' } }, { point: { line: 1, word: 'sunlight' } }, { point: { line: 2, word: 'glucose' } }] } }
+  ]
+};
+const SCI_SYSTEM = `You make short whiteboard science videos for school students (Class 6-10, Assam, textbook style). A student pastes ONE textbook science question; you reply with the video plan.
+Reply with ONE JSON object only. No markdown, no commentary.
+
+The message also gives the chapter name and the textbook notes. Explain ONLY from those notes (and plain school-level science that agrees with them). Never invent facts, names, dates or numbers. If the notes do not cover something, keep it general and simple.
+If the question needs a drawing, diagram, graph, map, experiment table or an activity to do (for example "draw", "label the diagram", "observe and note", "fill the table"), or it has options to choose from, reply exactly:
+{"unsupported": true, "reason": "<one short Hinglish sentence in Roman letters>"}
+If the question has several parts (i), (ii)..., make the video for the first part only.
+
+Otherwise reply with a plan in this exact shape. Here is one complete, valid example (a different question). Copy its style, depth and level of detail:
+${JSON.stringify(SCI_EXAMPLE)}
+
+FIELDS
+- "type" is always "science". "en" = simple English, "hg" = Hinglish in Roman letters, "hi" = Hindi in Devanagari. "say" is what is spoken aloud.
+- Spoken style (say.hi): friendly Hindi in Devanagari. Science words may be English spelled in Devanagari (फोटोसिंथेसिस, क्लोरोफिल, एनर्जी). Write every number as a word in Devanagari, never as digits.
+- Each cap/say/title text is at most 140 characters. "say" = 1 or 2 short sentences.
+- "lines": 1 to 6 short strings (each at most 60 characters) shown on the board: key words, short facts, a small flow like "A + B -> C". highlight = zero-based indexes of lines to emphasise (use [] if none). No number line: never use "numberline".
+- The board is redrawn at every step. So in each step repeat the lines you still need and add the new one.
+
+HOW MUCH DETAIL
+- Use 5 to 8 steps, one idea per step: (1) the question, (2) the main idea or definition, (3) to (6) the important points from the notes, one per step, (7) a one-line summary with "note" (at most 60 characters) on the last step.
+
+PEN CUES ("cues", at most 8 per step)
+- Only this cue: {"point": {"line": 0, "word": "text that appears in that line"}}: the pen underlines that word. Without "word" the whole line is underlined.
+- Every step should have 1 to 3 cues, in the order the words are spoken.
+- No HTML, no links, no emoji. Keep every explanation correct and simple.`;
+function sciQuality(plan) {
+  const out = [], steps = plan.steps || [];
+  if (steps.length < 5) out.push('Too short. Make the video more detailed: 5 to 8 steps, one idea per step (you gave ' + steps.length + ').');
+  const cues = steps.reduce((n, s) => n + (((s.anim || {}).cues) || []).length, 0);
+  if (cues < 4) out.push('Add more pen cues (anim.cues: point) so something is underlined in most steps.');
+  return out;
+}
+
+app.post('/api/sciencevideo/generate', async (req, res) => {
+  if (!guardAI(req, res)) return;
+  const typed = String((req.body || {}).text || '').replace(/\s+/g, ' ').trim();
+  if (typed.length < 8) return res.status(400).json({ error: 'Question thoda aur likho (kam se kam 8 akshar).' });
+  if (typed.length > 700) return res.status(400).json({ error: 'Question bahut lamba hai.' });
+  const hit = mvKnown(typed, 'Science');
+  if (!hit) return res.status(400).json({ error: MV_UNKNOWN_MSG('Science') });
+  const norm = 's|' + mvNorm(typed);
+  if (MV_CACHE.has(norm)) return res.json({ ...MV_CACHE.get(norm), cached: true });
+
+  const email = String((req.user && req.user.email) || '').toLowerCase();
+  if (!MV_ADMINS.includes(email)) {
+    const u = MV_USE.get(req.user.uid), day = mvDay();
+    const cur = u && u.day === day ? u : { day, n: 0 };
+    if (cur.n >= MV_DAILY) return res.status(429).json({ error: `Aaj ki video limit (${MV_DAILY}) poori ho gayi. Kal dobara try karo.` });
+    cur.n++; MV_USE.set(req.user.uid, cur);
+  }
+
+  const t0 = Date.now(), TOTAL = 82000;
+  const head = 'Chapter: ' + (hit.ch.title || hit.ch.name || '') + (hit.ch.context ? '\nTextbook notes for this chapter (explain only from these): ' + String(hit.ch.context).slice(0, 6000) : '') +
+    (hit.q.context ? '\nNotes for this question: ' + String(hit.q.context).slice(0, 2000) : '') + '\n\nQuestion:\n"""\n' + typed + '\n"""';
+  let prompt = head, lastErrors = [], lastStatus = 0, best = null;
+  const done = (plan, how) => {
+    const out = { plan };
+    MV_CACHE.set(norm, out);
+    if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
+    console.log('ScienceVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps');
+    return res.json(out);
+  };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const left = TOTAL - (Date.now() - t0);
+    if (left < 8000) break;
+    const r = await gemini(SCI_SYSTEM, prompt, { json: true, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
+    if (!r.text) { lastStatus = r.status; break; }
+    const plan = mvParse(r.text);
+    if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
+    if (plan.unsupported) {
+      const out = { unsupported: true, reason: String(plan.reason || 'Is type ka video abhi nahi ban sakta.').slice(0, 200) };
+      MV_CACHE.set(norm, out);
+      return res.json(out);
+    }
+    plan.type = 'science';
+    plan.id = 'ask-' + crypto.createHash('sha1').update(norm).digest('hex').slice(0, 20);
+    const v = MV.validate(plan, { question: typed });
+    const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : sciQuality(plan));
+    if (!v.errors.length) best = plan;
+    if (!v.errors.length && !(soft.length && attempt < 3)) return done(plan, 'try ' + attempt);
+    lastErrors = v.errors.length ? v.errors : soft;
+    console.error('ScienceVideo invalid (try ' + attempt + '):', lastErrors.slice(0, 4).join(' | '));
+    prompt = head + '\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
+  }
+  if (best) return done(best, 'fallback');
+  if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
+  res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Thodi der baad dobara try karo.' });
 });
 
 const PORT = process.env.PORT || 3000;

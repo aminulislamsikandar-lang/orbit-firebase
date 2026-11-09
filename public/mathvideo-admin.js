@@ -262,7 +262,8 @@
     var errors = [], warnings = [];
     if (!plan || typeof plan !== "object" || Array.isArray(plan)) return { errors: ["Plan ek JSON object hona chahiye"], warnings: warnings };
     str(plan.id, 80, "id", errors, true);
-    if (plan.type !== "equation") errors.push("type abhi sirf \"equation\" allowed hai");
+    var sci = plan.type === "science";   // science plans use the same steps and pen cues, but no number line and no arithmetic check
+    if (plan.type !== "equation" && !sci) errors.push("type \"equation\" ya \"science\" hona chahiye");
     if (plan.version !== 1) errors.push("version 1 hona chahiye");
     langs(plan.title, ["en", "hg", "hi"], MAX_LEN, "title", errors);
     if (!Array.isArray(plan.steps) || plan.steps.length < 1 || plan.steps.length > MAX_STEPS) {
@@ -284,9 +285,11 @@
       if (!Array.isArray(a.highlight) || a.highlight.some(function (n) { return !Number.isInteger(n) || n < 0 || n >= (a.lines || []).length; }))
         errors.push(p + ".anim.highlight: valid line index chahiye");
       if (a.note !== undefined) str(a.note, MAX_NOTE, p + ".anim.note", errors, false);
+      if (sci && a.numberline !== undefined) errors.push(p + ".anim.numberline: science video me number line nahi chalti");
       checkVisuals(a, p + ".anim", errors);
     });
-    if (!errors.length) {
+    if (!errors.length && sci) warnings.push("Science video: code sirf format check karta hai, facts verify nahi karta. Approve karne se pehle khud padho.");
+    if (!errors.length && !sci) {
       var qinfo = opts && opts.question ? parseTF(opts.question) : null;
       var skipped = checkMath(plan, errors, warnings, qinfo);
       if (skipped) warnings.push(skipped + " line(s) me letters/algebra hai — code unka maths verify nahi kar paya, khud dekh lo");
@@ -307,6 +310,63 @@
     return out.join("-");
   }
 
+  /* ---------- hidden question id (Copy question -> Get Video -> admin form) ----------
+     "Copy question" puts the textbook question id in front of the text as invisible characters
+     (4 kinds of invisible character = 2 bits each, so one letter = 4 of them, between two marks).
+     Get Video cuts the id out again before anything else (library key, AI prompt), so those never see it.
+     If an app strips invisible characters the question still works; only the admin auto-fill is lost. */
+  var ZW = [0x200B, 0x200C, 0x200D, 0x2060].map(function (c) { return String.fromCharCode(c); }), ZW_MARK = String.fromCharCode(0xFEFF);   // 4 invisible characters (2 bits each) + one invisible mark
+  var QID_RE = /^[A-Za-z0-9._:-]{1,40}$/;
+  var TAG_RE = new RegExp(ZW_MARK + "([" + ZW.join("") + "]{4,160})" + ZW_MARK);
+  function tagQuestion(text, id) {
+    var s = String(text == null ? "" : text);
+    if (!QID_RE.test(String(id || ""))) return s;
+    var body = "";
+    for (var i = 0; i < id.length; i++) { var c = id.charCodeAt(i); body += ZW[(c >> 6) & 3] + ZW[(c >> 4) & 3] + ZW[(c >> 2) & 3] + ZW[c & 3]; }
+    return ZW_MARK + body + ZW_MARK + untagQuestion(s).text;
+  }
+  /* untagQuestion(text) -> { text: text without the hidden id, qid: "m7c1-a4" or "" } */
+  function untagQuestion(text) {
+    var s = String(text == null ? "" : text), m = TAG_RE.exec(s);
+    if (!m) return { text: s, qid: "" };
+    var clean = s.replace(m[0], ""), qid = "";
+    if (m[1].length % 4 === 0) {
+      for (var i = 0; i < m[1].length; i += 4) {
+        var n = 0; for (var j = 0; j < 4; j++) n = (n << 2) | ZW.indexOf(m[1].charAt(i + j));
+        qid += String.fromCharCode(n);
+      }
+    }
+    return { text: clean, qid: QID_RE.test(qid) ? qid : "" };
+  }
+
+  /* Admin form fields for a textbook question. They give the SAME code the student's 3-dot menu looks for (mvCtx in mathvideo-player.js):
+     Exercise = chapter number + "." + section number (1, 2, 3 ... in the order the chapter lists its sections), Question = the question number.
+     info = { cls, subject, medium, chNo, secNo, qNo }. School is not known from the question, so the admin's remembered School stays.
+     Returns null when something is missing. */
+  function qFields(info) {
+    if (!info || !info.chNo || !info.secNo || !info.qNo || !info.cls) return null;
+    var subject = String(info.subject || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    return { cls: "class" + info.cls, subject: subject === "mathematics" ? "math" : subject, medium: String(info.medium || "English").toLowerCase() + "medium",
+             ex: info.chNo + "." + info.secNo, q: String(info.qNo), part: "" };
+  }
+
+  /* ---------- "only an existing textbook question" check (client and server use this same function) ----------
+     lines = the question's text lines: [text, ...parts, ...options]. The pasted text may be the whole question, or only some of its
+     lines in the same order (for example the stem and part (ii)); the first line (the question itself) must always be there. Spaces and capital letters are ignored; any other change fails.
+     Too-short text (under 6 characters once spaces are gone) never matches. */
+  function linesMatch(pasted, lines) {
+    var p = normQuestion(pasted);
+    if (p.length < 6) return false;
+    var L = (lines || []).map(normQuestion).filter(Boolean), memo = {};
+    function go(i, pos) {                                   // can p from pos on be built from lines i, i+1... (each used at most once, in order)?
+      if (pos === p.length) return true;
+      if (i >= L.length) return false;
+      var k = i + ":" + pos; if (memo[k] !== undefined) return memo[k];
+      return (memo[k] = (p.indexOf(L[i], pos) === pos && go(i + 1, pos + L[i].length)) || (i > 0 && go(i + 1, pos)));   // line 0 (the question itself) can never be skipped
+    }
+    return go(0, 0);
+  }
+
   /* ---------- admin panel ---------- */
   function h(tag, props, kids) {
     var e = document.createElement(tag);
@@ -316,16 +376,18 @@
   }
 
   /* store = { get(code)->plan|null, set(code, plan), del(code), list()->[codes] }
-     opts  = { preview(plan) }  (optional: apne player me plan chalane ke liye) */
+     opts  = { preview(plan), qFields(qid), science: <store like mathVideo, for the science requests box> }  (optional: preview = apne player me plan chalane ke liye;
+             qFields = textbook question id se form ke details nikalne ke liye, null de to auto-fill nahi hota) */
   function mountAdmin(el, store, opts) {
     opts = opts || {};
     el.textContent = "";
     var code = h("input", { placeholder: "code yahan apne aap ban jayega", style: "width:100%;padding:10px;margin:6px 0;box-sizing:border-box;font-family:monospace;font-size:13px" });
     var saved = {}; try { saved = JSON.parse(localStorage.getItem("mvAdminDefaults") || "{}"); } catch (e) {}
     var fields = {}, fbox = h("div", { style: "display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0" });
-    function sync() {
+    function sync(noSave) {
       var f = {}; for (var k in fields) f[k] = fields[k].value;
       code.value = makeCode(f);
+      if (noSave === true) return;   // auto-fill from a request must not change the admin's remembered defaults
       try { localStorage.setItem("mvAdminDefaults", JSON.stringify({ school: f.school, cls: f.cls, medium: f.medium, subject: f.subject })); } catch (e) {}
     }
     function field(key, label, init, options, hint) {
@@ -397,54 +459,84 @@
      h("div", { text: "Saved videos:", style: "font-size:12px;margin-top:8px" }), list].forEach(function (n) { el.appendChild(n); });
     refresh();
 
-    /* ---- student requests (Get Video): review, approve into the public library, or reject ---- */
-    if (store.pendingList) {
+    /* ---- student requests (Get Video): review, approve into the public library, or reject. One box for maths, one for science ---- */
+    var autoFilled = false;   // true while the form holds details filled from a request's textbook id
+    // The form must not keep the previous request's Exercise / Question behind.
+    function clearAutoFill() { if (autoFilled) { fields.ex.value = ""; fields.q.value = ""; fields.part.value = ""; sync(true); autoFilled = false; } }
+    // Maths only: a request that carries a textbook question id fills Class, Subject, Medium, Exercise, Question and the code. Returns a short note for the admin.
+    function fillFromRequest(it) {
+      var f = it.qid && opts.qFields ? opts.qFields(it.qid) : null;
+      if (f) {
+        ["cls", "subject", "medium", "ex", "q", "part"].forEach(function (k) {
+          if (f[k] === undefined || !fields[k]) return;
+          var ok = fields[k].tagName !== "SELECT" || Array.prototype.some.call(fields[k].options || [], function (o) { return o.value === f[k]; });
+          if (ok) fields[k].value = f[k];
+        });
+        sync(true); autoFilled = true;
+        return "\nTextbook question: " + it.qid + "\nCode apne aap bhar gaya: " + code.value + "\n(School check kar lo. Galat ho to form mein badal sakte ho.)";
+      }
+      clearAutoFill();
+      return it.qid ? "\nTextbook question: " + it.qid + " (iske details apne aap nahi bhar paye, khud bharo)" : "";
+    }
+    function planOnly() {
+      var p; try { p = JSON.parse(area.value); } catch (e) { say(["JSON galat hai: " + e.message]); return null; }
+      var r = validate(p);
+      if (r.errors.length) { say(["Nahi ho sakta:"].concat(r.errors)); return null; }
+      say(["Valid hai (" + p.steps.length + " steps)"].concat(r.warnings.map(function (w) { return "Dhyan: " + w; })), true);
+      return p;
+    }
+    // api = { pendingList, askedSet, pendingDel }; cfg = { heading, help, approveLabel, approvedMsg, fill(request) -> note }
+    function mountPending(api, cfg) {
       var cur = null;
       var pbox = h("div", { style: "margin-top:18px;padding-top:12px;border-top:1px solid rgba(128,128,128,.35)" });
       var plist = h("div", { style: "display:flex;flex-direction:column;gap:6px;margin-top:8px" });
       var pq = h("div", { style: "font-size:13px;margin:8px 0;white-space:pre-wrap" });
       var pbar = h("div", { style: "display:flex;flex-wrap:wrap;gap:8px" });
-      var planOnly = function () {
-        var p; try { p = JSON.parse(area.value); } catch (e) { say(["JSON galat hai: " + e.message]); return null; }
-        var r = validate(p);
-        if (r.errors.length) { say(["Nahi ho sakta:"].concat(r.errors)); return null; }
-        say(["Valid hai (" + p.steps.length + " steps)"].concat(r.warnings.map(function (w) { return "Dhyan: " + w; })), true);
-        return p;
-      };
       var pbtn = function (label, fn) { var b = h("button", { text: label, type: "button", style: "padding:10px 14px;border-radius:10px;border:0;background:rgba(128,128,128,.18);color:inherit;cursor:pointer" }); b.onclick = fn; pbar.appendChild(b); };
       var prefresh = function () {
-        store.pendingList().then(function (items) {
+        api.pendingList().then(function (items) {
           plist.textContent = "";
           items.forEach(function (it) {
-            var b = h("button", { text: String(it.text || "").slice(0, 80), type: "button", style: "text-align:left;padding:8px 10px;border-radius:10px;border:0;background:rgba(128,128,128,.14);color:inherit;font-size:13px;cursor:pointer" });
-            b.onclick = function () { cur = it; pq.textContent = "Student ka question:\n" + it.text; area.value = JSON.stringify(it.plan, null, 2); say(["Request load hui. Preview dekho, phir Approve ya Reject."], true); };
+            var b = h("button", { text: (it.qid ? "[" + it.qid + "] " : "") + String(it.text || "").slice(0, 80), type: "button", style: "text-align:left;padding:8px 10px;border-radius:10px;border:0;background:rgba(128,128,128,.14);color:inherit;font-size:13px;cursor:pointer" });
+            b.onclick = function () { cur = it; pq.textContent = "Student ka question:\n" + it.text + cfg.fill(it); area.value = JSON.stringify(it.plan, null, 2); say(["Request load hui. Preview dekho, phir Approve ya Reject."], true); };
             plist.appendChild(b);
           });
           if (!items.length) plist.textContent = "Abhi koi pending request nahi.";
         }, function (e) { plist.textContent = "Pending list load nahi hui: " + (e && e.message ? e.message : e); });
       };
       if (opts.preview) pbtn("Preview", function () { var p = planOnly(); if (p) opts.preview(p); });
-      pbtn("Approve for Get Video", function () {
+      pbtn(cfg.approveLabel, function () {
         if (!cur) return say(["Pehle list se ek request chuno"]);
         var p = planOnly(); if (!p) return;
         var id = cur.id, text = cur.text;
-        store.askedSet(id, text, p).then(function () { return store.pendingDel(id); }).then(function () {
-          say(["Approved. Ab ye question paste karne par sabhi students ko turant milega."], true); cur = null; pq.textContent = ""; prefresh();
+        api.askedSet(id, text, p).then(function () { return api.pendingDel(id); }).then(function () {
+          say([cfg.approvedMsg], true); cur = null; pq.textContent = ""; prefresh();
         }, function (e) { say(["Approve fail: " + (e && e.message ? e.message : e)]); });
       });
       pbtn("Reject (delete)", function () {
         if (!cur) return say(["Pehle list se ek request chuno"]);
         if (!confirm("Ye request delete karni hai?")) return;
         var id = cur.id;
-        store.pendingDel(id).then(function () { say(["Request delete ho gayi."], true); cur = null; pq.textContent = ""; prefresh(); }, function (e) { say(["Delete fail: " + (e && e.message ? e.message : e)]); });
+        api.pendingDel(id).then(function () { say(["Request delete ho gayi."], true); cur = null; pq.textContent = ""; prefresh(); }, function (e) { say(["Delete fail: " + (e && e.message ? e.message : e)]); });
       });
       pbtn("Refresh", prefresh);
-      [h("h3", { text: "Student requests (pending)" }), h("div", { text: "Approve = Get Video library mein jata hai. Textbook question ke menu mein bhi dalna ho to upar code bharke Save dabao.", style: "font-size:12px;margin-top:4px" }), plist, pq, pbar].forEach(function (n) { pbox.appendChild(n); });
+      [h("h3", { text: cfg.heading }), h("div", { text: cfg.help, style: "font-size:12px;margin-top:4px" }), plist, pq, pbar].forEach(function (n) { pbox.appendChild(n); });
       el.appendChild(pbox);
       prefresh();
     }
+    if (store.pendingList) mountPending(store, {
+      heading: "Student requests (pending)", fill: fillFromRequest, approveLabel: "Approve for Get Video",
+      help: "Approve = Get Video library mein jata hai. Textbook question ke menu mein bhi dalna ho to upar code bharke Save dabao.",
+      approvedMsg: "Approved. Ab ye question paste karne par sabhi students ko turant milega."
+    });
+    if (opts.science && opts.science.pendingList) mountPending(opts.science, {
+      heading: "Science requests (pending)", approveLabel: "Approve for Science Video",
+      help: "Approve = Science Get Video library mein jata hai. Science ke facts code se verify nahi hote, approve se pehle khud padho.",
+      fill: function (it) { clearAutoFill(); return it.qid ? "\nTextbook question: " + it.qid : ""; },
+      approvedMsg: "Approved. Ab ye science question paste karne par sabhi students ko turant milega."
+    });
   }
 
-  var api = { validate: validate, mountAdmin: mountAdmin, makeCode: makeCode, calc: calc, calcEx: calcEx, prepQuestion: prepQuestion, normQuestion: normQuestion, parseTF: parseTF, isTrueFalse: isTrueFalse, CODE_RE: CODE_RE };
+  var api = { validate: validate, mountAdmin: mountAdmin, makeCode: makeCode, calc: calc, calcEx: calcEx, prepQuestion: prepQuestion, normQuestion: normQuestion, parseTF: parseTF, isTrueFalse: isTrueFalse, tagQuestion: tagQuestion, untagQuestion: untagQuestion, qFields: qFields, linesMatch: linesMatch, CODE_RE: CODE_RE };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else g.MathVideo = api;
 })(typeof window !== "undefined" ? window : globalThis);

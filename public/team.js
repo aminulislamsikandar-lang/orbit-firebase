@@ -131,7 +131,7 @@
     if (mvMode) {
       o.innerHTML = '<div class="tm-in"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Math Video</h2><button class="tm-b2" data-tact="mvback">Back</button></div><div id="tm-mv"></div></div>';
       var box = document.getElementById('tm-mv');
-      if (window.MathVideo && window.CLOUD && window.CLOUD.mathVideo) window.MathVideo.mountAdmin(box, window.CLOUD.mathVideo, { preview: function (p) { if (window.MathVideoPlayer) window.MathVideoPlayer.open(p); } });
+      if (window.MathVideo && window.CLOUD && window.CLOUD.mathVideo) window.MathVideo.mountAdmin(box, window.CLOUD.mathVideo, { preview: function (p) { if (window.MathVideoPlayer) window.MathVideoPlayer.open(p); }, qFields: function (id) { return window.mvQFields ? window.mvQFields(id) : null; }, science: window.CLOUD.scienceVideo });
       else box.textContent = 'Cloud load nahi hua. Page refresh karo.';
       return;
     }
