@@ -418,7 +418,7 @@ async function gemini(system, prompt, opts = {}) {
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-              signal: AbortSignal.timeout(Math.min(opts.reqMs || 15000, left)),   // per-request limit; long outputs (maths videos) pass a bigger reqMs
+              signal: AbortSignal.timeout(Math.min(15000, left)),
               body: JSON.stringify({
                 systemInstruction: { parts: [{ text: system }] },
                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -471,7 +471,7 @@ function guardAI(req, res) {
   return true;
 }
 
-app.get('/api/ping', (req, res) => res.json({ ok: true })); // wakes the sleeping Render server
+app.get('/api/ping', (req, res) => res.json({ ok: true, upload: process.env.VIDEO_UPLOAD === 'true' && !!B2 })); // wakes the sleeping Render server
 app.get('/api/questions', (req, res) => res.json(PUBLIC));
 
 // ---- answer ---------------------------------------------------------------
@@ -856,7 +856,7 @@ app.post('/api/image', async (req, res) => {
 // Render env vars: B2_ENDPOINT (e.g. s3.us-west-004.backblazeb2.com), B2_KEY_ID, B2_APP_KEY, B2_BUCKET.
 // REQUIRE_SUBSCRIPTION=true makes non-free videos need an active subscription: Firestore doc subscriptions/<uid> with a
 // timestamp field `until` (you edit it by hand in the Firebase console; users cannot write it, see firestore.rules).
-const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const VIDEOS = require('./videos');
 const VBY = new Map(VIDEOS.map(v => [v.id, v]));
@@ -882,8 +882,29 @@ async function hasAccess(req, v) {
   } catch (e) { return false; }
 }
 
+// Videos added from the admin panel live in Firestore (collection `videos`). Read with the student's own token so the rules decide; cached for a minute.
+const FV = new Map();
+async function fsVideo(req, id) {
+  if (!/^[a-z0-9][a-z0-9-]{2,79}$/.test(id)) return null;
+  const hit = FV.get(id);
+  if (hit && Date.now() - hit.t < 60000) return hit.v;
+  try {
+    const r = await fetch(`https://firestore.googleapis.com/v1/projects/${process.env.FIREBASE_PROJECT_ID}/databases/(default)/documents/videos/${id}`,
+      { headers: { Authorization: req.headers.authorization } });
+    if (!r.ok) return null;
+    const f = (await r.json()).fields || {};
+    const key = f.key && f.key.stringValue;
+    if (!key) return null;
+    const v = { id, key, free: !!(f.free && f.free.booleanValue) };
+    FV.set(id, { t: Date.now(), v });
+    if (FV.size > 300) FV.delete(FV.keys().next().value);
+    return v;
+  } catch (e) { return null; }
+}
+
 app.post('/api/video', async (req, res) => {
-  const v = VBY.get((req.body || {}).id);
+  const vid = String((req.body || {}).id || '');
+  const v = VBY.get(vid) || await fsVideo(req, vid);
   if (!v) return res.status(400).json({ error: 'Video nahi mili.' });
   if (!B2) return res.status(500).json({ error: 'Video storage abhi set nahi hai.' });
   if (!(await hasAccess(req, v))) return res.status(403).json({ error: 'Ye video dekhne ke liye subscription chahiye.' });
@@ -905,6 +926,29 @@ app.post('/api/video', async (req, res) => {
 });
 
 
+// ---- Admin: upload a video straight from the browser to Backblaze (switch on with VIDEO_UPLOAD=true) -----------
+// The server only signs a short-lived PUT link; the file itself never passes through Render. Only the admin Google accounts may ask for it.
+const isAdminReq = req => req.user && req.user.email_verified === true && MV_ADMINS.includes(String(req.user.email || '').toLowerCase());
+const VIDEO_MAX_MB = Math.max(1, parseInt(process.env.VIDEO_MAX_MB || '2000', 10) || 2000);
+app.post('/api/video/upload-url', async (req, res) => {
+  if (!isAdminReq(req)) return res.status(403).json({ error: 'Sirf admin video upload kar sakta hai.' });
+  if (process.env.VIDEO_UPLOAD !== 'true') return res.status(403).json({ error: 'Browser upload abhi off hai (Render mein VIDEO_UPLOAD=true karo).' });
+  if (!B2) return res.status(500).json({ error: 'Video storage abhi set nahi hai.' });
+  const { filename, size, contentType } = req.body || {};
+  if (!/\.mp4$/i.test(String(filename || ''))) return res.status(400).json({ error: 'Sirf .mp4 (H.264) file upload karo.' });
+  if (contentType !== 'video/mp4') return res.status(400).json({ error: 'File type video/mp4 honi chahiye.' });
+  if (!(size > 0) || size > VIDEO_MAX_MB * 1024 * 1024) return res.status(400).json({ error: 'File ' + VIDEO_MAX_MB + ' MB se chhoti honi chahiye.' });
+  const base = String(filename).replace(/\.mp4$/i, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'video';
+  const key = base + '-' + crypto.randomBytes(3).toString('hex') + '.mp4';      // random tail: an upload can never overwrite an older video
+  try {
+    const url = await getSignedUrl(B2, new PutObjectCommand({ Bucket: process.env.B2_BUCKET, Key: key, ContentType: 'video/mp4' }), { expiresIn: 3600 });
+    res.json({ url, key });
+  } catch (e) {
+    console.error('B2 upload sign failed', e.message);
+    res.status(502).json({ error: 'Upload ka link nahi ban paya. Dobara try karo.' });
+  }
+});
+
 // ---- Get Video: student pastes a maths question, AI makes a video plan (JSON) ----------------------------
 // The plan is checked by the same validator the admin panel uses (public/mathvideo-admin.js), including the
 // arithmetic check. If it fails, the errors are sent back to the AI and it tries again (within a time budget).
@@ -914,189 +958,45 @@ const MV_ADMINS = (process.env.MV_ADMIN_EMAILS || 'aminulislamsikandar@gmail.com
 const MV_DAILY = Math.max(1, parseInt(process.env.MV_DAILY || '5', 10) || 5);   // AI videos per student per day (admin: unlimited)
 const MV_CACHE = new Map();    // normalized question -> plan (or {unsupported}), so the same question never calls the AI twice
 const MV_USE = new Map();      // uid -> {day, n}
-// Cache key. MV.normQuestion also turns superscripts (x¹⁰³), ** and a flattened "(-1)103" into ^N, so every spelling of a power gives the same key.
-const mvNorm = t => MV.normQuestion(t);
+const mvNorm = t => String(t || '').toLowerCase().replace(/[−–—]/g, '-').replace(/[×✕·]/g, '*').replace(/÷/g, '/').replace(/\s+/g, '');
 const mvDay = () => new Date().toISOString().slice(0, 10);
 
-// One complete, validated example. It is serialised into the prompt, so the AI always sees valid JSON in our exact format.
-const MV_EXAMPLE = {
-  id: 'ask', type: 'equation', version: 1,
-  title: { en: '(-8) + 5 on the number line', hg: '(-8) + 5 number line par', hi: '(-8) + 5 नंबर लाइन पर' },
-  steps: [
-    { cap: { en: 'Question: (-8) + 5', hg: 'Question: (-8) + 5', hi: 'क्वेश्चन: (-8) + 5' },
-      say: { en: 'Our question is minus eight plus five.', hi: 'हमारा क्वेश्चन है, माइनस एट प्लस फाइव।' },
-      anim: { lines: ['(-8) + 5'], highlight: [0], cues: [{ point: { line: 0, word: '(-8)' } }, { point: { line: 0, word: '5' } }] } },
-    { cap: { en: 'Plus 5 means: move 5 steps to the right', hg: 'Plus 5 ka matlab: 5 step right (daayein) chalo', hi: 'प्लस 5 का मतलब: 5 स्टेप राइट चलो' },
-      say: { en: 'Plus five means, we move five steps to the right.', hi: 'प्लस फाइव का मतलब है, हम फाइव स्टेप राइट की तरफ चलते हैं।' },
-      anim: { lines: ['(-8) + 5'], highlight: [], cues: [{ point: { line: 0, word: '+ 5' } }] } },
-    { cap: { en: 'Draw the number line and mark -8', hg: 'Number line banao aur -8 mark karo', hi: 'नंबर लाइन बनाओ और -8 मार्क करो' },
-      say: { en: 'Now we draw a number line. We start at minus eight.', hi: 'अब हम नंबर लाइन बनाते हैं। हम माइनस एट से स्टार्ट करते हैं।' },
-      anim: { lines: ['(-8) + 5'], highlight: [],
-        numberline: { min: -10, max: 5, dots: [{ v: -8, label: '-8', color: 'red' }] },
-        cues: [{ point: { value: -8 } }] } },
-    { cap: { en: 'Jump 5 steps to the right', hg: 'Right taraf 5 step jump karo', hi: 'राइट की तरफ 5 स्टेप जंप करो' },
-      say: { en: 'We jump five steps to the right. We land on minus three.', hi: 'हम फाइव स्टेप राइट जंप करते हैं। हम माइनस थ्री पर पहुँचते हैं।' },
-      anim: { lines: ['(-8) + 5'], highlight: [],
-        numberline: { min: -10, max: 5, dots: [{ v: -8, label: '-8', color: 'red' }] },
-        cues: [{ hop: { from: -8, to: -3 } }, { dot: { v: -3, label: '-3', color: 'green' } }] } },
-    { cap: { en: 'Shortcut: subtract, keep the sign of the bigger number', hg: 'Shortcut: ghatao, bade number ka sign rakho', hi: 'शॉर्टकट: घटाओ, बड़े नंबर का साइन रखो' },
-      say: { en: 'Shortcut. Eight minus five is three. The bigger number has a minus sign, so the answer is negative.', hi: 'शॉर्टकट। एट माइनस फाइव इक्वल टू थ्री। बड़े नंबर पर माइनस है, तो आंसर नेगेटिव आएगा।' },
-      anim: { lines: ['(-8) + 5', '= -(8 - 5)', '= -3'], highlight: [1],
-        cues: [{ point: { line: 1, word: '8 - 5' } }, { point: { line: 2, word: '-3' } }] } },
-    { cap: { en: 'Check on the number line: we reached -3', hg: 'Number line par check: hum -3 par aaye', hi: 'नंबर लाइन पर चेक: हम -3 पर आए' },
-      say: { en: 'The number line also shows minus three. Both ways give the same answer.', hi: 'नंबर लाइन भी माइनस थ्री दिखाती है। दोनों तरीकों से सेम आंसर आता है।' },
-      anim: { lines: ['(-8) + 5', '= -3'], highlight: [1],
-        numberline: { min: -10, max: 5, dots: [{ v: -8, label: '-8', color: 'red' }, { v: -3, label: '-3', color: 'green' }] },
-        cues: [{ point: { line: 1, word: '-3' } }, { point: { value: -3 } }] } },
-    { cap: { en: 'Answer: (-8) + 5 = -3', hg: 'Answer: (-8) + 5 = -3', hi: 'आंसर: (-8) + 5 = -3' },
-      say: { en: 'So, minus eight plus five is equal to minus three. Remember: the bigger number decides the sign.', hi: 'तो, माइनस एट प्लस फाइव इक्वल टू माइनस थ्री। याद रखो, बड़ा नंबर साइन तय करता है।' },
-      anim: { lines: ['(-8) + 5 = -3', '(-2) + 6 = 4'], highlight: [0], note: 'Answer: -3',
-        cues: [{ point: { line: 0, word: '-3' } }, { point: { line: 1, word: '4' } }] } }
-  ]
-};
-
-// Second complete example, used automatically when the question has a power (^, a superscript, "power", "square", "cube"). Checked by the same validator in tests.
-const MV_EXAMPLE_POW = {
-  "id": "ask", "type": "equation", "version": 1, "title": {"en": "(-1)^103 + (-1)^104 with powers", "hg": "(-1)^103 + (-1)^104 powers ke saath", "hi": "(-1)^103 + (-1)^104 पावर के साथ"},
-  "steps": [
-    {"cap": {"en": "Question: (-1)^103 + (-1)^104", "hg": "Question: (-1)^103 + (-1)^104", "hi": "क्वेश्चन: (-1)^103 + (-1)^104"}, "say": {"en": "Our question has two powers: minus one to the power 103, plus minus one to the power 104.", "hi": "हमारे क्वेश्चन में दो पावर हैं: माइनस वन की पावर वन हंड्रेड थ्री, प्लस माइनस वन की पावर वन हंड्रेड फोर।"}, "anim": {"lines": ["(-1)^103 + (-1)^104"], "highlight": [0], "cues": [{"point": {"line": 0, "word": "(-1)^103"}}, {"point": {"line": 0, "word": "(-1)^104"}}]}},
-    {"cap": {"en": "A power means repeated multiplication", "hg": "Power ka matlab: baar-baar guna karna", "hi": "पावर का मतलब: बार-बार गुणा करना"}, "say": {"en": "A power tells us how many times to multiply a number by itself. Two to the power three is two times two times two.", "hi": "पावर बताती है कि नंबर को खुद से कितनी बार गुणा करना है। टू की पावर थ्री मतलब टू इनटू टू इनटू टू।"}, "anim": {"lines": ["2^3 = 2 × 2 × 2", "2^3 = 8"], "highlight": [1], "cues": [{"point": {"line": 0, "word": "2 × 2 × 2"}}, {"point": {"line": 1, "word": "= 8"}}]}},
-    {"cap": {"en": "Negative base: the sign keeps changing", "hg": "Negative base: sign badalta rehta hai", "hi": "नेगेटिव बेस: साइन बदलता रहता है"}, "say": {"en": "Look at the pattern. Odd powers of minus one give minus one. Even powers give plus one.", "hi": "पैटर्न देखो। माइनस वन की ऑड पावर का आंसर माइनस वन आता है। ईवन पावर का आंसर प्लस वन आता है।"}, "anim": {"lines": ["(-1)^1 = -1", "(-1)^2 = 1", "(-1)^3 = -1", "(-1)^4 = 1"], "highlight": [], "cues": [{"point": {"line": 0, "word": "= -1"}}, {"point": {"line": 1, "word": "= 1"}}, {"point": {"line": 2, "word": "= -1"}}, {"point": {"line": 3, "word": "= 1"}}]}},
-    {"cap": {"en": "103 is odd, so (-1)^103 = -1", "hg": "103 odd hai, isliye (-1)^103 = -1", "hi": "103 ऑड है, इसलिए (-1)^103 = -1"}, "say": {"en": "One hundred three is an odd number, so the answer is negative.", "hi": "वन हंड्रेड थ्री ऑड नंबर है, इसलिए आंसर नेगेटिव आएगा।"}, "anim": {"lines": ["103 = 2 × 51 + 1", "(-1)^103 = -1"], "highlight": [1], "cues": [{"point": {"line": 0, "word": "+ 1"}}, {"point": {"line": 1, "word": "= -1"}}]}},
-    {"cap": {"en": "104 is even, so (-1)^104 = 1", "hg": "104 even hai, isliye (-1)^104 = 1", "hi": "104 ईवन है, इसलिए (-1)^104 = 1"}, "say": {"en": "One hundred four is an even number, so the answer is positive.", "hi": "वन हंड्रेड फोर ईवन नंबर है, इसलिए आंसर पॉज़िटिव आएगा।"}, "anim": {"lines": ["104 = 2 × 52", "(-1)^104 = 1"], "highlight": [1], "cues": [{"point": {"line": 0, "word": "2 × 52"}}, {"point": {"line": 1, "word": "= 1"}}]}},
-    {"cap": {"en": "Put the values back in the question", "hg": "Values question me wapas rakho", "hi": "वैल्यू क्वेश्चन में वापस रखो"}, "say": {"en": "Now we put the two values back. The question becomes minus one plus one.", "hi": "अब हम दोनों वैल्यू वापस रखते हैं। क्वेश्चन बन जाता है माइनस वन प्लस वन।"}, "anim": {"lines": ["(-1)^103 + (-1)^104", "= -1 + 1"], "highlight": [1], "numberline": {"min": -3, "max": 3, "dots": [{"v": -1, "label": "-1", "color": "red"}, {"v": 1, "label": "1", "color": "blue"}]}, "cues": [{"point": {"line": 1, "word": "-1"}}, {"point": {"value": -1}}, {"point": {"value": 1}}]}},
-    {"cap": {"en": "Add: -1 + 1 = 0", "hg": "Jodo: -1 + 1 = 0", "hi": "जोड़ो: -1 + 1 = 0"}, "say": {"en": "Start at minus one. Plus one means one step to the right. We land on zero.", "hi": "माइनस वन से स्टार्ट करो। प्लस वन का मतलब एक स्टेप राइट। हम ज़ीरो पर पहुँचते हैं।"}, "anim": {"lines": ["(-1)^103 + (-1)^104", "= -1 + 1", "= 0"], "highlight": [2], "numberline": {"min": -3, "max": 3, "dots": [{"v": -1, "label": "-1", "color": "red"}, {"v": 1, "label": "1", "color": "blue"}]}, "cues": [{"point": {"value": -1}}, {"hop": {"from": -1, "to": 0}}, {"dot": {"v": 0, "label": "0", "color": "green"}}]}},
-    {"cap": {"en": "Answer: (-1)^103 + (-1)^104 = 0", "hg": "Answer: (-1)^103 + (-1)^104 = 0", "hi": "आंसर: (-1)^103 + (-1)^104 = 0"}, "say": {"en": "So the answer is zero. Remember: an odd power of minus one is minus one, an even power is plus one.", "hi": "तो आंसर है ज़ीरो। याद रखो, माइनस वन की ऑड पावर माइनस वन और ईवन पावर प्लस वन होती है।"}, "anim": {"lines": ["(-1)^103 + (-1)^104 = 0", "(-1)^5 + (-1)^8 = -1 + 1 = 0"], "highlight": [0], "note": "Answer: 0", "cues": [{"point": {"line": 0, "word": "= 0"}}, {"point": {"line": 1, "word": "-1 + 1"}}]}}
-  ]
-};
-
-// The last two steps of a True/False video for (-1)^103 + (-1)^104 = 0 (they are identical to steps 8 and 9 of integers-power-true-false-demo.json).
-const MV_TF_SHORT = [
-  {"cap": {"en": "Compare: left side 0, right side 0", "hg": "Compare: left side 0, right side 0", "hi": "कंपेयर: लेफ्ट साइड 0, राइट साइड 0"}, "say": {"en": "The left side is zero. The right side is also zero. Both sides are equal.", "hi": "लेफ्ट साइड ज़ीरो है। राइट साइड भी ज़ीरो है। दोनों साइड इक्वल हैं।"}, "anim": {"lines": ["(-1)^103 + (-1)^104", "= 0", "0 = 0"], "highlight": [2], "cues": [{"point": {"line": 1, "word": "= 0"}}, {"point": {"line": 2}}]}},
-  {"cap": {"en": "Answer: True", "hg": "Answer: True", "hi": "आंसर: ट्रू"}, "say": {"en": "Left side equals right side, so the statement is True. Remember: odd power of -1 is -1, even power is 1.", "hi": "लेफ्ट और राइट साइड इक्वल हैं, इसलिए स्टेटमेंट ट्रू है। याद रखो, माइनस वन की ऑड पावर माइनस वन और ईवन पावर वन होती है।"}, "anim": {"lines": ["(-1)^103 + (-1)^104 = 0"], "highlight": [0], "note": "Answer: True (0 = 0)", "cues": [{"point": {"line": 0, "word": "= 0"}}]}}
-];
-
-const MV_POW_RE = /\^|\bpowers?\b|\bsquares?\b|\bcubes?\b|\u0918\u093E\u0924/i;   // ^ (superscripts are already turned into ^ by prepQuestion)
-const mvKind = raw => ({ pow: MV_POW_RE.test(raw), tf: MV.isTrueFalse(raw) });
-
-const MV_POWER_RECIPE = `POWERS (this question has a power)
-- Powers ARE supported here. Write a power with ^ in the board lines, for example (-1)^103 or 2^5. The base is a whole number or a bracketed whole-number expression. The exponent is a plain whole number from 0 to 200. Every result must have at most 15 digits.
-- NOT supported (reply with the unsupported JSON): negative or decimal exponents, roots (square root, cube root), letters or variables, a power of a fraction.
-- Brackets matter: (-2)^2 = 4 but -2^2 = -4. Always write a negative base in brackets. Never write a chain like 2^3^2.
-- Follow this recipe instead of the number-line steps in HOW MUCH DETAIL (6 to 9 steps): (1) the question; (2) what a power means: repeated multiplication, with a small line such as 2^3 = 2 × 2 × 2 = 8; (3) the pattern for a negative base: odd power gives a negative answer, even power gives a positive answer (show it as complete equation lines like (-1)^1 = -1, (-1)^2 = 1); (4) each power on its OWN line (for a big exponent show why it is odd or even: 103 = 2 × 51 + 1); (5) put the values back and add / subtract / multiply the terms; (6) the final answer with a one-line rule to remember.
-- Do NOT demand a number line. Skip it when the numbers are big. For powers of -1 you may use one (min -3, max 3) to show -1 and 1; otherwise use lines and pen cues only.
-- Every board line is still checked by a program, so each line must be pure numeric (digits, + - × ÷ ^ and brackets, "=" at the start of working lines).
-- The example above shows the style for (-1)^103 + (-1)^104.`;
-
-const MV_TF_RECIPE = `TRUE / FALSE (the question is a statement like "<expression> = <number>; True or False?")
-- Make the video for the statement. Steps: (1) the question; (2) the plan: work out the left side, then compare it with the number on the right; (3 to 6) work out the left side step by step (use the POWERS recipe if it has powers); (7) compare the left value with the number on the right side; (8) the final answer with the reason in the spoken text. 7 to 9 steps in total.
-- The FIRST board line of step 1 is the full statement exactly as asked, for example "(-1)^103 + (-1)^104 = 0". It may be False; this is the only line where the two sides may differ (later steps may repeat it). Working lines are the left-side expression on its own, then lines that start with "=" and have the same value as the left side. Never write the right-side number into a line that starts with "=" unless it equals the left value.
-- In the compare step you may add a line like "0 = 5" (left value = claimed number).
-- The note of the LAST step is exactly "Answer: True" or "Answer: False", optionally with a short bracket: "Answer: True (0 = 0)" or "Answer: False (0 ≠ 5)" (left value, then the claimed number). The program works out the truth itself and rejects a wrong note, so calculate carefully.
-- Explain the answer in all three languages (cap.en, cap.hg, cap.hi, say.en, say.hi) in the last two steps: left equals right means True, left not equal to right means False.
-- Example of the LAST TWO steps for (-1)^103 + (-1)^104 = 0 (answer True):
-${JSON.stringify(MV_TF_SHORT)}
-- If the statement uses <, >, ≠, letters or several statements, reply unsupported (for several statements do the first one only).`;
-
-const MV_SYSTEM = `You make detailed whiteboard maths videos for school students (Class 6-8, Assam, textbook style). A student pastes ONE textbook question; you reply with the video plan.
+const MV_SYSTEM = `You make short whiteboard maths videos for school students (Class 6-8, Assam, textbook style).
 Reply with ONE JSON object only. No markdown, no commentary.
 
 If the question is not a school maths question, or it cannot be solved with plain number arithmetic (only numbers, + - × ÷ and brackets; no letters or variables, no geometry figures), reply exactly:
 {"unsupported": true, "reason": "<one short Hinglish sentence in Roman letters>"}
-If the question has several parts (i), (ii)..., make the video for the first part only.
 
-Otherwise reply with a plan in this exact shape. Here is one complete, valid example (for (-8) + 5). Copy its style, depth and level of detail:
-${JSON.stringify(MV_EXAMPLE)}
-
-FIELDS
-- "en" = simple English, "hg" = Hinglish in Roman letters, "hi" = Hindi in Devanagari. "say" is what is spoken aloud.
-- Spoken style (say.hi): friendly Hinglish written in Devanagari, using English words for maths: प्लस, माइनस, इनटू, इक्वल टू, क्वेश्चन, आंसर, जंप, स्टेप. Write every number as an English number-word in Devanagari (वन, टू, थ्री, फोर, फाइव, सिक्स, सेवन, एट, नाइन, टेन, इलेवन, ट्वेल्व...). Never use digits in say.hi. Say "क्वेश्चन", never "सवाल".
-- Each cap/say/title text is at most 140 characters. "say" = 1 or 2 short sentences.
-- "lines": 1 to 6 short strings (each at most 60 characters) shown on the board; with a number line use at most 4 lines. highlight = zero-based indexes of lines to emphasise (use [] if none).
-- Maths lines are checked by a program, so they must be pure numeric: first line is the expression, later working lines start with "=" and must have exactly the same value. Use + - × ÷ and brackets only; no words, units or letters in a line. Words belong in cap/say.
-- Put the final result in the LAST step: "note": "Answer: <number>", and it must match the working.
-
-HOW MUCH DETAIL (very important)
-- Use 6 to 9 steps, one idea per step: (1) the question, (2) what the operation means, (3) draw the number line and mark the start, (4) the jumps, (5) a shortcut or rule with a numeric working, (6) check on the number line, (7) the final answer with a one-line rule and a second similar example line.
-- The board is redrawn at every step. So in each step repeat the lines you still need, and put every dot already reached into "numberline.dots" of that step.
-
-NUMBER LINE (use it whenever every number involved fits between -20 and 20)
-- "numberline": {"min","max","dots"}: integers only, min >= -20, max <= 20, max - min <= 20, a little space on both sides of the numbers used, at most 12 dots, colours red / green / blue / orange. Use red for negative numbers, blue for positive, green for the final answer.
-- How to show each operation:
-  * a + b: dot at a, then one hop from a to a+b (right if b is positive, left if b is negative), then a green dot at the answer.
-  * a - b: first rewrite as a + (opposite of b) in the lines (for example 7 - (-3) then = 7 + 3 then = 10), then hop from a to the answer.
-  * a × b (small, answer within -20..20, b positive): repeated addition. One hop of size a per repeat, each hop followed by a dot. Cues allow 8 per step, so show at most 4 hops per step and split longer ones over two steps. If b is negative, do not use hops. The first line is still the question itself, for example (-3) × (-4). Then show a pattern, one complete equation per line (the program checks each one), for example (-3) × 2 = -6, (-3) × 1 = -3, (-3) × 0 = 0, and continue it over the next steps until you reach the question; finish with a line = 12 (the answer).
-  * a ÷ b: ask how many jumps of size b take us from 0 to a; hop that many times. Also check by multiplication in a line.
-  * Several terms: go left to right, one hop per term.
-- If the numbers do not fit in -20..20, skip the number line and explain with "lines" and pen cues only.
-
-PEN / ARROW CUES ("cues", at most 8 per step; each cue has exactly one key; they run in order while the voice speaks)
-- {"point": {"line": 0, "word": "text that appears in that line"}}: the pen underlines that word. Without "word" the whole line is underlined.
-- {"point": {"value": 3}}: the pen goes to that number on the number line.
-- {"hop": {"from": -8, "to": -3}}: a curved arrow jumps between two numbers (both inside min..max).
-- {"dot": {"v": 2, "label": "2", "color": "green"}}: a new dot appears (label at most 10 characters).
-- Every step should have 1 to 4 cues. Keep the number of cues about equal to the number of spoken sentences or parts, in the order they are spoken: first point to where we start, then hop, then dot. A hop is usually followed by a dot at the place we land.
-- No HTML, no links, no emoji. Keep every explanation correct and simple. Never invent facts.`;
-
-// "English words" level chosen by the student in Get Video (0 none, 1 few, 2 normal, 3 many). It changes how the AI WRITES say.hi / cap.hi / cap.hg.
-const MV_STYLE_LINE = MV_SYSTEM.split('\n').find(l => l.startsWith('- Spoken style (say.hi)'));
-const MV_STYLE = {
-  0: '- Spoken style (say.hi) and the Hindi caption (cap.hi): ENGLISH WORDS LEVEL = NONE. Write pure, simple Hindi in Devanagari with NO English words and no English words spelled in Devanagari. Write every number as a Hindi number-word (शून्य, एक, दो, तीन, चार, पाँच, छह, सात, आठ, नौ, दस, ग्यारह, बारह, तेरह, चौदह, पंद्रह, सोलह, सत्रह, अठारह, उन्नीस, बीस, तीस...). Use: ऋण (negative / minus sign), धन (positive), जोड़, घटाओ, गुणा, भाग, बराबर, उत्तर, प्रश्न, कदम, छलाँग, दाईं ओर, बाईं ओर, संख्या रेखा, चिह्न. Example: "ऋण आठ जोड़ पाँच बराबर ऋण तीन।". Never use digits in say.hi. Also write cap.hg (Roman Hinglish) with Hindi words in Roman letters (rin, dhan, jod, guna, bhaag, barabar, uttar, prashn, kadam, sankhya rekha) and no English maths words.',
-  1: '- Spoken style (say.hi) and the Hindi caption (cap.hi): ENGLISH WORDS LEVEL = FEW. The ONLY English words allowed are plus, minus, into, equal to, written in Devanagari as प्लस, माइनस, इनटू, इक्वल टू. Everything else is Hindi: numbers as Hindi number-words (शून्य, एक, दो, तीन, चार, पाँच, छह, सात, आठ, नौ, दस, ग्यारह, बारह...), and उत्तर, प्रश्न, कदम, छलाँग, दाईं ओर, बाईं ओर, संख्या रेखा, चिह्न, धन, ऋण (for "positive" and "negative"). Example: "माइनस आठ प्लस पाँच इक्वल टू माइनस तीन।". Never use digits in say.hi. In cap.hg (Roman) keep English only for plus, minus, into, equal to; other words in Hindi (Roman letters).',
-  3: '- Spoken style (say.hi) and the Hindi caption (cap.hi): ENGLISH WORDS LEVEL = MANY. Use English for as many words as possible, spelled in Devanagari: प्लस, माइनस, इनटू, डिवाइडेड बाय, इक्वल टू, नंबर लाइन, जंप, स्टेप, आंसर, क्वेश्चन, पॉज़िटिव, नेगेटिव, राइट, लेफ्ट, साइन, चेक, रूल, एक्साम्पल. Write every number as an English number-word in Devanagari (वन, टू, थ्री, फोर, फाइव, सिक्स, सेवन, एट, नाइन, टेन, इलेवन, ट्वेल्व...). Only small joining words stay Hindi (का, की, है, हम, को, में, से, तो, और, पर). Example: "माइनस एट प्लस फाइव इक्वल टू माइनस थ्री। नंबर लाइन पर राइट जंप करो।". Never use digits in say.hi. In cap.hg (Roman) use plenty of English words too.'
-};
-// Base prompt for this question: the normal prompt, or (for powers / True-False) the same prompt with the power example and the recipes.
-function mvBase(raw) {
-  const k = mvKind(raw || '');
-  if (!k.pow && !k.tf) return MV_SYSTEM;
-  let sys = MV_SYSTEM;
-  if (k.pow) {
-    sys = sys.split(JSON.stringify(MV_EXAMPLE)).join(JSON.stringify(MV_EXAMPLE_POW))
-      .replace('(for (-8) + 5)', () => '(for (-1)^103 + (-1)^104)')
-      .replace('(only numbers, + - × ÷ and brackets; no letters or variables, no geometry figures)', () => '(only numbers, + - × ÷, powers written with ^ and brackets; no letters or variables, no roots, no geometry figures)')
-      .replace('Use + - × ÷ and brackets only;', () => 'Use + - × ÷, ^ (power) and brackets only;');
-    sys += '\n\n' + MV_POWER_RECIPE;
+Otherwise reply with a plan in this exact shape:
+{
+ "id": "ask",
+ "type": "equation",
+ "version": 1,
+ "title": {"en": "...", "hg": "...", "hi": "..."},
+ "steps": [
+  {
+   "cap": {"en": "...", "hg": "...", "hi": "..."},
+   "say": {"en": "...", "hi": "..."},
+   "anim": {
+    "lines": ["(-8) + 5", "= -3"],
+    "highlight": [1],
+    "note": "Answer: -3",
+    "numberline": {"min": -10, "max": 5, "dots": [{"v": -8, "label": "-8", "color": "red"}]},
+    "cues": [{"hop": {"from": -8, "to": -3}}]
+   }
   }
-  if (k.tf) sys += '\n\n' + MV_TF_RECIPE;
-  return sys;
+ ]
 }
-// The English-words override works the same for every variant: only the "Spoken style" line is swapped.
-function mvSystem(level, raw) {
-  const base = mvBase(raw);
-  if (level === 2 || !MV_STYLE[level] || !MV_STYLE_LINE) return base;
-  return base.replace(MV_STYLE_LINE, () => MV_STYLE[level]) +
-    '\nIMPORTANT: the example above shows the NORMAL English-words level in say.hi and cap.hi. For this reply follow the ENGLISH WORDS LEVEL rule in FIELDS instead of the example\'s word choice, but keep the example\'s structure, depth, number of steps and cues.';
-}
-
-// Quality gate on top of validate(): too-short or motionless plans are sent back to the AI once or twice (the last try is always accepted).
-function mvQuality(plan, raw) {
-  const out = [], steps = plan.steps || [];
-  if (steps.length < 6) out.push('Too short. Make the video more detailed: 6 to 9 steps, one idea per step (you gave ' + steps.length + ').');
-  const nums = (raw.match(/\d+/g) || []).map(Number);
-  const mult = /[×*÷\/]|[\d)]\s*x\s*[\d(]/i.test(raw);
-  const reach = nums.length && !MV_POW_RE.test(raw) ? (mult ? nums.reduce((a, b) => a * b, 1) : nums.reduce((a, b) => a + b, 0)) : 99;   // power questions: never demand a number line (exponents are not multiplied like numbers)
-  const nl = steps.filter(s => s.anim && s.anim.numberline).length;
-  const cues = steps.reduce((n, s) => n + (((s.anim || {}).cues) || []).length, 0);
-  if (reach <= 20 && nl < 3) out.push('Use the number line (anim.numberline) in at least 3 steps; the numbers are small enough.');
-  if (cues < 4) out.push('Add more pen/arrow cues (anim.cues: point, hop, dot) so something moves in most steps.');
-  return out;
-}
-
-
-// Questions we do not try: several options to choose from, or a True/False statement whose numbers are out of range. Answered at once, no AI call.
-const MV_OPT_CUE = /\b(?:circle|choose|select|tick|underline|odd one)\b|whose answer|which (?:one|of)|correct (?:option|answer)|\boptions?\b|\u091A\u0941\u0928\u094B|\u0918\u0947\u0930\u094B|\u0935\u093F\u0915\u0932\u094D\u092A/i;
-function mvMultiOption(t) {
-  if (!MV_OPT_CUE.test(t)) return false;
-  if (['a', 'b', 'c'].every(l => new RegExp('(^|[\\s,;:])\\(?' + l + '\\)', 'i').test(t))) return true;   // (a) ... (b) ... (c)
-  const list = t.slice(t.lastIndexOf(':') + 1).split(/\s*(?:;|,|\bor\b)\s*/i).filter(x => /\d/.test(x));  // "...: 40 / 8, 15 - 10, 3 x 2"
-  return t.includes(':') && list.length >= 3;
-}
-function mvPrecheck(raw) {
-  if (mvMultiOption(raw)) return 'Isme kai options hain, abhi ek-ek option alag question ke roop mein daalo. Jaise: 40 ÷ 8 ka answer batao.';
-  const q = MV.parseTF(raw);
-  if (q.tf && q.err) return 'Is statement mein power ya number bahut bada hai (exponent 0 se 200 tak, result 15 digits tak, exponent negative nahi). Chhota number daalo.';
-  return '';
-}
+Meaning of the fields:
+- "en" = simple English, "hg" = Hinglish in Roman letters, "hi" = Hindi in Devanagari script. "say" is what is spoken aloud.
+- In "say.hi" write every number as Hindi words (no digits), for example ऋण आठ, पाँच.
+- Each cap/say/title text is at most 140 characters. Use 3 to 7 steps (never more than 12).
+- "lines": 1 to 6 short strings (each at most 60 characters) shown on the board, in order. highlight = zero-based indexes of the lines to emphasise.
+- Maths lines are checked by a program, so they must be pure numeric: first line is the expression, later lines start with "=" and must have exactly the same value. Use the symbols + - × ÷ and brackets. Do not put words, units or letters inside a maths line. Words belong in cap/say.
+- The last step's "note" must be "Answer: <number>" and match the working. If the question has several parts, make the video for the first part only.
+- "numberline" (optional): integers only, min and max between -20 and 20, at most 12 dots; colors red, green, blue or orange. With a number line use at most 4 lines.
+- "cues" (optional, at most 8): each cue has exactly one key. {"point": {"line": 0, "word": "text that appears in that line"}} or {"point": {"value": 3}} (number line), {"hop": {"from": -8, "to": -3}} (number line, integers inside min..max), {"dot": {"v": 2, "label": "2", "color": "green"}}.
+- No HTML, no links, no emoji. Keep every explanation correct and simple. Never invent facts.`;
 
 function mvParse(text) {
   let t = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
@@ -1105,31 +1005,13 @@ function mvParse(text) {
   try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { return null; }
 }
 
-// Get Video accepts ONLY questions that exist in the app (the same text "Copy question" gives). Typed text or another subject is refused.
-const MV_BANK = {};
-function mvBank(subject) {
-  if (MV_BANK[subject]) return MV_BANK[subject];
-  const out = [];
-  QUIZ.courses.filter(c => c.subject === subject).forEach(course => course.chapters.forEach(ch => (ch.sections || []).forEach(s => s.questions.forEach(q => {
-    out.push({ q, course, ch, lines: [q.text].concat(q.parts || [], q.options || []).filter(Boolean) });
-  }))));
-  return (MV_BANK[subject] = out);
-}
-function mvKnown(text, subject) { return mvBank(subject).find(r => MV.linesMatch(text, r.lines)) || null; }
-const MV_UNKNOWN_MSG = subject => `Is box me sirf app ke ${subject === 'Science' ? 'Science' : 'Maths'} ke questions chalte hain. Question ke bagal ke 3 dots me "Copy question" dabao aur yahan paste karo.`;
-
 app.post('/api/mathvideo/generate', async (req, res) => {
   if (!guardAI(req, res)) return;
-  const typed = String((req.body || {}).text || '').replace(/\s+/g, ' ').trim();
-  if (typed.length < 8) return res.status(400).json({ error: 'Question thoda aur likho (kam se kam 8 akshar).' });
-  if (typed.length > 400) return res.status(400).json({ error: 'Question bahut lamba hai. 400 akshar tak likho.' });
-  if (!MV_ADMINS.includes(String((req.user && req.user.email) || '').toLowerCase()) && !mvKnown(typed, 'Mathematics')) return res.status(400).json({ error: MV_UNKNOWN_MSG('Mathematics') });   // only app maths questions (admins may test anything)
-  const raw = MV.prepQuestion(typed);   // superscripts / ** / flattened powers -> ^N, before the AI sees the question
-  const eng = [0, 1, 2, 3].includes(+(req.body || {}).eng) ? +(req.body || {}).eng : 2;   // English-words level from the student
-  const norm = mvNorm(raw) + (eng === 2 ? '' : '|e' + eng);
+  const raw = String((req.body || {}).text || '').replace(/\s+/g, ' ').trim();
+  if (raw.length < 8) return res.status(400).json({ error: 'Question thoda aur likho (kam se kam 8 akshar).' });
+  if (raw.length > 400) return res.status(400).json({ error: 'Question bahut lamba hai. 400 akshar tak likho.' });
+  const norm = mvNorm(raw);
   if (MV_CACHE.has(norm)) return res.json({ ...MV_CACHE.get(norm), cached: true });
-  const pre = mvPrecheck(raw);
-  if (pre) { const out = { unsupported: true, reason: pre }; MV_CACHE.set(norm, out); return res.json(out); }   // cached per normalised question + level, like every unsupported answer
 
   const email = String((req.user && req.user.email) || '').toLowerCase();
   if (!MV_ADMINS.includes(email)) {
@@ -1139,19 +1021,12 @@ app.post('/api/mathvideo/generate', async (req, res) => {
     cur.n++; MV_USE.set(req.user.uid, cur);
   }
 
-  const t0 = Date.now(), TOTAL = 82000;
-  let prompt = 'Question:\n"""\n' + raw + '\n"""', lastErrors = [], lastStatus = 0, best = null;
-  const mvDone = (plan, how) => {
-    const out = { plan };
-    MV_CACHE.set(norm, out);
-    if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
-    console.log('MathVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps');
-    return res.json(out);
-  };
+  const t0 = Date.now(), TOTAL = 75000;
+  let prompt = 'Question:\n"""\n' + raw + '\n"""', lastErrors = [], lastStatus = 0;
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(mvSystem(eng, raw), prompt, { json: true, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
+    const r = await gemini(MV_SYSTEM, prompt, { json: true, temperature: 0.2, maxTokens: 8192, budgetMs: Math.min(left, attempt === 1 ? 40000 : 30000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
@@ -1161,133 +1036,21 @@ app.post('/api/mathvideo/generate', async (req, res) => {
       return res.json(out);
     }
     plan.id = 'ask-' + crypto.createHash('sha1').update(norm).digest('hex').slice(0, 20);
-    const v = MV.validate(plan, { question: raw });   // True/False plans are checked against the statement in the question
-    // soft problems: spoken-Hindi issues and too-short / motionless plans. Retry if there is time; the last try is always accepted.
-    const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : mvQuality(plan, raw));
-    if (!v.errors.length) best = plan;                                    // newest valid plan = fallback if a later try fails
-    if (!v.errors.length && !(soft.length && attempt < 3)) return mvDone(plan, 'try ' + attempt);
+    const v = MV.validate(plan);
+    const soft = v.warnings.filter(w => /digits|Devanagari/.test(w));     // spoken Hindi problems: retry if there is time
+    if (!v.errors.length && !(soft.length && attempt < 3)) {
+      const out = { plan };
+      MV_CACHE.set(norm, out);
+      if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
+      console.log('MathVideo ok', attempt, 'try', (Date.now() - t0) + 'ms');
+      return res.json(out);
+    }
     lastErrors = v.errors.length ? v.errors : soft;
     console.error('MathVideo invalid (try ' + attempt + '):', lastErrors.slice(0, 4).join(' | '));
     prompt = 'Question:\n"""\n' + raw + '\n"""\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
   }
-  if (best) return mvDone(best, 'fallback');                              // a valid (if plainer) plan beats an error
   if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
   res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Question ko seedha number wala likh ke dobara try karo.' });
-});
-
-// ---- Science Get Video ---------------------------------------------------------------------------------
-// Only questions that exist in the app's Science books are accepted (mvKnown). The AI works from the textbook notes of that chapter.
-const SCI_EXAMPLE = {
-  id: 'ask', type: 'science', version: 1,
-  title: { en: 'Photosynthesis: how plants make food', hg: 'Photosynthesis: plants khana kaise banate hain', hi: 'फोटोसिंथेसिस: पौधे खाना कैसे बनाते हैं' },
-  steps: [
-    { cap: { en: 'Question: how do plants make their food?', hg: 'Question: plants apna khana kaise banate hain?', hi: 'क्वेश्चन: पौधे अपना खाना कैसे बनाते हैं?' },
-      say: { en: 'Our question is, how do plants make their food?', hi: 'हमारा क्वेश्चन है, पौधे अपना खाना कैसे बनाते हैं?' },
-      anim: { lines: ['How do plants make food?'], highlight: [0], cues: [{ point: { line: 0, word: 'plants' } }, { point: { line: 0, word: 'food' } }] } },
-    { cap: { en: 'The process is called photosynthesis', hg: 'Is process ka naam photosynthesis hai', hi: 'इस प्रोसेस का नाम फोटोसिंथेसिस है' },
-      say: { en: 'Plants make food by a process called photosynthesis.', hi: 'पौधे फोटोसिंथेसिस नाम के प्रोसेस से खाना बनाते हैं।' },
-      anim: { lines: ['How do plants make food?', 'Process: photosynthesis'], highlight: [1], cues: [{ point: { line: 1, word: 'photosynthesis' } }] } },
-    { cap: { en: 'What the plant takes in', hg: 'Plant kya kya leta hai', hi: 'पौधा क्या क्या लेता है' },
-      say: { en: 'The leaves take carbon dioxide from the air. The roots take water from the soil.', hi: 'पत्तियाँ हवा से कार्बन डाइऑक्साइड लेती हैं। जड़ें मिट्टी से पानी लेती हैं।' },
-      anim: { lines: ['Takes in:', 'carbon dioxide (air)', 'water (soil)'], highlight: [1, 2], cues: [{ point: { line: 1, word: 'carbon dioxide' } }, { point: { line: 2, word: 'water' } }] } },
-    { cap: { en: 'Sunlight and chlorophyll', hg: 'Sunlight aur chlorophyll', hi: 'सनलाइट और क्लोरोफिल' },
-      say: { en: 'The green chlorophyll in the leaves catches sunlight. This energy is used to make food.', hi: 'पत्तियों का हरा क्लोरोफिल सनलाइट को पकड़ता है। इसी एनर्जी से खाना बनता है।' },
-      anim: { lines: ['Takes in:', 'carbon dioxide (air)', 'water (soil)', 'Energy: sunlight + chlorophyll'], highlight: [3], cues: [{ point: { line: 3, word: 'sunlight' } }, { point: { line: 3, word: 'chlorophyll' } }] } },
-    { cap: { en: 'What the plant makes', hg: 'Plant kya banata hai', hi: 'पौधा क्या बनाता है' },
-      say: { en: 'The plant makes glucose, which is its food. It also gives out oxygen.', hi: 'पौधा ग्लूकोज़ बनाता है, यही उसका खाना है। वो ऑक्सीजन भी बाहर निकालता है।' },
-      anim: { lines: ['Makes:', 'glucose (food)', 'oxygen (gas given out)'], highlight: [1, 2], cues: [{ point: { line: 1, word: 'glucose' } }, { point: { line: 2, word: 'oxygen' } }] } },
-    { cap: { en: 'Summary in one line', hg: 'Ek line mein summary', hi: 'एक लाइन में समरी' },
-      say: { en: 'So, carbon dioxide and water, with sunlight, make glucose and oxygen.', hi: 'तो, कार्बन डाइऑक्साइड और पानी, सनलाइट की मदद से, ग्लूकोज़ और ऑक्सीजन बनाते हैं।' },
-      anim: { lines: ['carbon dioxide + water', '-> (sunlight, chlorophyll)', 'glucose + oxygen'], highlight: [2], note: 'Photosynthesis', cues: [{ point: { line: 0, word: 'carbon dioxide' } }, { point: { line: 1, word: 'sunlight' } }, { point: { line: 2, word: 'glucose' } }] } }
-  ]
-};
-const SCI_SYSTEM = `You make short whiteboard science videos for school students (Class 6-10, Assam, textbook style). A student pastes ONE textbook science question; you reply with the video plan.
-Reply with ONE JSON object only. No markdown, no commentary.
-
-The message also gives the chapter name and the textbook notes. Explain ONLY from those notes (and plain school-level science that agrees with them). Never invent facts, names, dates or numbers. If the notes do not cover something, keep it general and simple.
-If the question needs a drawing, diagram, graph, map, experiment table or an activity to do (for example "draw", "label the diagram", "observe and note", "fill the table"), or it has options to choose from, reply exactly:
-{"unsupported": true, "reason": "<one short Hinglish sentence in Roman letters>"}
-If the question has several parts (i), (ii)..., make the video for the first part only.
-
-Otherwise reply with a plan in this exact shape. Here is one complete, valid example (a different question). Copy its style, depth and level of detail:
-${JSON.stringify(SCI_EXAMPLE)}
-
-FIELDS
-- "type" is always "science". "en" = simple English, "hg" = Hinglish in Roman letters, "hi" = Hindi in Devanagari. "say" is what is spoken aloud.
-- Spoken style (say.hi): friendly Hindi in Devanagari. Science words may be English spelled in Devanagari (फोटोसिंथेसिस, क्लोरोफिल, एनर्जी). Write every number as a word in Devanagari, never as digits.
-- Each cap/say/title text is at most 140 characters. "say" = 1 or 2 short sentences.
-- "lines": 1 to 6 short strings (each at most 60 characters) shown on the board: key words, short facts, a small flow like "A + B -> C". highlight = zero-based indexes of lines to emphasise (use [] if none). No number line: never use "numberline".
-- The board is redrawn at every step. So in each step repeat the lines you still need and add the new one.
-
-HOW MUCH DETAIL
-- Use 5 to 8 steps, one idea per step: (1) the question, (2) the main idea or definition, (3) to (6) the important points from the notes, one per step, (7) a one-line summary with "note" (at most 60 characters) on the last step.
-
-PEN CUES ("cues", at most 8 per step)
-- Only this cue: {"point": {"line": 0, "word": "text that appears in that line"}}: the pen underlines that word. Without "word" the whole line is underlined.
-- Every step should have 1 to 3 cues, in the order the words are spoken.
-- No HTML, no links, no emoji. Keep every explanation correct and simple.`;
-function sciQuality(plan) {
-  const out = [], steps = plan.steps || [];
-  if (steps.length < 5) out.push('Too short. Make the video more detailed: 5 to 8 steps, one idea per step (you gave ' + steps.length + ').');
-  const cues = steps.reduce((n, s) => n + (((s.anim || {}).cues) || []).length, 0);
-  if (cues < 4) out.push('Add more pen cues (anim.cues: point) so something is underlined in most steps.');
-  return out;
-}
-
-app.post('/api/sciencevideo/generate', async (req, res) => {
-  if (!guardAI(req, res)) return;
-  const typed = String((req.body || {}).text || '').replace(/\s+/g, ' ').trim();
-  if (typed.length < 8) return res.status(400).json({ error: 'Question thoda aur likho (kam se kam 8 akshar).' });
-  if (typed.length > 700) return res.status(400).json({ error: 'Question bahut lamba hai.' });
-  const hit = mvKnown(typed, 'Science');
-  if (!hit) return res.status(400).json({ error: MV_UNKNOWN_MSG('Science') });
-  const norm = 's|' + mvNorm(typed);
-  if (MV_CACHE.has(norm)) return res.json({ ...MV_CACHE.get(norm), cached: true });
-
-  const email = String((req.user && req.user.email) || '').toLowerCase();
-  if (!MV_ADMINS.includes(email)) {
-    const u = MV_USE.get(req.user.uid), day = mvDay();
-    const cur = u && u.day === day ? u : { day, n: 0 };
-    if (cur.n >= MV_DAILY) return res.status(429).json({ error: `Aaj ki video limit (${MV_DAILY}) poori ho gayi. Kal dobara try karo.` });
-    cur.n++; MV_USE.set(req.user.uid, cur);
-  }
-
-  const t0 = Date.now(), TOTAL = 82000;
-  const head = 'Chapter: ' + (hit.ch.title || hit.ch.name || '') + (hit.ch.context ? '\nTextbook notes for this chapter (explain only from these): ' + String(hit.ch.context).slice(0, 6000) : '') +
-    (hit.q.context ? '\nNotes for this question: ' + String(hit.q.context).slice(0, 2000) : '') + '\n\nQuestion:\n"""\n' + typed + '\n"""';
-  let prompt = head, lastErrors = [], lastStatus = 0, best = null;
-  const done = (plan, how) => {
-    const out = { plan };
-    MV_CACHE.set(norm, out);
-    if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
-    console.log('ScienceVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps');
-    return res.json(out);
-  };
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const left = TOTAL - (Date.now() - t0);
-    if (left < 8000) break;
-    const r = await gemini(SCI_SYSTEM, prompt, { json: true, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
-    if (!r.text) { lastStatus = r.status; break; }
-    const plan = mvParse(r.text);
-    if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
-    if (plan.unsupported) {
-      const out = { unsupported: true, reason: String(plan.reason || 'Is type ka video abhi nahi ban sakta.').slice(0, 200) };
-      MV_CACHE.set(norm, out);
-      return res.json(out);
-    }
-    plan.type = 'science';
-    plan.id = 'ask-' + crypto.createHash('sha1').update(norm).digest('hex').slice(0, 20);
-    const v = MV.validate(plan, { question: typed });
-    const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : sciQuality(plan));
-    if (!v.errors.length) best = plan;
-    if (!v.errors.length && !(soft.length && attempt < 3)) return done(plan, 'try ' + attempt);
-    lastErrors = v.errors.length ? v.errors : soft;
-    console.error('ScienceVideo invalid (try ' + attempt + '):', lastErrors.slice(0, 4).join(' | '));
-    prompt = head + '\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
-  }
-  if (best) return done(best, 'fallback');
-  if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
-  res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Thodi der baad dobara try karo.' });
 });
 
 const PORT = process.env.PORT || 3000;

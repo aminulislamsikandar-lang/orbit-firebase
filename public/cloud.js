@@ -24,6 +24,14 @@ async function load(user) {
   if (window.onCloudData) window.onCloudData({ saved, pins: d.pins || {}, settings: d.settings || null });
 }
 
+async function loadVideos() {
+  try {
+    const s = await getDocs(collection(db, 'videos'));
+    const list = []; s.forEach(d => list.push({ id: d.id, ...d.data() }));
+    if (window.onCloudVideos) window.onCloudVideos(list);
+  } catch (e) { console.warn('videos load failed', e); }
+}
+
 async function loadPeople() {
   try {
     const s = await getDocs(collection(db, 'people'));
@@ -42,12 +50,9 @@ window.CLOUD = {
     // Get Video: approved library (mathVideoAsked, doc id = hash of the question) + student requests waiting for admin review (mathVideoPending)
     async askedGet(key) { const s = await getDoc(doc(db, 'mathVideoAsked', key)); return s.exists() ? s.data().plan || null : null; },
     askedSet(key, text, plan) { return setDoc(doc(db, 'mathVideoAsked', key), JSON.parse(JSON.stringify({ text, plan }))); },
-    // qid (optional) = textbook question id from "Copy question"; the admin form uses it to fill Exercise / Question by itself
-    pendingAdd(key, text, plan, qid) {
+    pendingAdd(key, text, plan) {
       const u = auth.currentUser; if (!u) return Promise.reject(new Error('login'));
-      const d = { text, plan, uid: u.uid, ts: Date.now() };
-      if (qid) d.qid = qid;
-      return setDoc(doc(db, 'mathVideoPending', key), JSON.parse(JSON.stringify(d)));
+      return setDoc(doc(db, 'mathVideoPending', key), JSON.parse(JSON.stringify({ text, plan, uid: u.uid, ts: Date.now() })));
     },
     async pendingList() { const s = await getDocs(collection(db, 'mathVideoPending')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); a.sort((x, y) => (y.ts || 0) - (x.ts || 0)); return a; },
     pendingDel(key) { return deleteDoc(doc(db, 'mathVideoPending', key)); },
@@ -56,16 +61,11 @@ window.CLOUD = {
       const s = await getDocs(q); const m = {}; s.forEach(d => { m[d.id] = d.data(); }); return m;
     }
   },
-  // Science Get Video: approved library (scienceVideoAsked) + student requests waiting for the admin (sciencePending). Same rules as the maths ones.
-  scienceVideo: {
-    async askedGet(key) { const s = await getDoc(doc(db, 'scienceVideoAsked', key)); return s.exists() ? s.data().plan || null : null; },
-    askedSet(key, text, plan) { return setDoc(doc(db, 'scienceVideoAsked', key), JSON.parse(JSON.stringify({ text, plan }))); },
-    pendingAdd(key, text, plan) {
-      const u = auth.currentUser; if (!u) return Promise.reject(new Error('login'));
-      return setDoc(doc(db, 'sciencePending', key), JSON.parse(JSON.stringify({ text, plan, uid: u.uid, ts: Date.now() })));
-    },
-    async pendingList() { const s = await getDocs(collection(db, 'sciencePending')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); a.sort((x, y) => (y.ts || 0) - (x.ts || 0)); return a; },
-    pendingDel(key) { return deleteDoc(doc(db, 'sciencePending', key)); }
+  // Video lessons added from the admin panel (collection videos). Read: signed-in. Write: admin only (firestore.rules).
+  videos: {
+    async list() { const s = await getDocs(collection(db, 'videos')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a; },
+    set(v) { return setDoc(doc(db, 'videos', v.id), JSON.parse(JSON.stringify(v))); },
+    del(id) { return deleteDoc(doc(db, 'videos', id)); }
   },
   // Faculty / Developer people. Writes only work for the admin Google account (see firestore.rules).
   savePerson(p) { return setDoc(doc(db, 'people', p.id), JSON.parse(JSON.stringify(p))); },
@@ -98,5 +98,5 @@ window.CLOUD = {
 
 onAuthStateChanged(auth, async user => {
   if (window.onCloudUser) window.onCloudUser(user ? { uid: user.uid, name: user.displayName, email: user.email, photo: user.photoURL } : null);
-  if (user) { loadPeople(); try { await load(user); } catch (e) { console.warn('cloud load failed', e); } }
+  if (user) { loadPeople(); loadVideos(); try { await load(user); } catch (e) { console.warn('cloud load failed', e); } }
 });
