@@ -402,9 +402,74 @@ function limited(ip) {
 // ---- one place that talks to Gemini -------------------------------------
 // Tries each model in order. If Google says "busy" (503/429/500) or is slow,
 // waits a moment and moves on. Stays under 55s so the browser never gives up first.
+// ---- Backup AI providers: used only when every Gemini model/key failed. Each one is skipped if its key is not set in Render. ----
+// All of them speak the OpenAI "chat/completions" format. Groq: fast, free, small token-per-minute limit, so answers/translations only.
+// OpenRouter: free ":free" models (small daily limit), large context, so it is also the backup for videos.
+const csv = (v, d) => String(v || d).split(',').map(x => x.trim()).filter(Boolean);
+const FALLBACK = {
+  groq: {
+    name: 'Groq', url: 'https://api.groq.com/openai/v1/chat/completions',
+    key: () => (process.env.GROQ_API_KEY || '').trim(),
+    models: () => csv(process.env.GROQ_MODELS, 'openai/gpt-oss-120b,llama-3.3-70b-versatile'),
+    maxTok: Math.max(500, parseInt(process.env.GROQ_MAX_TOKENS || '3000', 10) || 3000),   // Groq counts max_tokens against its 8,000 tokens/minute free limit
+    headers: {}
+  },
+  openrouter: {
+    name: 'OpenRouter', url: 'https://openrouter.ai/api/v1/chat/completions',
+    key: () => (process.env.OPENROUTER_API_KEY || '').trim(),
+    models: () => csv(process.env.OPENROUTER_MODELS, 'deepseek/deepseek-v4-flash:free,openrouter/free'),
+    maxTok: 8192,
+    headers: { 'X-Title': 'Orbit Tutorial' }
+  }
+};
+async function fallbackChat(system, prompt, opts, deadline, lastStatus) {
+  providerLoop:
+  for (const id of opts.fallback) {
+    const P = FALLBACK[id], key = P.key();
+    let useJson = !!opts.json;
+    for (const model of P.models()) {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const left = deadline - Date.now();
+        if (left < 3000) return { status: lastStatus };
+        try {
+          const r = await fetch(P.url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key, ...P.headers },
+            signal: AbortSignal.timeout(Math.min(opts.reqMs || 15000, left)),
+            body: JSON.stringify({
+              model, temperature: opts.temperature ?? 0.3, max_tokens: Math.min(opts.maxTokens || 4096, P.maxTok),
+              messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
+              ...(useJson ? { response_format: { type: 'json_object' } } : {})
+            })
+          });
+          const j = await r.json().catch(() => ({}));
+          if (r.ok) {
+            const c = ((j.choices || [])[0] || {}).message;
+            const text = String((c && c.content) || '').trim();
+            if (text) { console.log(P.name + ' ok', model); return { text, provider: id }; }
+            console.error(P.name, 'empty answer', model);
+            break;
+          }
+          console.error(P.name, 'error', r.status, model, JSON.stringify(j).slice(0, 250));
+          if ((r.status === 400 || r.status === 422) && useJson && attempt === 1) { useJson = false; continue; }   // model has no JSON mode: ask in plain text
+          if (r.status === 401 || r.status === 403) continue providerLoop;                                         // wrong key: skip this provider
+          break;                                                                                                   // anything else: next model
+        } catch (e) {
+          console.error(P.name, 'request failed', model, e.name, e.message);
+          break;
+        }
+      }
+    }
+  }
+  return { status: lastStatus };
+}
+
 async function gemini(system, prompt, opts = {}) {
   const t0 = Date.now();
-  const DEADLINE = t0 + (opts.budgetMs || 55000);
+  const BUDGET = opts.budgetMs || 55000;
+  const fbIds = (opts.fallback || ['groq', 'openrouter']).filter(id => FALLBACK[id] && FALLBACK[id].key());
+  const reserve = fbIds.length ? Math.min(opts.fbMs || 15000, Math.floor(BUDGET / 2)) : 0;   // time kept back for the backup providers
+  const DEADLINE = t0 + BUDGET - reserve;
   let lastStatus = 0;
   let useJson = !!opts.json;
   const start = keyStart++ % Math.max(KEYS.length, 1);
@@ -417,7 +482,7 @@ async function gemini(system, prompt, opts = {}) {
       const apiKey = order[ki];
       for (let attempt = 1; attempt <= 2; attempt++) {
         const left = DEADLINE - Date.now();
-        if (left < 4000) return { status: lastStatus };
+        if (left < 4000) break modelLoop;
         try {
           const r = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -456,6 +521,11 @@ async function gemini(system, prompt, opts = {}) {
         }
       }
     }
+  }
+  // Every Gemini model/key failed: try the backup providers (only the ones that have a key in Render).
+  if (fbIds.length) {
+    const fb = await fallbackChat(system, prompt, { ...opts, fallback: fbIds }, t0 + BUDGET, lastStatus);
+    if (fb.text) return fb;
   }
   return { status: lastStatus };
 }
@@ -1202,7 +1272,7 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(mvSystem(eng, raw), prompt, { json: true, models: VIDEO_MODELS, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
+    const r = await gemini(mvSystem(eng, raw), prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
@@ -1317,7 +1387,7 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(SCI_SYSTEM, prompt, { json: true, models: VIDEO_MODELS, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
+    const r = await gemini(SCI_SYSTEM, prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
