@@ -41,12 +41,15 @@ const KEY = KEYS[0];
 let keyStart = 0; // round-robin so load is spread across keys
 // Models are tried in priority order: first one first. Set GEMINI_MODELS in Render, comma separated,
 // e.g. GEMINI_MODELS=gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.8-flash
-// (old GEMINI_MODEL still works and is put first). For each model ALL keys are tried before moving to the next model.
+// (old GEMINI_MODEL still works and is put first). If a model is busy or slow the next model is tried; if a key's quota is used up the next key is tried.
 const MODELS = [...new Set([
   process.env.GEMINI_MODEL || '',
   ...(process.env.GEMINI_MODELS || '').split(','),
   ...(process.env.GEMINI_MODELS ? [] : ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash'])
 ].map(m => m.trim()).filter(Boolean))];
+// Videos (Get Video, Science video) have a long JSON answer, so a FAST model must come first or the time budget is gone before the next model is tried.
+// Set GEMINI_VIDEO_MODELS in Render to change it. Answers/translations keep using GEMINI_MODELS above.
+const VIDEO_MODELS = [...new Set((process.env.GEMINI_VIDEO_MODELS || 'gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.8-flash').split(',').map(m => m.trim()).filter(Boolean))];
 
 // id -> {q, course, ch}. The client only ever sends an id (never free text),
 // so nobody can use this server as a free general-purpose AI with your key.
@@ -409,7 +412,7 @@ async function gemini(system, prompt, opts = {}) {
   // Overload (503), timeout and wrong-model errors belong to the MODEL, so the other keys would hit the same wall: jump straight to the next model.
   // Only 429 (this key's own quota) moves on to the next key of the same model.
   modelLoop:
-  for (const model of MODELS) {
+  for (const model of (opts.models || MODELS)) {
     for (let ki = 0; ki < order.length; ki++) {
       const apiKey = order[ki];
       for (let attempt = 1; attempt <= 2; attempt++) {
@@ -1199,7 +1202,7 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(mvSystem(eng, raw), prompt, { json: true, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
+    const r = await gemini(mvSystem(eng, raw), prompt, { json: true, models: VIDEO_MODELS, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
@@ -1314,7 +1317,7 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(SCI_SYSTEM, prompt, { json: true, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
+    const r = await gemini(SCI_SYSTEM, prompt, { json: true, models: VIDEO_MODELS, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
