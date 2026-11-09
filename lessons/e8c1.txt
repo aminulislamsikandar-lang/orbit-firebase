@@ -1,28 +1,3 @@
 # Class 8 English, Chapter 1: Essence of Etiquette.
-# Lesson text, one paragraph per block, with a blank line between paragraphs.
+# Paste the lesson text from your textbook below, one paragraph per block, with a blank line between paragraphs.
 # Lines that start with # are ignored. Save the file, run: node build-questions.js, then deploy.
-# Typed from textbook pages 1 and 2. Page 3 (school etiquette, rest of the lesson) still to be added below.
-
-What is etiquette? Why is it so important? In simple words, etiquette is good behaviour which makes a human being different from animals. Etiquette or appropriate behaviour is really important because human being is a social animal. A man has good etiquette if he behaves in a socially responsible way.
-
-The idea of etiquette finds its origins among the nobles in early modern France. In fact, the word etiquette itself is derived from the French word for ticket or label, which means these rules were printed and used as labels for good manners.
-
-One of the most notable contributions to the literature of etiquette is Emily Post's book Etiquette in Society, in Business, in Politics and at Home published in 1922. Through this book, she achieved fame as the pioneer of modern etiquette.
-
-Etiquette is important as it enables a person to earn respect and appreciation in society. It teaches one the way to talk, walk, and most importantly, behave in polite company. The way one interacts with superiors, subordinates, fellow workers, friends, teachers, and parents speaks a lot about one's personality and upbringing. No one feels like talking to a person who doesn't know how to speak or behave in a society.
-
-Some of the important types of etiquette are social etiquette, meeting etiquette, eating etiquette, wedding etiquette, bathroom etiquette, business etiquette, telephone etiquette etc.
-
-Social etiquette is especially important as being in a society is an everyday affair for a human being. Some basic rules of social etiquette have been followed for a very long time. These are considered essential even today.
-
-To say "thank you" costs you nothing. It is good manners to thank people who have come to your aid. Using words of appreciation and offering compliments and praise whenever required are also considered basic etiquette. However, one needs to be genuine in one's appreciation.
-
-Self-control is also one of the basic rules of etiquette. Self-control is the ability to regulate one's emotions, thoughts, and behaviour effectively in different situations. Keep a check on your behaviour, voice, and emotions if you are in a society. Do not be too loud. Do not boast about the things you possess or you have accomplished.
-
-You may love to talk but do not be the only person talking all the time in a group. Instead, let others speak and listen actively. The art of genuine listening is a precious virtue. Active listening builds relationships, career, respect, and trust. Words are considered a strong tool in building and destroying relationships. Speak with kindness and due caution. Choose your words carefully and keep your body language open.
-
-The habit of being on time is one of the most desired traits in a human being. Arriving too early is not good etiquette, nor is arriving late. Good etiquette tells us to be punctual at any cost.
-
-It is absolutely important to maintain eye contact during a conversation. It establishes a level of trust and understanding. It is also a sign of self-confidence and assurance. A person who is looking at numerous other things during a conversation is viewed as unsure, untrustworthy, and shifty.
-
-When it comes to school etiquette, it plays a pivotal role in the character-building process of a young student. As a future adult and a responsible future citizen, a student must follow school etiquette which will eventually help him in his future endeavours. There are some basic rules and manners that should be taught to students at school.
