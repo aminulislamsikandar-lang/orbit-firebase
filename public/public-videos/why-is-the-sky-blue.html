@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Why is the sky blue?</title>
+<style>
+:root{--bg:#f4f5f6;--fg:#161b20;--muted:#6d7780;--panel:#e6e9ec;--ac:#2f78c4;color-scheme:light dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1114;--fg:#e8ecef;--muted:#8a949c;--panel:#1a2026;--ac:#6fb0f0}}
+:root[data-theme="dark"]{--bg:#0e1114;--fg:#e8ecef;--muted:#8a949c;--panel:#1a2026;--ac:#6fb0f0}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;justify-content:center}
+main{width:min(100%,440px);padding:14px;display:flex;flex-direction:column;gap:12px}
+.stage{position:relative;aspect-ratio:9/13;border-radius:22px;overflow:hidden;background:#0a1428}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.err{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:24px;color:#cfd8e0;font-size:15px;line-height:1.6}
+.cap{background:var(--panel);border-radius:18px;padding:16px 20px;font-size:clamp(16px,4.4vw,19px);line-height:1.6;min-height:5.6em;display:grid;align-items:center}
+.dots{display:flex;gap:5px}
+.dots button{flex:1;height:5px;border:0;border-radius:3px;background:var(--muted);opacity:.3;padding:0;cursor:pointer}
+.dots button.on{background:var(--ac);opacity:1}
+.ctl{display:flex;justify-content:center;gap:12px}
+.ctl button{width:50px;height:50px;border:0;border-radius:50%;background:var(--panel);color:var(--fg);display:grid;place-items:center;cursor:pointer}
+.ctl .main{background:var(--ac);color:var(--bg);width:58px;height:58px}
+.ctl button:focus-visible,.dots button:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.ctl svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.sl{display:none}.off .sl{display:block}
+.note{font-size:12px;color:var(--muted);text-align:center;min-height:1.4em}
+</style>
+</head>
+<body>
+<main>
+<div class="stage" id="st"><canvas id="gl"></canvas><canvas id="ov"></canvas><div class="err" id="er">This animation needs WebGL, which this browser or device does not support.</div></div>
+<div class="cap" id="cap"></div>
+<div class="dots" id="dots"></div>
+<div class="ctl">
+<button id="pv" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+<button id="pl" class="main" aria-label="Play"><svg viewBox="0 0 24 24" id="pi"><path d="M8 5l11 7-11 7z"/></svg></button>
+<button id="nx" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+<button id="vo" aria-label="Voice"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 9a4 4 0 010 6"/><path class="sl" d="M3 3l18 18"/></svg></button>
+</div>
+<div class="note" id="nt"></div>
+</main>
+<script>
+/* Scene JSON. e=sun elevation (deg), p=camera pitch, y=yaw, c=cloud cover, r=sun speed, pan=yaw drift, o=overlay (1 prism, 2 scattering) */
+const S=[
+{t:"Look up on a clear day, and the sky is blue. But why?",e:52,p:.95,y:.2,c:.15},
+{t:"Sunlight looks white, but it is really a blend of every color, from red to violet.",o:1},
+{t:"When that light enters our atmosphere, it collides with billions of tiny air molecules.",o:2},
+{t:"Blue light has a short wavelength, so it scatters in every direction far more than red light. Scientists call this Rayleigh scattering.",o:2},
+{t:"That scattered blue light reaches your eyes from every part of the sky, so the whole sky looks blue.",e:52,p:1.05,y:.2,c:.22,pan:.07},
+{t:"At sunset, sunlight must travel through much more air. The blue is scattered away on the way, and only red and orange are left.",e:-4,p:.07,y:.5,c:.38,r:.2},
+{t:"So the sky is not blue because of the ocean. It is blue because of sunlight and our atmosphere.",e:-5.5,p:.32,y:.5,c:.4,r:.35}
+];
+const FS=`precision highp float;
+uniform vec2 uR;uniform float uT,uE,uP,uY,uC;
+const float PI=3.14159265;
+vec2 rsi(vec3 r0,vec3 rd,float sr){float a=dot(rd,rd),b=2.0*dot(rd,r0),c=dot(r0,r0)-sr*sr,d=b*b-4.0*a*c;if(d<0.0)return vec2(1e5,-1e5);return vec2((-b-sqrt(d))/(2.0*a),(-b+sqrt(d))/(2.0*a));}
+vec3 atmo(vec3 r,vec3 r0,vec3 ps,float iSun,float rP,float rA,vec3 kR,float kM,float sR,float sM,float g){
+ vec2 p=rsi(r0,r,rA);if(p.x>p.y)return vec3(0.0);
+ p.y=min(p.y,rsi(r0,r,rP).x);
+ float st=(p.y-p.x)/16.0,it=0.0,oR=0.0,oM=0.0;
+ vec3 tR=vec3(0.0),tM=vec3(0.0);
+ float mu=dot(r,ps),mm=mu*mu,gg=g*g;
+ float pR=3.0/(16.0*PI)*(1.0+mm);
+ float pM=3.0/(8.0*PI)*((1.0-gg)*(mm+1.0))/(pow(1.0+gg-2.0*mu*g,1.5)*(2.0+gg));
+ for(int i=0;i<16;i++){
+  vec3 ip=r0+r*(it+st*0.5);
+  float h=length(ip)-rP;
+  float dR=exp(-h/sR)*st,dM=exp(-h/sM)*st;
+  oR+=dR;oM+=dM;
+  float js=rsi(ip,ps,rA).y/8.0,jt=0.0,jR=0.0,jM=0.0;
+  for(int j=0;j<8;j++){
+   vec3 jp=ip+ps*(jt+js*0.5);
+   float jh=length(jp)-rP;
+   jR+=exp(-jh/sR)*js;jM+=exp(-jh/sM)*js;jt+=js;
+  }
+  vec3 at=exp(-(kM*(oM+jM)+kR*(oR+jR)));
+  tR+=dR*at;tM+=dM*at;it+=st;
+ }
+ return iSun*(pR*kR*tR+pM*kM*tM);
+}
+vec3 sky(vec3 rd,vec3 s){return atmo(rd,vec3(0.0,6372000.0,0.0),s,22.0,6371000.0,6471000.0,vec3(5.5e-6,13.0e-6,22.4e-6),21e-6,8e3,1.2e3,0.758);}
+float h21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float nz(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(h21(i),h21(i+vec2(1.0,0.0)),f.x),mix(h21(i+vec2(0.0,1.0)),h21(i+vec2(1.0,1.0)),f.x),f.y);}
+float fbm(vec2 p){float a=0.5,s=0.0;for(int i=0;i<5;i++){s+=a*nz(p);p=p*2.03+vec2(11.0,7.0);a*=0.5;}return s;}
+vec4 cloud(vec3 rd,vec3 sun,float c,float t,vec3 sc,float day){
+ if(rd.y<0.005)return vec4(0.0);
+ vec2 p=rd.xz/(rd.y+0.12)*1.4+vec2(t*0.015,t*0.006);
+ float th=0.66-c*0.36;
+ float d=fbm(p),a=smoothstep(th,th+0.2,d)*smoothstep(0.0,0.1,rd.y);
+ float d2=fbm(p+sun.xz*0.08);
+ float lit=clamp(0.6+(d-d2)*3.0,0.0,1.0);
+ vec3 col=(vec3(0.75,0.85,1.1)*(0.35+0.5*lit)+sc*lit*1.6)*day*1.3+vec3(0.02,0.03,0.05);
+ return vec4(col,a);
+}
+void main(){
+ vec2 uv=(gl_FragCoord.xy-0.5*uR)/uR.y;
+ float cp=cos(uP),sp=sin(uP),cy=cos(uY),sy=sin(uY);
+ vec3 f=vec3(sy*cp,sp,cy*cp),rt=vec3(cy,0.0,-sy),up=cross(f,rt);
+ vec3 rd=normalize(f*1.1+rt*uv.x+up*uv.y);
+ vec3 sun=normalize(vec3(sin(0.5)*cos(uE),sin(uE),cos(0.5)*cos(uE)));
+ float sE=sin(uE),day=smoothstep(-0.1,0.25,sE);
+ vec3 sc=mix(vec3(1.0,0.35,0.1),vec3(1.0,0.96,0.9),smoothstep(0.0,0.35,sE));
+ float ng=smoothstep(0.0,-0.12,sE);
+ vec3 col;
+ if(rd.y>=0.0){
+  col=sky(rd,sun);
+  vec4 cl=cloud(rd,sun,uC,uT,sc,day);
+  col+=sc*smoothstep(0.99965,0.99985,dot(rd,sun))*40.0*(1.0-cl.a);
+  col+=vec3(step(0.997,h21(floor(rd.xz/(rd.y+0.3)*160.0)))*ng*(1.0-cl.a)*smoothstep(0.0,0.2,rd.y)*0.9);
+  col=mix(col,cl.rgb,cl.a);
+ }else{
+  vec2 w=rd.xz/(-rd.y+0.02)*6.0;
+  vec2 nv=vec2(sin(w.x*2.0+uT*1.2)+sin(w.y*3.4-uT)+sin((w.x+w.y)*5.0+uT*1.7),sin(w.y*2.2+uT*0.9)+sin(w.x*3.1+uT*1.3)+sin((w.x-w.y)*4.0+uT*1.4))*0.006;
+  vec3 rr=normalize(vec3(rd.x+nv.x,max(-rd.y,0.003),rd.z+nv.y));
+  vec3 s2=sky(rr,sun);
+  vec4 cl=cloud(rr,sun,uC,uT,sc,day);
+  s2=mix(s2,cl.rgb,cl.a);
+  float F=0.02+0.98*pow(1.0-clamp(-rd.y,0.0,1.0),5.0);
+  vec3 wb=vec3(0.01,0.05,0.08)*(0.25+day*0.75)+sc*0.015*day;
+  float spec=pow(max(dot(rr,sun),0.0),1800.0)*80.0;
+  col=s2*F+wb*(1.0-F)+sc*spec*F;
+ }
+ col=1.0-exp(-col*1.1);
+ col=pow(col,vec3(0.92));
+ col+=(h21(gl_FragCoord.xy+uT)-0.5)/255.0;
+ gl_FragColor=vec4(col,1.0);
+}`;
+const $=id=>document.getElementById(id),cv=$("gl"),oc=$("ov"),st=$("st"),cap=$("cap"),dots=$("dots"),pl=$("pl"),nt=$("nt"),X=oc.getContext("2d");
+let gl=null,U={};
+try{gl=cv.getContext("webgl",{antialias:false});
+ const mk=(t,s)=>{const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));return o};
+ const pg=gl.createProgram();
+ gl.attachShader(pg,mk(gl.VERTEX_SHADER,"attribute vec2 a;void main(){gl_Position=vec4(a,0.0,1.0);}"));
+ gl.attachShader(pg,mk(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pg);gl.useProgram(pg);
+ const bf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+ const al=gl.getAttribLocation(pg,"a");gl.enableVertexAttribArray(al);gl.vertexAttribPointer(al,2,gl.FLOAT,false,0,0);
+ ["uR","uT","uE","uP","uY","uC"].forEach(n=>U[n]=gl.getUniformLocation(pg,n));
+}catch(e){gl=null;console.error(e);$("er").style.display="grid"}
+function size(){const w=st.clientWidth,h=st.clientHeight;cv.width=Math.max(2,w*.62|0);cv.height=Math.max(2,h*.62|0);oc.width=w*1.5|0;oc.height=h*1.5|0;if(gl)gl.viewport(0,0,cv.width,cv.height)}
+addEventListener("resize",size);size();
+let i=0,ended=false,playing=false,voice=true,timer=0,tok=0,hv=null,T=0,sT=0,pan=0,rate=1.2,m=0;
+const cur={e:52,p:.95,y:.2,c:.15},tg={e:52,p:.95,y:.2,c:.15};
+function ov(t){const w=oc.width,h=oc.height,k=w/360,cx=w/2,cy=h*.47;X.clearRect(0,0,w,h);if(!m)return;
+ X.fillStyle="rgba(5,10,24,.86)";X.fillRect(0,0,w,h);X.lineCap="round";X.font=(13*k)+"px system-ui,sans-serif";X.textAlign="center";
+ if(m==1){const a=Math.min(1,t*.7);
+  X.strokeStyle="#fff";X.lineWidth=5*k;X.beginPath();X.moveTo(0,cy);X.lineTo(cx-20*k,cy);X.stroke();
+  X.strokeStyle="#cfe3ff";X.lineWidth=2*k;X.beginPath();X.moveTo(cx-44*k,cy+48*k);X.lineTo(cx+44*k,cy+48*k);X.lineTo(cx,cy-46*k);X.closePath();X.stroke();
+  ["#ff2d2d","#ff8a1f","#ffe11f","#3ddc4a","#27b8ff","#3a4bff","#9a3bff"].forEach((c,n)=>{X.strokeStyle=c;X.globalAlpha=a;X.lineWidth=5*k;X.beginPath();X.moveTo(cx+20*k,cy+6*k);X.lineTo(w,cy-48*k+n*22*k);X.stroke()});
+  X.globalAlpha=1;X.fillStyle="#fff";X.fillText("White sunlight",cx*.55,cy-16*k);X.fillStyle="#cfd8e0";X.fillText("Red to violet",cx*1.45,cy+110*k);
+ }else{
+  X.strokeStyle="#fff";X.lineWidth=5*k;X.beginPath();X.moveTo(0,cy);X.lineTo(w*.3,cy);X.stroke();
+  X.strokeStyle="#ff4a3a";X.lineWidth=4*k;X.beginPath();X.moveTo(w*.3,cy);X.lineTo(w,cy);X.stroke();
+  for(let n=0;n<16;n++){const mx=w*(.3+((n*37)%17)/17*.55),my=cy+(((n*53)%23)/23-.5)*130*k;
+   X.strokeStyle="#4da6ff";X.lineWidth=2*k;X.globalAlpha=.85;
+   for(let q=0;q<6;q++){const an=q*1.047+n,L=(12+10*Math.sin(t*3+n+q))*k;X.beginPath();X.moveTo(mx,my);X.lineTo(mx+Math.cos(an)*L,my+Math.sin(an)*L);X.stroke()}
+   X.globalAlpha=1;X.fillStyle="#8fa3c7";X.beginPath();X.arc(mx,my,5*k,0,6.283);X.fill()}
+  X.fillStyle="#6ab4ff";X.fillText("Blue scatters in all directions",cx,cy-98*k);X.fillStyle="#ff8a78";X.fillText("Red passes almost straight",cx,cy+112*k);
+ }}
+let last=performance.now();
+function frame(now){const dt=Math.min(.05,(now-last)/1e3);last=now;T+=dt;
+ const k=1-Math.exp(-dt*1.2),ke=1-Math.exp(-dt*rate);
+ cur.e+=(tg.e-cur.e)*ke;cur.p+=(tg.p-cur.p)*k;cur.c+=(tg.c-cur.c)*k;
+ if(pan)cur.y+=pan*dt;else cur.y+=(tg.y-cur.y)*k;
+ if(gl){gl.uniform2f(U.uR,cv.width,cv.height);gl.uniform1f(U.uT,T);gl.uniform1f(U.uE,cur.e*Math.PI/180);gl.uniform1f(U.uP,cur.p);gl.uniform1f(U.uY,cur.y);gl.uniform1f(U.uC,cur.c);gl.drawArrays(gl.TRIANGLES,0,3)}
+ ov(T-sT);requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+S.forEach((_,n)=>{const b=document.createElement("button");b.setAttribute("aria-label","Scene "+(n+1));b.onclick=()=>show(n);dots.appendChild(b)});
+function pick(){const v=speechSynthesis.getVoices();hv=v.find(x=>/^en[-_](US|GB)/i.test(x.lang))||v.find(x=>/^en/i.test(x.lang))||null;nt.textContent=hv?"":"No English voice found, captions only."}
+if(window.speechSynthesis){speechSynthesis.onvoiceschanged=pick;pick()}else nt.textContent="Voice is not supported here, captions only.";
+function draw(){const s=S[i];cap.textContent=s.t;[...dots.children].forEach((b,n)=>b.classList.toggle("on",n==i));
+ if(s.e!==undefined){tg.e=s.e;tg.p=s.p;tg.y=s.y;tg.c=s.c}
+ rate=s.r||1.2;pan=s.pan||0;m=s.o||0;sT=T}
+function say(){clearTimeout(timer);const s=S[i],me=++tok;
+ if(voice&&window.speechSynthesis){const u=new SpeechSynthesisUtterance(s.t);u.lang="en-US";if(hv)u.voice=hv;u.rate=.95;u.onend=()=>{if(me==tok&&playing)timer=setTimeout(next,600)};u.onerror=u.onend;speechSynthesis.speak(u)}
+ else timer=setTimeout(()=>{if(me==tok&&playing)next()},Math.max(5000,s.t.length*75))}
+function stop(){tok++;clearTimeout(timer);if(window.speechSynthesis)speechSynthesis.cancel()}
+function show(n){stop();i=n;draw();if(playing)say()}
+function next(){if(i<S.length-1)show(i+1);else{playing=false;ended=true;stop();ui()}}
+function ui(){$("pi").innerHTML=playing?'<path d="M8 5v14M16 5v14"/>':'<path d="M8 5l11 7-11 7z"/>';pl.setAttribute("aria-label",playing?"Pause":"Play")}
+pl.onclick=()=>{if(playing){playing=false;stop()}else{playing=true;if(ended){i=0;ended=false}draw();say()}ui()};
+$("nx").onclick=()=>{if(i<S.length-1)show(i+1)};
+$("pv").onclick=()=>{if(i>0)show(i-1)};
+$("vo").onclick=function(){voice=!voice;this.classList.toggle("off",!voice);if(playing)show(i)};
+draw();
+</script>
+</body>
+</html>

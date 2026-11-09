@@ -112,6 +112,11 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .soon p{margin:10px 0 0;font-size:18px}
 @media(prefers-reduced-motion:reduce){.side,.scrim{transition:none}}
 .vid{margin-top:16px}.vid video{width:100%;border-radius:12px;background:#000;margin-top:8px}
+.pvt{font-weight:600}.pvd{font-size:13px;color:var(--mut)}.row .pvi{flex:none;display:flex}.row .pvi svg{width:26px;height:26px}
+.pvo{position:fixed;inset:0;z-index:3000;background:var(--bg);display:flex;flex-direction:column}
+.pvb{display:flex;align-items:center;gap:10px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;border-bottom:1px solid var(--ln)}
+.pvb b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pvo iframe{flex:1;width:100%;border:0;background:var(--bg)}
 .rows{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:14px;color:var(--tx)}
 .rbadge{flex:none;width:38px;height:38px;border-radius:50%;border:1.5px solid var(--ln);display:flex;align-items:center;justify-content:center;font-weight:700}
@@ -593,6 +598,24 @@ async function openVideo(id){
  s.loading=false;draw();
 }
 fetch('/videos.json').then(r=>r.ok?r.json():[]).then(v=>{STATIC_V=v;mergeV()}).catch(()=>{});
+// ---- Public Videos: free HTML animations listed class-wise (list = /publicvideos.json, built from publicvideos.js) ----
+let PVS=[];
+fetch('/publicvideos.json').then(r=>r.ok?r.json():[]).then(v=>{PVS=Array.isArray(v)?v:[];if(VIEW==='pubvideo'&&DATA)draw()}).catch(()=>{});
+function pvHTML(){
+ const by={};PVS.forEach(v=>{(by[v.cls]=by[v.cls]||[]).push(v)});
+ const cl=Object.keys(by).map(Number).sort((a,b)=>a-b);
+ return head1('Public Videos')+`<div class="mut">Sabke liye free videos. Play dabao, video poori screen par khulega.</div>`+
+  (cl.length?cl.map(c=>`<h2 class="sec" style="margin-top:22px">Class ${c}</h2><div class="rows">${by[c].map(v=>`<button class="row" data-act="pvopen" data-id="${esc(v.id)}"><span class="pvi">${I.vid}</span><span><span class="pvt">${esc(v.title)}</span><br><span class="pvd">${esc(v.desc||'')}</span></span></button>`).join('')}</div>`).join(''):'<p class="mut" style="margin-top:20px">Abhi koi video nahi hai.</p>');
+}
+function closePV(){const o=document.getElementById('pvo');if(o)o.remove();try{if(window.speechSynthesis)speechSynthesis.cancel()}catch(e){}}
+function openPV(id){
+ const v=PVS.find(x=>x.id===id);if(!v)return;
+ closePV();stopSay();
+ const o=document.createElement('div');o.className='pvo';o.id='pvo';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');
+ o.innerHTML=`<div class="pvb"><button class="btn" data-act="pvclose">Close</button><b>${esc(v.title)}</b></div><iframe src="/public-videos/${encodeURIComponent(v.file)}" title="${esc(v.title)}" allow="autoplay; fullscreen"></iframe>`;
+ document.body.appendChild(o);
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closePV()});
 function soonHTML(){
  if((VIEW==='faculty'||VIEW==='dev')&&window.teamHTML)return teamHTML(VIEW);
  const [t,i]=SOON[VIEW];
@@ -618,6 +641,7 @@ function draw(){
   const entries=d.courses.flatMap(c=>c.chapters.map(ch=>({c,ch})));
   body=head1(TITLES[VIEW])+listHTML(fn,empty,entries,true)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
  }else if(VIEW==='getvideo')body=gvHTML();
+ else if(VIEW==='pubvideo')body=pvHTML();
  else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
@@ -628,7 +652,7 @@ function draw(){
 function drawSide(){
  const item=(v,ico,label,badge)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}
+ ${item('home','home','Home')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}
  <div class="sline"></div>
  ${item('pyq','pyq','PYQ')}${item('pass','pass','Pass mark')}${item('topper','topper','Topper')}${item('faculty','fac','Faculty')}${item('dev','dev','Developer')}
  <div class="sgap"></div><div class="sline"></div>
@@ -899,6 +923,8 @@ document.addEventListener('click',e=>{
  else if(act==='lsall'){const x=curCh();if(x)lessonAll(x.c,x.ch)}
  else if(act==='rul'){const x=curCh();if(x)rulesGo(x.c,x.ch,+b.dataset.si)}
  else if(act==='nav')go(b.dataset.v);
+ else if(act==='pvopen')openPV(id);
+ else if(act==='pvclose')closePV();
  else if(act==='gvgo')gvRun();
  else if(act==='gvsub')gvSwitch(b.dataset.v);
  else if(act==='gvplay'){if(GV.plan&&window.MathVideoPlayer)window.MathVideoPlayer.open(GV.plan)}
