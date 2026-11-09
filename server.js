@@ -406,6 +406,9 @@ async function gemini(system, prompt, opts = {}) {
   let useJson = !!opts.json;
   const start = keyStart++ % Math.max(KEYS.length, 1);
   const order = KEYS.map((_, i) => KEYS[(start + i) % KEYS.length]);
+  // Overload (503), timeout and wrong-model errors belong to the MODEL, so the other keys would hit the same wall: jump straight to the next model.
+  // Only 429 (this key's own quota) moves on to the next key of the same model.
+  modelLoop:
   for (const model of MODELS) {
     for (let ki = 0; ki < order.length; ki++) {
       const apiKey = order[ki];
@@ -441,11 +444,12 @@ async function gemini(system, prompt, opts = {}) {
             await new Promise(ok => setTimeout(ok, 1200));
             continue;
           }
+          if (r.status === 500 || r.status === 503 || r.status === 404) continue modelLoop;
           break;
         } catch (e) {
           console.error('Gemini request failed', model, (Date.now() - t0) + 'ms', e.name, e.message);
           lastStatus = 504;
-          break;
+          continue modelLoop;
         }
       }
     }
