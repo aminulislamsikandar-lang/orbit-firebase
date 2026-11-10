@@ -239,7 +239,7 @@ async function hiddenIdTests() {
   const longTagged = MV.tagQuestion('1 + 2 = 3. '.repeat(40), 'm7c1-a4');
   const r2 = await runGv(longTagged);
   t('Get Video: clean text over 400 characters is refused, AI not called', r2.GV.err === true && /lamba/.test(r2.GV.msg) && r2.calls.api === null);
-  t('textarea box fits question + hidden id (maths) and the longest science question', /id="gvText" maxlength="760"/.test(html));
+  t('textarea box fits question + hidden id (maths) and the longest science question', /id="gvText"[^>]*maxlength="760"/.test(html));
 
   // 5c2. only app questions, per subject; the science box
   const SQ = courses.filter(c => c.subject === 'Science').flatMap(c => c.chapters.flatMap(ch => (ch.sections || []).flatMap(sec => sec.questions)));
@@ -339,7 +339,7 @@ async function hiddenIdTests() {
   t('rules: approved library keys unchanged (text, plan only)', /match \/mathVideoAsked\/\{key\}[\s\S]*?hasOnly\(\['text', 'plan'\]\)/.test(rules));
   const cloud = fs.readFileSync(path.join(ROOT, 'public/cloud.js'), 'utf8');
   t('cloud.js: qid is added to the request only when present', /pendingAdd\(key, text, plan, qid\)/.test(cloud) && /if \(qid\) d\.qid = qid/.test(cloud));
-  t('sw.js: SHELL version is v21', /const SHELL = 'orbit-shell-v21'/.test(fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8')));
+  t('sw.js: SHELL version is v22', /const SHELL = 'orbit-shell-v22'/.test(fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8')));
   const rsci = rules.slice(rules.indexOf('match /scienceVideoAsked/'), rules.indexOf('match /subscriptions/'));
   t('rules: science library is admin-write, signed-in read, type science, text <= 700', /scienceVideoAsked\/\{key\}[\s\S]*?allow read: if request\.auth != null;[\s\S]*?allow create, update: if isAdmin\(\)[\s\S]*?hasOnly\(\['text', 'plan'\]\)[\s\S]*?plan\.type == 'science'[\s\S]*?size\(\) <= 700/.test(rsci));
   t('rules: science pending = students add only, admin reads / deletes, own uid, key = 40 hex', /match \/sciencePending\/\{key\}[\s\S]*?hasOnly\(\['text', 'plan', 'uid', 'ts'\]\)[\s\S]*?uid == request\.auth\.uid[\s\S]*?plan\.type == 'science'[\s\S]*?allow read, delete: if isAdmin\(\)/.test(rsci) && /\[0-9a-f\]\{40\}/.test(rsci));

@@ -79,7 +79,11 @@ window.CLOUD = {
   videos: {
     async list() { const s = await getDocs(collection(db, 'videos')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a; },
     set(v) { return setDoc(doc(db, 'videos', v.id), JSON.parse(JSON.stringify(v))); },
-    del(id) { return deleteDoc(doc(db, 'videos', id)); }
+    del(id) { return deleteDoc(doc(db, 'videos', id)); },
+    // content of JSON ("plan") and HTML videos: videoCode/{id} = {kind:'plan', plan} or {kind:'html', html}
+    setCode(id, body) { return setDoc(doc(db, 'videoCode', id), JSON.parse(JSON.stringify(body))); },
+    async getCode(id) { const s = await getDoc(doc(db, 'videoCode', id)); return s.exists() ? s.data() : null; },
+    delCode(id) { return deleteDoc(doc(db, 'videoCode', id)); }
   },
   // Faculty / Developer people. Writes only work for the admin Google account (see firestore.rules).
   savePerson(p) { return setDoc(doc(db, 'people', p.id), JSON.parse(JSON.stringify(p))); },

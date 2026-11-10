@@ -35,14 +35,31 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create, update: if isAdmin()
         && id.matches('[a-z0-9][a-z0-9-]{2,79}')
-        && request.resource.data.keys().hasOnly(['id', 'course', 'chapter', 'title', 'key', 'free', 'qid'])
+        && request.resource.data.keys().hasOnly(['id', 'course', 'chapter', 'title', 'key', 'free', 'qid', 'kind'])
         && request.resource.data.get('qid', '') is string && request.resource.data.get('qid', '').size() <= 60
         && request.resource.data.id == id
         && request.resource.data.course is string && request.resource.data.course.size() <= 40
         && request.resource.data.chapter is int && request.resource.data.chapter >= 1 && request.resource.data.chapter <= 99
         && request.resource.data.title is string && request.resource.data.title.size() >= 1 && request.resource.data.title.size() <= 120
-        && request.resource.data.key is string && request.resource.data.key.size() >= 1 && request.resource.data.key.size() <= 200
+        && ((request.resource.data.get('kind', 'mp4') == 'mp4'
+              && request.resource.data.key is string && request.resource.data.key.size() >= 1 && request.resource.data.key.size() <= 200)
+            || (request.resource.data.get('kind', 'mp4') in ['plan', 'html'] && !request.resource.data.keys().hasAny(['key'])))
         && request.resource.data.free is bool;
+      allow delete: if isAdmin();
+    }
+    // The content of a "plan" (JSON video) or "html" (self-contained animation) video added from a question's 3-dot menu. Id = the videos/{id} record.
+    // Signed-in students read it when they press play; only the admin writes. HTML is shown in a sandboxed iframe (no access to the app or the login).
+    match /videoCode/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if isAdmin()
+        && id.matches('[a-z0-9][a-z0-9-]{2,79}')
+        && ((request.resource.data.keys().hasOnly(['kind', 'plan'])
+              && request.resource.data.kind == 'plan'
+              && request.resource.data.plan.type in ['equation', 'science']
+              && request.resource.data.plan.steps is list && request.resource.data.plan.steps.size() <= 12)
+            || (request.resource.data.keys().hasOnly(['kind', 'html'])
+              && request.resource.data.kind == 'html'
+              && request.resource.data.html is string && request.resource.data.html.size() >= 20 && request.resource.data.html.size() <= 300000));
       allow delete: if isAdmin();
     }
     // Get Video. mathVideoAsked = approved library (id = hash of the normalized question): signed-in users read, only the admin writes.

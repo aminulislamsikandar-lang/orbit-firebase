@@ -583,7 +583,7 @@ window.onCloudData=cd=>{
 let VIDEOS=[],STATIC_V=[],CLOUD_V=[];const VID={};   // id -> {loading,url,err}
 function mergeV(){   // videos.js (deployed with the site) + videos added from the admin panel (Firestore); same id: the admin panel one wins
  const m=new Map();STATIC_V.forEach(v=>m.set(v.id,v));
- CLOUD_V.forEach(v=>{if(v&&v.id&&v.title&&Number.isInteger(v.chapter))m.set(v.id,{id:v.id,course:v.course||'c10-science',chapter:v.chapter,title:v.title,free:!!v.free,qid:typeof v.qid==='string'?v.qid:''})});
+ CLOUD_V.forEach(v=>{if(v&&v.id&&v.title&&Number.isInteger(v.chapter))m.set(v.id,{id:v.id,course:v.course||'c10-science',chapter:v.chapter,title:v.title,free:!!v.free,qid:typeof v.qid==='string'?v.qid:'',kind:(v.kind==='plan'||v.kind==='html')?v.kind:'mp4'})});
  VIDEOS=[...m.values()];if(DATA)draw()}
 window.onCloudVideos=list=>{CLOUD_V=Array.isArray(list)?list:[];mergeV()};
 function videosHTML(c,ch){
@@ -606,7 +606,39 @@ window.orbitQ=id=>{const x=IDX[id];if(!x)return null;const q=x.q;return{id,cours
 window.qvAdded=rec=>{CLOUD_V=CLOUD_V.filter(v=>v.id!==rec.id).concat([rec]);mergeV()};
 window.qvRemoved=id=>{CLOUD_V=CLOUD_V.filter(v=>v.id!==id);delete VID[id];mergeV()};
 function vidFail(id){const s=VID[id];if(!s)return;delete s.url;s.err='Video chal nahi paayi. Dobara dabao. Phir bhi na chale to video ka format (mp4, H.264) check karo.';draw()}
+// JSON ("plan") and HTML videos added from the admin menu: their content sits in Firestore videoCode/{id}
+function openHtmlVideo(title,html){   // self-contained HTML animation, run in a sandbox: it cannot reach the app, the login or storage
+ closePV();stopSay();
+ const o=document.createElement('div');o.className='pvo';o.id='pvo';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');
+ o.innerHTML=`<div class="pvb"><button class="btn" data-act="pvclose">Close</button><b>${esc(title)}</b></div>`;
+ const f=document.createElement('iframe');f.title=title;f.setAttribute('sandbox','allow-scripts');f.setAttribute('allow','autoplay; fullscreen');f.srcdoc=html;
+ o.appendChild(f);document.body.appendChild(o);
+}
+window.orbitOpenHtml=openHtmlVideo;
+window.orbitVideoRec=id=>VIDEOS.find(v=>v.id===id)||null;
+async function openCodeVideo(rec){
+ const s=VID[rec.id]=VID[rec.id]||{};
+ if(s.loading)return;
+ s.loading=true;s.err='';draw();
+ try{
+  if(!s.code){
+   if(!window.CLOUD||!window.CLOUD.videos||!window.CLOUD.videos.getCode)throw new Error('Cloud load nahi hua. Page refresh karo.');
+   s.code=await window.CLOUD.videos.getCode(rec.id);
+  }
+  if(!s.code)throw new Error('Video nahi mili.');
+  s.loading=false;draw();
+  if(rec.kind==='plan'){
+   if(!s.code.plan||!window.MathVideoPlayer)throw new Error('Video player load nahi hua. Page refresh karo.');
+   stopSay();window.MathVideoPlayer.open(s.code.plan);
+  }else{
+   if(typeof s.code.html!=='string')throw new Error('Video nahi mili.');
+   openHtmlVideo(rec.title,s.code.html);
+  }
+ }catch(e){delete s.code;s.loading=false;s.err=errMsg(e);draw()}
+}
 async function openVideo(id){
+ const rec=VIDEOS.find(v=>v.id===id);
+ if(rec&&rec.kind&&rec.kind!=='mp4')return openCodeVideo(rec);
  const s=VID[id]=VID[id]||{};
  if(s.url){delete s.url;draw();return}
  s.loading=true;s.err='';draw();
