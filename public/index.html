@@ -371,7 +371,7 @@ function xBlock(q,k){
   <button class="ic" data-act="cp" data-id="${xk}" title="Copy" aria-label="Copy karo">${x.copied?I.ok:I.cp}</button>
   <button class="ic ${t&&t.loading?'spin':''}" data-act="tr" data-id="${xk}" title="Translate" aria-label="Translate" aria-pressed="${!!(x.menu||x.tr)}">${I.tr}</button>
   <button class="ic ${v.loading?'spin':''}" data-act="vis" data-id="${xk}" title="Diagram" aria-label="Diagram dikhao" aria-pressed="${!!x.vis}">${I.vis}</button>
-  ${vidIcon(q)}
+  <a class="ic" href="${esc(ytLink(q))}" target="_blank" rel="noopener noreferrer" title="Video lecture (YouTube par khulega)" aria-label="Video lecture, YouTube par khulega">${I.vid}</a>
   <button class="ic" data-act="say" data-id="${xk}" title="${x.say?'Rok do':'Sunao'}" aria-label="${x.say?'Rok do':'Sunao'}" aria-pressed="${!!x.say}">${x.say?I.stop:I.say}</button>
   <button class="ic ${(MR[xk]||{}).loading?'spin':''}" data-act="xre" data-id="${id}" data-k="${k}" title="Dobara banao" aria-label="Dobara banao">${I.re}</button>
  </div>
@@ -407,7 +407,7 @@ function toolbar(q){
   <button class="ic" data-act="cp" data-id="${id}" title="Copy" aria-label="Answer copy karo">${u.copied?I.ok:I.cp}</button>
   <button class="ic ${tr&&tr.loading?'spin':''}" data-act="tr" data-id="${id}" title="Translate" aria-label="Translate" aria-pressed="${!!(u.menu||u.tr)}">${I.tr}</button>
   <button class="ic ${v.loading?'spin':''}" data-act="vis" data-id="${id}" title="Diagram" aria-label="Diagram dikhao" aria-pressed="${!!u.vis}">${I.vis}</button>
-  ${vidIcon(q)}
+  <a class="ic" href="${esc(ytLink(q))}" target="_blank" rel="noopener noreferrer" title="Video lecture (YouTube par khulega)" aria-label="Video lecture, YouTube par khulega">${I.vid}</a>
   <button class="ic" data-act="say" data-id="${id}" title="${u.say?'Rok do':'Sunao'}" aria-label="${u.say?'Rok do':'Answer sunao'}" aria-pressed="${!!u.say}">${u.say?I.stop:I.say}</button>
   <button class="ic ${a.loading?'spin':''}" data-act="re" data-id="${id}" ${sv?'disabled':''} title="${sv?'Naya answer banane ke liye pehle heart hata do':'Dobara banao (naya answer)'}" aria-label="${sv?'Dobara banao, saved answer ki wajah se band':'Dobara banao'}">${I.re}</button>
   <button class="ic" data-act="more" data-id="${id}" title="Aur options" aria-label="Aur options" aria-pressed="${!!u.more}">${I.more}</button>
@@ -434,7 +434,7 @@ function tblHTML(q){
 }
 function qHTML(q){
  const a=ANS[q.id]||{},txt=srcText(q.id),has=!!a.text,open=has&&!!OPEN[q.id],qm=!!ui(q.id).qm;
- return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic qdots ${has?'':'nochev'}" data-act="qm" data-id="${q.id}" aria-haspopup="menu" aria-expanded="${!!qm}" title="Aur options" aria-label="Question options">${I.more}</button>${qm?`<div class="qmenu" role="menu"><button class="qmi" role="menuitem" data-act="pin" data-id="${q.id}">${I.pin}<span>${isPinned(q.id)?'Pin hatao':'Pin karo'}</span></button><button class="qmi" role="menuitem" data-act="qtr" data-id="${q.id}">${I.tr}<span>${ui(q.id).qt?'Translation chhupao':'Translate question'}</span></button><button class="qmi" role="menuitem" data-act="qcp" data-id="${q.id}">${ui(q.id).qcp==='ok'?I.ok:I.cp}<span>${ui(q.id).qcp==='ok'?'Copy ho gaya':ui(q.id).qcp==='err'?'Copy nahi hua':'Copy question'}</span></button>${qvMenuItem(q.id)}</div>`:''}<div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}${isPinned(q.id)?`<span class="pmark" title="Pinned" role="img" aria-label="Pinned">${I.pin}</span>`:''}</div>${q.text?`<p dir="auto">${esc(q.text)}</p>`:''}
+ return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic qdots ${has?'':'nochev'}" data-act="qm" data-id="${q.id}" aria-haspopup="menu" aria-expanded="${!!qm}" title="Aur options" aria-label="Question options">${I.more}</button>${qm?`<div class="qmenu" role="menu"><button class="qmi" role="menuitem" data-act="pin" data-id="${q.id}">${I.pin}<span>${isPinned(q.id)?'Pin hatao':'Pin karo'}</span></button><button class="qmi" role="menuitem" data-act="qtr" data-id="${q.id}">${I.tr}<span>${ui(q.id).qt?'Translation chhupao':'Translate question'}</span></button><button class="qmi" role="menuitem" data-act="qcp" data-id="${q.id}">${ui(q.id).qcp==='ok'?I.ok:I.cp}<span>${ui(q.id).qcp==='ok'?'Copy ho gaya':ui(q.id).qcp==='err'?'Copy nahi hua':'Copy question'}</span></button>${qvMenuVideos(q.id)}${qvMenuItem(q.id)}</div>`:''}<div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}${isPinned(q.id)?`<span class="pmark" title="Pinned" role="img" aria-label="Pinned">${I.pin}</span>`:''}</div>${q.text?`<p dir="auto">${esc(q.text)}</p>`:''}
  ${tblHTML(q)}
  ${(q.parts||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}
  ${(q.options||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}</div>${has?`<span class="chev ${open?'open':''}">${I.chev}</span>`:''}</div>
@@ -593,11 +593,6 @@ function videosHTML(c,ch){
 }
 // ---- videos tied to ONE question: the admin adds them with 3-dot menu > Add video (public/qvideo.js, Admin mode) ----
 const qVids=qid=>VIDEOS.filter(v=>v.qid===qid);
-function vidIcon(q){   // one rule for Maths and Science: the toolbar video icon. Uploaded video -> plays it; otherwise YouTube search
- const vs=qVids(q.id);
- if(!vs.length)return `<a class="ic" href="${esc(ytLink(q))}" target="_blank" rel="noopener noreferrer" title="Video lecture (YouTube par khulega)" aria-label="Video lecture, YouTube par khulega">${I.vid}</a>`;
- return `<button class="ic ${(VID[vs[0].id]||{}).loading?'spin':''}" data-act="vid" data-id="${esc(vs[0].id)}" title="Video lecture" aria-label="Video lecture dekho">${I.vid}</button>`;
-}
 function qvHTML(q){
  const vs=qVids(q.id);if(!vs.length)return'';
  const adm=!!(window.QVideo&&window.QVideo.active());
@@ -605,6 +600,7 @@ function qvHTML(q){
   const row=adm?`<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button><button class="qvd" data-act="qvdel" data-id="${esc(v.id)}" aria-label="Ye video hatao">Hatao</button></div>`:'';
   return `${row}${s.url?`<video controls playsinline preload="metadata" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}`}).join('')}</div>`;
 }
+const qvMenuVideos=id=>{const vs=qVids(id);return vs.map((v,i)=>`<button class="qmi" role="menuitem" data-act="qvopen" data-id="${esc(v.id)}">${I.vid}<span>Video${vs.length>1?` (${i+1})`:''}</span></button>`).join('')};
 const qvMenuItem=id=>window.QVideo&&window.QVideo.active()?`<button class="qmi" role="menuitem" data-act="qvadd" data-id="${id}">${I.vid}<span>Add video</span></button>`:'';
 window.orbitUser=()=>USER;
 window.orbitRedraw=()=>{if(DATA)draw()};
@@ -1020,6 +1016,7 @@ document.addEventListener('click',e=>{
  else if(act==='say')say(id);
  else if(act==='cp')copy(id);
  else if(act==='vid')openVideo(id);
+ else if(act==='qvopen'){const v=VIDEOS.find(x=>x.id===id);if(v&&v.qid)ui(v.qid).qm=false;openVideo(id)}
  else if(act==='qvadd'){ui(id).qm=false;draw();if(window.QVideo)window.QVideo.open(id)}
  else if(act==='qvdel'){if(window.QVideo)window.QVideo.remove(id)}
  else if(act==='login'){LOGINERR='';window.CLOUD.login().catch(e=>{const c=e&&e.code;LOGINERR=c==='auth/popup-closed-by-user'?'':c==='auth/operation-not-allowed'?'Firebase Console me Authentication → Google enable karna baaki hai.':c==='auth/unauthorized-domain'?'Ye website Firebase ke Authorized domains me nahi hai.':'Login nahi ho paya. Dobara try karo.';draw()})}
