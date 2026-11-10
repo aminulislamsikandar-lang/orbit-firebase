@@ -67,3 +67,22 @@ Course `c6-hindi` lives in `hindi6.js` (`sourceLang: 'Hindi'`). The poem goes in
 
 ## Schools and what each school sees
 `CATALOG` in `public/index.html` decides which course shows under which Board or School and class: `content: { nashib: { 6: [['c6-arabic','Arabic'],['c6-assamese','Assamese'],['c6-hindi','Hindi'],['c6-maths']], 7: [...] } }`. To show a course for another school, add its id there. Class 6 Arabic (lessons 1 and 2 open, 3 to 14 locked), Assamese, Hindi and Maths (Class 6) are shown for Nashib Ali Academy only.
+
+## Admin mode: add a video to one question
+
+1. Log in with the admin Google account, open the hidden Team admin panel (the same PIN as before) and press **Admin mode ON karo**.
+2. A red "Admin mode ON · Exit" pill shows at the bottom of the app. Use the app like a student.
+3. In admin mode a question's 3-dot menu has **Add video**. Pick a local `.mp4` (H.264), edit the title, press Upload.
+   The file goes straight from the browser to the private Backblaze bucket and a record (with the question id `qid`) is saved in Firestore `videos`.
+4. Every logged-in student now sees a **▶ title** button under that question. Admin mode also shows a **Hatao** button next to it (removes the record; the file stays in Backblaze).
+
+Needs: `VIDEO_UPLOAD=true` on Render, a CORS rule on the Backblaze bucket (PUT from the site), and `firebase deploy --only firestore:rules` (the `videos` rule now allows the optional `qid` field).
+Files: `public/qvideo.js` (new), `public/index.html`, `public/team.js`, `firestore.rules`.
+
+## Analytics (Google Analytics 4 + Microsoft Clarity)
+
+1. Open `public/analytics.js` and paste your two IDs at the top: `GA4_ID` (G-XXXXXXXXXX) and `CLARITY_ID` (10 characters). An empty ID means that tool is not loaded. Then `firebase deploy --only hosting`.
+2. GA4 shows visitors, screens (virtual page_view for every screen of the one-page app) and events: `ai_answer`, `save_answer`, `translate`, `diagram`, `listen`, `copy_answer`, `pin_question`, `video_play`, `public_video_open`, `get_video_generate`, `login_click`, `login`.
+   To break events down by question or chapter, register the event parameters as custom dimensions in GA4 (Admin > Custom definitions): `question_id`, `course`, `chapter`, `video_id`, `kind`, `language`.
+3. Clarity gives heatmaps and session recordings. Set Settings > Masking to **Strict**. The profile block and the Get Video text box are already marked `data-clarity-mask`.
+4. Privacy defaults: no user id, Google signals and ad personalisation off, ad consent denied, no question text or answers sent, admin accounts and localhost are not counted.

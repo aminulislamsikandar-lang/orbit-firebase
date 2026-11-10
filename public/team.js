@@ -155,6 +155,9 @@
         '<div class="tm-acts"><button class="btn" data-tact="save" style="margin:0">Save</button><button class="tm-b2" data-tact="rmphoto">Photo hatao</button><button class="tm-b2" data-tact="cancel">Cancel</button></div>' +
         (formMsg ? '<div class="tm-msg">' + esc(formMsg) + '</div>' : '') + '</div>';
     } else {
+      var qvOn = !!(window.QVideo && window.QVideo.active());
+      h += '<div style="margin:0 0 14px"><button class="btn" data-tact="qvmode" style="margin:0">' + (qvOn ? 'Admin mode OFF karo' : 'Admin mode ON karo') + '</button>' +
+        '<div style="font-size:13px;color:var(--mut);margin-top:6px">' + (qvOn ? 'Abhi ON hai: question ke 3 dots me Add video dikhta hai.' : 'ON karke app normal user jaise use karo; question ke 3 dots me Add video milega.') + '</div></div>';
       h += '<button class="btn" data-tact="add" style="margin:0 0 8px">+ Add person</button> <button class="tm-b2" data-tact="mv">Math Video</button> <button class="tm-b2" data-tact="vid">Videos</button>';
       all().sort(function (a, b) { return String(a.group).localeCompare(String(b.group)) || (a.order || 0) - (b.order || 0); }).forEach(function (p) {
         h += '<div class="tm-row">' + av(p) + '<div class="tm-t"><b>' + esc(p.name) + '</b><span>' + (p.group === 'faculty' ? 'Faculty' : 'Developer') + ' · ' + esc(p.role) + '</span></div>' +
@@ -185,6 +188,13 @@
     else if (a === 'mvback') { mvMode = false; paint(); }
     else if (a === 'vid') { vidMode = true; paint(); }
     else if (a === 'vidback') { vidMode = false; paint(); }
+    else if (a === 'qvmode') {
+      var Q = window.QVideo;
+      if (!Q) { formMsg = 'Admin mode load nahi hua. Page refresh karo.'; paint(); }
+      else if (Q.active()) { Q.setMode(false); formMsg = ''; paint(); }
+      else if (!Q.isAdmin()) { formMsg = 'Admin mode ke liye pehle admin Google account se log in karo (menu → Log in).'; paint(); }
+      else { Q.setMode(true); closeAdmin(); }
+    }
     else if (a === 'add') { editing = { id: '', group: 'faculty', name: '', role: '', bio: '', order: 1, photo: '' }; pendingPhoto = null; formMsg = ''; paint(); }
     else if (a === 'edit') { editing = Object.assign({}, all().filter(function (x) { return x.id === id; })[0]); pendingPhoto = null; formMsg = ''; paint(); }
     else if (a === 'cancel') { editing = null; formMsg = ''; pendingPhoto = null; paint(); }
