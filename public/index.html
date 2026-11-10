@@ -22,14 +22,14 @@
 <meta property="og:image" content="https://orbittutorial.web.app/icon-512.png">
 <meta name="twitter:card" content="summary">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Hind:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Hind:wght@400;500;600&family=Noto+Naskh+Arabic:wght@400;600&display=swap">
 <style>
 :root{--bg:#f4f2ec;--card:#fff;--tx:#111;--mut:#6b6b6b;--ln:#cfcac0;--ans:#f1f1ee;--on:#111;--onbg:#f4f2ec;--hov:rgba(0,0,0,.07);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 :root[data-theme="dark"]{--bg:#111;--card:#1c1c1c;--tx:#f2f2f2;--mut:#9a9a9a;--ln:#3a3a3a;--ans:#262626;--on:#f2f2f2;--onbg:#111;--hov:rgba(255,255,255,.1)}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111;--card:#1c1c1c;--tx:#f2f2f2;--mut:#9a9a9a;--ln:#3a3a3a;--ans:#262626;--on:#f2f2f2;--onbg:#111;--hov:rgba(255,255,255,.1)}}
 *,*::before,*::after{box-sizing:border-box}
 html,body{margin:0}
-body{background:var(--bg);color:var(--tx);font:16px/1.55 Hind,system-ui,sans-serif}
+body{background:var(--bg);color:var(--tx);font:16px/1.55 Hind,'Noto Naskh Arabic',system-ui,sans-serif}
 h1,h2,h3{font-family:'Baloo 2',system-ui,sans-serif;margin:0;line-height:1.2}
 #app{max-width:640px;margin:0 auto;padding:16px 16px 48px}
 button{font:inherit;color:inherit;cursor:pointer}
@@ -52,6 +52,7 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .btn{background:var(--on);color:var(--onbg);border:0;border-radius:12px;padding:10px 16px;font-weight:600;margin-top:12px}
 .btn:disabled{opacity:.5;cursor:wait}
 .ans{background:var(--ans);border-radius:14px;padding:12px 14px;margin-top:12px;overflow-wrap:anywhere}
+.ans.trans{margin-top:8px;border-left:3px solid var(--mut)}
 .saved-note{font-size:13px;color:var(--mut);margin-top:6px}
 .q.can{cursor:pointer}
 .qb{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;border-radius:12px}
@@ -84,9 +85,16 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .top{display:flex;align-items:center;gap:4px;margin-left:-8px}
 .q{position:relative}
 .q .qbody{padding-right:34px}
-.ic.pin{position:absolute;top:8px;right:46px;width:32px;height:32px}
-.ic.pin.nochev{right:12px}
-.ic.pin svg{width:18px;height:18px}
+.ic.qdots{position:absolute;top:8px;right:46px;width:32px;height:32px}
+.ic.qdots.nochev{right:12px}
+.ic.qdots svg{width:18px;height:18px}
+.qmenu{position:absolute;top:44px;right:12px;z-index:5;background:var(--card);border:1px solid var(--ln);border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.18);padding:6px;min-width:200px}
+.qmi{display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;border-radius:8px;padding:10px 12px;text-align:left;color:var(--tx);font:inherit}
+.qmi:hover{background:var(--ans)}
+.qmi svg{width:18px;height:18px;flex:none}
+.pmark{display:inline-flex;vertical-align:middle;margin-left:6px;color:var(--mut)}
+.pmark svg{width:14px;height:14px;fill:currentColor}
+.qtr{margin-top:10px}
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}
 .scrim.open{opacity:1;pointer-events:auto}
 .side{position:fixed;top:0;bottom:0;left:0;width:min(300px,84vw);background:var(--card);z-index:30;transform:translateX(-100%);transition:transform .2s;display:flex;flex-direction:column;padding:calc(10px + env(safe-area-inset-top,0px)) 10px calc(10px + env(safe-area-inset-bottom,0px));box-shadow:1px 0 0 var(--ln);overflow-y:auto}
@@ -104,6 +112,11 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .soon p{margin:10px 0 0;font-size:18px}
 @media(prefers-reduced-motion:reduce){.side,.scrim{transition:none}}
 .vid{margin-top:16px}.vid video{width:100%;border-radius:12px;background:#000;margin-top:8px}
+.pvt{font-weight:600}.pvd{font-size:13px;color:var(--mut)}.row .pvi{flex:none;display:flex}.row .pvi svg{width:26px;height:26px}
+.pvo{position:fixed;inset:0;z-index:3000;background:var(--bg);display:flex;flex-direction:column}
+.pvb{display:flex;align-items:center;gap:10px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;border-bottom:1px solid var(--ln)}
+.pvb b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pvo iframe{flex:1;width:100%;border:0;background:var(--bg)}
 .rows{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:14px;color:var(--tx)}
 .rbadge{flex:none;width:38px;height:38px;border-radius:50%;border:1.5px solid var(--ln);display:flex;align-items:center;justify-content:center;font-weight:700}
@@ -135,7 +148,7 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .wimg a{color:var(--mut)}
 .lhd{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .lp{margin:16px 0 0;padding-bottom:14px;border-bottom:1px solid var(--ln)}
-.lp p{margin:0 0 8px;line-height:1.65}
+.lp p{margin:0 0 8px;line-height:1.65;white-space:pre-line}
 </style>
 </head>
 <body>
@@ -180,8 +193,13 @@ const I={
 };
 // translation languages: key -> button label, speech voice
 // Translation styles (3-dot menu). 'para' is the original paragraph translation. The student can make any style the default.
+// A course with sourceLang 'Hindi' (Class 6 Hindi) has Hindi text; its translations go to English / Assamese / Bengali.
+const isHi=c=>!!(c&&c.sourceLang==='Hindi');
+const courseOfId=id=>{const e=IDX[rid(id)];return e&&e.course};
+const trKeys=c=>isHi(c)?['en','as','bn']:['hing','as','bn'];
+const origName=c=>isHi(c)?'Hindi':'English';
 const TSTY=[['para','Paragraph'],['sent','Sentence by sentence'],['words','Kuch words ka meaning'],['brackets','Meaning in brackets']];
-const TRL={hing:{n:'Hinglish',v:'hi-IN'},as:{n:'অসমীয়া',v:'as-IN'},bn:{n:'বাংলা',v:'bn-IN'}};
+const TRL={en:{n:'English',v:'en-IN'},hing:{n:'Hinglish',v:'hi-IN'},as:{n:'অসমীয়া',v:'as-IN'},bn:{n:'বাংলা',v:'bn-IN'}};
 
 let DATA=null,VIEW='home';
 // DATA = {courses:[{id,class,subject,chapters:[{no,title,kind,author,locked,sections}]}]}.
@@ -211,7 +229,7 @@ const CATALOG={
  classes:{seba:[9,10],cbse:[9,10],nashib:[6,7,8,9,10],popular:[6,7,8,9,10],halimon:[6,7,8,9,10]},
  content:{
   seba:{10:[['c10-science','General Science']]},
-  nashib:{7:[['c7-english'],['c7-maths'],['c7-science']]},
+  nashib:{6:[['c6-english','English'],['c6-grammar','English Grammar'],['c6-social','Social Science'],['c6-science','General Science'],['c6-hindi','Hindi'],['c6-assamese','Assamese'],['c6-arabic','Arabic'],['c6-maths']],7:[['c7-english'],['c7-maths'],['c7-science']]},
   popular:{7:[['c7-english'],['c7-maths'],['c7-science']]},
   halimon:{7:[['c7-english'],['c7-maths'],['c7-science']],8:[['c8-english']]}
  }
@@ -284,15 +302,16 @@ for(const id in MRC){
 }
 const MORE=[['mnemonic','Mnemonic'],['analogy','Analogy'],['kid','Explain like a kid'],['full','Full marks answer'],['points','Key points'],['mistakes','Common mistakes'],['mcq','Practice MCQ']];
 const OPEN={};   // id -> answer is visible (hidden by default)
-// A free picture from Wikimedia Commons under the default answer (Science only). The server finds it; the link is kept on this device.
-const IKEY='orbit_img_v1';
+// A free picture (Wikipedia/Commons, or Pexels if the server has a key) under the default answer (Science only). The server finds it; the link is kept on this device.
+const IKEY='orbit_img_v2';
 let IMC={};
 try{IMC=JSON.parse(localStorage.getItem(IKEY)||'{}')||{}}catch(e){IMC={}}
 const IMG={};   // id -> {loading} | {none,at} | {url,page,title,by,lic,licUrl}
 for(const id in IMC)IMG[id]=IMC[id];
 function imgPersist(){try{localStorage.setItem(IKEY,JSON.stringify(IMC))}catch(e){}}
-const okImg=u=>/^https:\/\/upload\.wikimedia\.org\//.test(u||''),okPage=u=>/^https:\/\/commons\.wikimedia\.org\//.test(u||'');
+const okImg=u=>/^https:\/\/(upload\.wikimedia\.org|images\.pexels\.com)\//.test(u||''),okPage=u=>/^https:\/\/(commons\.wikimedia\.org|www\.pexels\.com)\//.test(u||'');
 async function ensureImg(id){
+ if(ST.img==='off')return;
  const c=(IDX[id]||{}).course;if(!c||c.subject!=='Science')return;
  const s=IMG[id];
  if(s&&(s.loading||s.url||(s.none&&Date.now()-(s.at||0)<3*864e5)))return;
@@ -305,13 +324,14 @@ async function ensureImg(id){
 }
 function imgBad(id){IMG[id]={none:true,at:Date.now()};IMC[id]=IMG[id];imgPersist();draw()}
 function imgHTML(id){
+ if(ST.img==='off')return'';
  const s=IMG[id];if(!s||!s.url||!okImg(s.url)||!okPage(s.page))return'';
- return `<figure class="wimg"><img src="${esc(s.url)}" alt="${esc(s.title||'Related image')}" loading="lazy" referrerpolicy="no-referrer" onerror="imgBad('${esc(id)}')"><figcaption>Source: <a href="${esc(s.page)}" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a>${s.by?' · '+esc(s.by):''}${s.lic?' · '+(/^https:\/\//.test(s.licUrl)?`<a href="${esc(s.licUrl)}" target="_blank" rel="noopener noreferrer">${esc(s.lic)}</a>`:esc(s.lic)):''}</figcaption></figure>`;
+ return `<figure class="wimg"><img src="${esc(s.url)}" alt="${esc(s.title||'Related image')}" loading="lazy" referrerpolicy="no-referrer" onerror="imgBad('${esc(id)}')"><figcaption>Source: <a href="${esc(s.page)}" target="_blank" rel="noopener noreferrer">${/pexels\.com/.test(s.page)?'Pexels':'Wikimedia Commons'}</a>${s.by?' · '+esc(s.by):''}${s.lic?' · '+(/^https:\/\//.test(s.licUrl)?`<a href="${esc(s.licUrl)}" target="_blank" rel="noopener noreferrer">${esc(s.lic)}</a>`:esc(s.lic)):''}</figcaption></figure>`;
 }
 
 // Pinned questions and settings also live on this device.
 const PKEY='orbit_pins_v1',STKEY='orbit_settings_v1';
-let PINS={},ST={theme:'auto',dtype:'auto',tstyle:'para'};
+let PINS={},ST={theme:'auto',dtype:'auto',tstyle:'para',img:'on',tlang:'as'};
 try{PINS=JSON.parse(localStorage.getItem(PKEY)||'{}')||{}}catch(e){PINS={}}
 try{ST={...ST,...(JSON.parse(localStorage.getItem(STKEY)||'{}')||{})}}catch(e){}
 const isPinned=id=>!!PINS[id];
@@ -339,11 +359,13 @@ const isX=id=>id.includes('|'),rid=id=>id.split('|')[0];
 const srcText=id=>isX(id)?((MR[id]||{}).text||''):((ANS[id]||{}).text||'');
 const clip=t=>{if(t.length<=2500)return t;const c=t.slice(0,2500),i=Math.max(c.lastIndexOf('. '),c.lastIndexOf('\n'));return i>1000?c.slice(0,i+1):c};  // server accepts max 2500 chars
 function shown(id){const u=ui(id);if(u.tr){const sy=effSty(u);if(sy!=='words'){const t=TR[trKey(id,u.tr,sy)];if(t&&t.text)return t.text}}return srcText(id)}
+// Translation (any style except 'words') is shown as its own block right under the original text; the original never gets replaced.
+function trBlock(id){const u=ui(id);if(!u.tr)return '';const sy=effSty(u);if(sy==='words')return '';const t=TR[trKey(id,u.tr,sy)];if(!(t&&t.text))return '';return `<div class="ans trans"><b>${esc((TRL[u.tr]||{}).n||'Translation')}</b><br>${fmt(t.text)}</div>`}
 function ytLink(q){const c=(IDX[q.id]||{}).course;const s=`${c?cLabel(c):'Class 10 Science'} ${chOf(q.id).title} ${q.video||q.text}`.slice(0,110);return 'https://www.youtube.com/results?search_query='+encodeURIComponent(s)}
 
 function xBlock(q,k){
  const id=q.id,xk=id+'|'+k,x=ui(xk),sy=effSty(x),t=x.tr?TR[trKey(xk,x.tr,sy)]:null,v=VIS[xk]||{},name=(MORE.find(m=>m[0]===k)||[])[1]||'';
- return `<div class="ans"><b>${esc(name)}</b><br>${fmt(shown(xk))}</div>
+ return `<div class="ans"><b>${esc(name)}</b><br>${fmt(srcText(xk))}</div>${trBlock(xk)}
  <div class="tb" role="toolbar" aria-label="${esc(name)} tools">
   <button class="ic" data-act="cp" data-id="${xk}" title="Copy" aria-label="Copy karo">${x.copied?I.ok:I.cp}</button>
   <button class="ic ${t&&t.loading?'spin':''}" data-act="tr" data-id="${xk}" title="Translate" aria-label="Translate" aria-pressed="${!!(x.menu||x.tr)}">${I.tr}</button>
@@ -352,7 +374,7 @@ function xBlock(q,k){
   <button class="ic" data-act="say" data-id="${xk}" title="${x.say?'Rok do':'Sunao'}" aria-label="${x.say?'Rok do':'Sunao'}" aria-pressed="${!!x.say}">${x.say?I.stop:I.say}</button>
   <button class="ic ${(MR[xk]||{}).loading?'spin':''}" data-act="xre" data-id="${id}" data-k="${k}" title="Dobara banao" aria-label="Dobara banao">${I.re}</button>
  </div>
- ${x.menu?`<div class="chips" role="group" aria-label="Translate language"><button class="chip" data-act="trset" data-id="${xk}" data-to="" aria-pressed="${!x.tr}">English</button>${Object.keys(TRL).map(l=>`<button class="chip" data-act="trset" data-id="${xk}" data-to="${l}" aria-pressed="${x.tr===l}">${TRL[l].n}</button>`).join('')}</div>`:''}
+ ${x.menu?`<div class="chips" role="group" aria-label="Translate language"><button class="chip" data-act="trset" data-id="${xk}" data-to="" aria-pressed="${!x.tr}">${origName(courseOfId(id))}</button>${trKeys(courseOfId(id)).map(l=>`<button class="chip" data-act="trset" data-id="${xk}" data-to="${l}" aria-pressed="${x.tr===l}">${TRL[l].n}</button>`).join('')}</div>`:''}
  ${t&&t.loading?`<div class="mut" style="margin-top:8px">Anuvaad ho raha hai…</div>`:''}
  ${t&&t.err?`<div class="err" role="alert">${esc(t.err)}</div>`:''}
  ${t&&t.text&&x.tr&&sy==='words'?`<div class="ans"><b>Kathin words</b><br>${fmt(t.text)}</div>`:''}
@@ -390,8 +412,8 @@ function toolbar(q){
   <button class="ic" data-act="more" data-id="${id}" title="Aur options" aria-label="Aur options" aria-pressed="${!!u.more}">${I.more}</button>
  </div>
  ${u.menu?`<div class="chips" role="group" aria-label="Translate language">
-   <button class="chip" data-act="trset" data-id="${id}" data-to="" aria-pressed="${!u.tr}">English</button>
-   ${Object.keys(TRL).map(k=>`<button class="chip" data-act="trset" data-id="${id}" data-to="${k}" aria-pressed="${u.tr===k}">${TRL[k].n}</button>`).join('')}</div>`:''}
+   <button class="chip" data-act="trset" data-id="${id}" data-to="" aria-pressed="${!u.tr}">${origName(courseOfId(id))}</button>
+   ${trKeys(courseOfId(id)).map(k=>`<button class="chip" data-act="trset" data-id="${id}" data-to="${k}" aria-pressed="${u.tr===k}">${TRL[k].n}</button>`).join('')}</div>`:''}
  ${tr&&tr.loading?`<div class="mut" style="margin-top:8px">Anuvaad ho raha hai…</div>`:''}
  ${tr&&tr.err?`<div class="err" role="alert">${esc(tr.err)}</div>`:''}
  ${u.more?`<div class="chips" role="group" aria-label="Aur options">${MORE.map(([k,n])=>`<button class="chip" data-act="mk" data-id="${id}" data-k="${k}" aria-pressed="${u.mk===k}">${n}</button>`).join('')}</div>`:''}
@@ -410,12 +432,13 @@ function tblHTML(q){
  return `<div class="tw"><table class="qt"><thead><tr>${t.head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${(t.rows||[]).map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 function qHTML(q){
- const a=ANS[q.id]||{},txt=shown(q.id),has=!!a.text,open=has&&!!OPEN[q.id];
- return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic pin ${isPinned(q.id)?'liked':''} ${has?'':'nochev'}" data-act="pin" data-id="${q.id}" aria-pressed="${isPinned(q.id)}" title="${isPinned(q.id)?'Pin hatao':'Pin karo'}" aria-label="${isPinned(q.id)?'Pin hatao':'Pin karo'}">${I.pin}</button><div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}</div>${q.text?`<p>${esc(q.text)}</p>`:''}
+ const a=ANS[q.id]||{},txt=srcText(q.id),has=!!a.text,open=has&&!!OPEN[q.id],qm=!!ui(q.id).qm;
+ return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic qdots ${has?'':'nochev'}" data-act="qm" data-id="${q.id}" aria-haspopup="menu" aria-expanded="${!!qm}" title="Aur options" aria-label="Question options">${I.more}</button>${qm?`<div class="qmenu" role="menu"><button class="qmi" role="menuitem" data-act="pin" data-id="${q.id}">${I.pin}<span>${isPinned(q.id)?'Pin hatao':'Pin karo'}</span></button><button class="qmi" role="menuitem" data-act="qtr" data-id="${q.id}">${I.tr}<span>${ui(q.id).qt?'Translation chhupao':'Translate question'}</span></button><button class="qmi" role="menuitem" data-act="qcp" data-id="${q.id}">${ui(q.id).qcp==='ok'?I.ok:I.cp}<span>${ui(q.id).qcp==='ok'?'Copy ho gaya':ui(q.id).qcp==='err'?'Copy nahi hua':'Copy question'}</span></button></div>`:''}<div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}${isPinned(q.id)?`<span class="pmark" title="Pinned" role="img" aria-label="Pinned">${I.pin}</span>`:''}</div>${q.text?`<p dir="auto">${esc(q.text)}</p>`:''}
  ${tblHTML(q)}
- ${(q.parts||[]).map(p=>`<p class="pt">${esc(p)}</p>`).join('')}
- ${(q.options||[]).map(p=>`<p class="pt">${esc(p)}</p>`).join('')}</div>${has?`<span class="chev ${open?'open':''}">${I.chev}</span>`:''}</div>
- ${has?(open?`<div class="ans">${fmt(txt)}</div>${imgHTML(q.id)}${isSaved(q.id)?`<div class="saved-note">Saved · ${dateFmt(SAVED[q.id].at)}</div>`:''}${toolbar(q)}`
+ ${(q.parts||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}
+ ${(q.options||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}</div>${has?`<span class="chev ${open?'open':''}">${I.chev}</span>`:''}</div>
+ ${qtrHTML(q)}
+ ${has?(open?`<div class="ans">${fmt(txt)}</div>${trBlock(q.id)}${imgHTML(q.id)}${isSaved(q.id)?`<div class="saved-note">Saved · ${dateFmt(SAVED[q.id].at)}</div>`:''}${toolbar(q)}`
   :'')
   :`<button class="btn" data-act="ask" data-id="${q.id}" ${a.loading?'disabled':''}>${a.loading?'Soch raha hoon…':'AI Answer'}</button>`}
  ${a.err?`<div class="err" role="alert">${esc(a.err)}</div>`:''}</div>`}
@@ -424,27 +447,34 @@ function qHTML(q){
 const LKEY='orbit_lesson_v1';
 let LC={};try{LC=JSON.parse(localStorage.getItem(LKEY)||'{}')||{}}catch(e){LC={}}
 const lcSave=()=>{try{localStorage.setItem(LKEY,JSON.stringify(LC))}catch(e){}};
-const LS={open:false,to:'as',sty:'para'};
+const LS={open:false,to:'as',sty:'para',cid:''};
 const LTS=[['para','Paragraph'],['sent','Line by line'],['words','Word meanings'],['brackets','Meaning in brackets']];
+const LTS_HI=[['para','Stanza / paragraph'],['sent','Line by line'],['mean','Meaning (bhavarth)'],['words','Word meanings'],['brackets','Meaning in brackets']];
+const ltsOf=c=>isHi(c)?LTS_HI:LTS;
+function lsFix(c){
+ if(LS.cid!==c.id){LS.cid=c.id;LS.to=trKeys(c).includes(ST.tlang)?ST.tlang:(isHi(c)?'en':'as');LS.sty='para'}
+ if(!trKeys(c).includes(LS.to))LS.to=trKeys(c)[0];
+ if(!ltsOf(c).some(x=>x[0]===LS.sty))LS.sty='para';
+}
 const LT={};   // key -> {loading,text,err}
 const lget=k=>LT[k]||(LC[k]?{text:LC[k]}:null);
 const lkey=(c,ch,p)=>['L',c.id,ch.no,p,LS.to,LS.sty].join('|');
 const rkey=(c,ch,si)=>['R',c.id,ch.no,si,LS.to].join('|');
-const langChips=()=>`<div class="chips" role="group" aria-label="Language">${['as','hing','bn'].map(k=>`<button class="chip" data-act="lslang" data-v="${k}" aria-pressed="${LS.to===k}">${TRL[k].n}</button>`).join('')}</div>`;
+const langChips=c=>`<div class="chips" role="group" aria-label="Language">${trKeys(c).map(k=>`<button class="chip" data-act="lslang" data-v="${k}" aria-pressed="${LS.to===k}">${TRL[k].n}</button>`).join('')}</div>`;
 function curCh(){const c=courseOf(NAV.cls,NAV.sub,NAV.med);const ch=c&&c.chapters.find(x=>x.no===NAV.ch);return c&&ch?{c,ch}:null}
 function lessonHTML(c,ch){
- const L=ch.lesson||[];if(!L.length)return'';
+ const L=ch.lesson||[];if(!L.length)return'';lsFix(c);
  if(!LS.open)return `<button class="btn" data-act="lsopen">Lesson text padho aur translate karo</button>`;
  return `<div class="card les"><div class="lhd"><h2 class="sec" style="margin:0">Lesson text</h2><button class="chip" data-act="lsopen">Band karo</button></div>
- ${langChips()}
- <div class="chips" role="group" aria-label="Translation style">${LTS.map(([k,n])=>`<button class="chip" data-act="lssty" data-v="${k}" aria-pressed="${LS.sty===k}">${n}</button>`).join('')}</div>
+ ${langChips(c)}
+ <div class="chips" role="group" aria-label="Translation style">${ltsOf(c).map(([k,n])=>`<button class="chip" data-act="lssty" data-v="${k}" aria-pressed="${LS.sty===k}">${n}</button>`).join('')}</div>
  <button class="btn" data-act="lsall">Poora lesson translate karo</button>
  ${L.map((t,i)=>{const r=lget(lkey(c,ch,i));return `<div class="lp"><p>${esc(t)}</p>${r&&r.text?`<div class="ans">${fmt(r.text)}</div>`:`<button class="chip" data-act="lstr" data-p="${i}" ${r&&r.loading?'disabled':''}>${r&&r.loading?'Ho raha hai…':'Translate'}</button>`}${r&&r.err?`<div class="err" role="alert">${esc(r.err)}</div>`:''}</div>`}).join('')}
  ${(ch.words||[]).length?`<h2 class="sec">Word Note</h2>${ch.words.map(([w,m])=>`<p class="pt"><b>${esc(w)}</b>: ${esc(m)}</p>`).join('')}`:''}</div>`;
 }
 function rulesHTML(c,ch,si){
- const r=lget(rkey(c,ch,si));
- return `<div class="card rul"><div class="qn">Rules (AI)</div>${langChips()}${r&&r.text?`<div class="ans">${fmt(r.text)}</div>`:`<button class="btn" data-act="rul" data-si="${si}" ${r&&r.loading?'disabled':''}>${r&&r.loading?'Soch raha hoon…':'Rules samjhao'}</button>`}${r&&r.err?`<div class="err" role="alert">${esc(r.err)}</div>`:''}</div>`;
+ lsFix(c);const r=lget(rkey(c,ch,si));
+ return `<div class="card rul"><div class="qn">Rules (AI)</div>${langChips(c)}${r&&r.text?`<div class="ans">${fmt(r.text)}</div>`:`<button class="btn" data-act="rul" data-si="${si}" ${r&&r.loading?'disabled':''}>${r&&r.loading?'Soch raha hoon…':'Rules samjhao'}</button>`}${r&&r.err?`<div class="err" role="alert">${esc(r.err)}</div>`:''}</div>`;
 }
 async function lessonTr(c,ch,i){
  const k=lkey(c,ch,i),o=lget(k);
@@ -495,14 +525,18 @@ function navHTML(){
   }).join('')}</div>`;
  }
  const ch=c.chapters.find(x=>x.no===NAV.ch);
- return backHTML('Chapters')+head1(`Chapter ${ch.no}: ${ch.title}`)+`<div class="mut">Class ${c.class} · ${esc(cTitle(c))}</div>`+videosHTML(c,ch)+lessonHTML(c,ch)+listHTML(()=>true,'',[{c,ch}],false)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
+ return backHTML('Chapters')+head1(`Chapter ${ch.no}: ${ch.title}`)+`<div class="mut">Class ${c.class} · ${esc(cTitle(c))}</div>`+lessonHTML(c,ch)+videosHTML(c,ch)+listHTML(()=>true,'',[{c,ch}],false)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
 }
 function settingsHTML(){
  const chips=(list,cur,act)=>`<div class="chips" role="group">${list.map(([k,n])=>`<button class="chip" data-act="${act}" data-v="${k}" aria-pressed="${cur===k}">${n}</button>`).join('')}</div>`;
  return `<h1 style="font-size:26px;margin-top:14px">Settings</h1>
  <h2 class="sec">Diagram type</h2>${chips(DTYPES,ST.dtype,'setd')}
  <p class="mut" style="margin-top:8px">Naya diagram is type mein banega. Diagram ke neeche wale icon se naya banao.</p>
- <h2 class="sec">Theme</h2>${chips(THEMES,ST.theme,'sett')}`;
+ <h2 class="sec">Theme</h2>${chips(THEMES,ST.theme,'sett')}
+ <h2 class="sec">Default translation language</h2>${chips(Object.keys(TRL).filter(k=>k!=='en').map(k=>[k,TRL[k].n]),TRL[ST.tlang]&&ST.tlang!=='en'?ST.tlang:'as','setl')}
+ <p class="mut" style="margin-top:8px">Translate icon aur "Translate question" pehle isi language mein translate karenge. Baad mein chip se badal sakte ho.</p>
+ <h2 class="sec">Answer ke neeche image</h2>${chips([['on','On'],['off','Off']],ST.img==='off'?'off':'on','seti')}
+ <p class="mut" style="margin-top:8px">On: Science answer ke neeche internet se related image aati hai (jab mil sake). Off: koi image nahi dikhegi.</p>`;
 }
 // ---- Google login + cloud sync (Firebase). cloud.js sets window.CLOUD; if it fails to load (offline) the app still works. ----
 let USER=null,LOGINERR='',SYNCT=null,AUTH_READY=false,CLOUDFAIL='';   // AUTH_READY: Firebase has told us if someone is logged in
@@ -544,7 +578,12 @@ window.onCloudData=cd=>{
  if(DATA)draw();
 };
 // ---- recorded video lessons (files in Backblaze B2; the server hands out a short-lived link) ----
-let VIDEOS=[];const VID={};   // id -> {loading,url,err}
+let VIDEOS=[],STATIC_V=[],CLOUD_V=[];const VID={};   // id -> {loading,url,err}
+function mergeV(){   // videos.js (deployed with the site) + videos added from the admin panel (Firestore); same id: the admin panel one wins
+ const m=new Map();STATIC_V.forEach(v=>m.set(v.id,v));
+ CLOUD_V.forEach(v=>{if(v&&v.id&&v.title&&Number.isInteger(v.chapter))m.set(v.id,{id:v.id,course:v.course||'c10-science',chapter:v.chapter,title:v.title,free:!!v.free})});
+ VIDEOS=[...m.values()];if(DATA)draw()}
+window.onCloudVideos=list=>{CLOUD_V=Array.isArray(list)?list:[];mergeV()};
 function videosHTML(c,ch){
  const vs=VIDEOS.filter(v=>(v.course||'c10-science')===c.id&&v.chapter===ch.no);if(!vs.length)return'';
  return `<div class="vid"><h2 class="sec">Video lessons</h2>${vs.map(v=>{const s=VID[v.id]||{};
@@ -558,8 +597,27 @@ async function openVideo(id){
  try{const j=await api('/api/video',{id});s.url=j.url}catch(e){s.err=errMsg(e)}
  s.loading=false;draw();
 }
-fetch('/videos.json').then(r=>r.ok?r.json():[]).then(v=>{VIDEOS=v;if(DATA)draw()}).catch(()=>{});
+fetch('/videos.json').then(r=>r.ok?r.json():[]).then(v=>{STATIC_V=v;mergeV()}).catch(()=>{});
+// ---- Public Videos: free HTML animations listed class-wise (list = /publicvideos.json, built from publicvideos.js) ----
+let PVS=[];
+fetch('/publicvideos.json').then(r=>r.ok?r.json():[]).then(v=>{PVS=Array.isArray(v)?v:[];if(VIEW==='pubvideo'&&DATA)draw()}).catch(()=>{});
+function pvHTML(){
+ const by={};PVS.forEach(v=>{(by[v.cls]=by[v.cls]||[]).push(v)});
+ const cl=Object.keys(by).map(Number).sort((a,b)=>a-b);
+ return head1('Public Videos')+`<div class="mut">Sabke liye free videos. Play dabao, video poori screen par khulega.</div>`+
+  (cl.length?cl.map(c=>`<h2 class="sec" style="margin-top:22px">Class ${c}</h2><div class="rows">${by[c].map(v=>`<button class="row" data-act="pvopen" data-id="${esc(v.id)}"><span class="pvi">${I.vid}</span><span><span class="pvt">${esc(v.title)}</span><br><span class="pvd">${esc(v.desc||'')}</span></span></button>`).join('')}</div>`).join(''):'<p class="mut" style="margin-top:20px">Abhi koi video nahi hai.</p>');
+}
+function closePV(){const o=document.getElementById('pvo');if(o)o.remove();try{if(window.speechSynthesis)speechSynthesis.cancel()}catch(e){}}
+function openPV(id){
+ const v=PVS.find(x=>x.id===id);if(!v)return;
+ closePV();stopSay();
+ const o=document.createElement('div');o.className='pvo';o.id='pvo';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');
+ o.innerHTML=`<div class="pvb"><button class="btn" data-act="pvclose">Close</button><b>${esc(v.title)}</b></div><iframe src="/public-videos/${encodeURIComponent(v.file)}" title="${esc(v.title)}" allow="autoplay; fullscreen"></iframe>`;
+ document.body.appendChild(o);
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closePV()});
 function soonHTML(){
+ if((VIEW==='faculty'||VIEW==='dev')&&window.teamHTML)return teamHTML(VIEW);
  const [t,i]=SOON[VIEW];
  return `<h1 style="font-size:26px;margin-top:14px">${t}</h1><div class="soon">${I[i]}<p>Coming soon</p></div>`;
 }
@@ -582,7 +640,9 @@ function draw(){
   const empty=VIEW==='fav'?'Abhi koi answer save nahi hua. Kisi answer ke neeche heart dabao.':'Abhi koi question pin nahi hua. Question ke upar pin icon dabao.';
   const entries=d.courses.flatMap(c=>c.chapters.map(ch=>({c,ch})));
   body=head1(TITLES[VIEW])+listHTML(fn,empty,entries,true)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
- }else if(VIEW==='settings')body=settingsHTML();
+ }else if(VIEW==='getvideo')body=gvHTML();
+ else if(VIEW==='pubvideo')body=pvHTML();
+ else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
  $('#app').innerHTML=`<div class="top"><button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button><div class="logo">${LOGO}Orbit Tutorial</div></div>${body}`;
@@ -592,7 +652,7 @@ function draw(){
 function drawSide(){
  const item=(v,ico,label,badge)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}
+ ${item('home','home','Home')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}
  <div class="sline"></div>
  ${item('pyq','pyq','PYQ')}${item('pass','pass','Pass mark')}${item('topper','topper','Topper')}${item('faculty','fac','Faculty')}${item('dev','dev','Developer')}
  <div class="sgap"></div><div class="sline"></div>
@@ -632,11 +692,43 @@ window.addEventListener('popstate',e=>{
 });
 try{history.replaceState({nav:NAV},'')}catch(e){}
 function pin(id){if(PINS[id])delete PINS[id];else PINS[id]=Date.now();pinPersist();draw()}
+// Default translation language (Settings). Used by the translate icon, "Translate question" and the lesson reader.
+const dLang=id=>{const ks=trKeys(id?courseOfId(id):null);return ks.includes(ST.tlang)?ST.tlang:(ks.includes('as')?'as':ks[0])};
+// "Translate question": the question text is fixed, so each translation is kept on this device (valid while the text is unchanged).
+const QTK='orbit_qtr_v1',QTR={};
+let QTC={};try{QTC=JSON.parse(localStorage.getItem(QTK)||'{}')||{}}catch(e){QTC={}}
+const qtSave=()=>{try{localStorage.setItem(QTK,JSON.stringify(QTC))}catch(e){}};
+const qSrc=q=>[q.text].concat(q.parts||[],q.options||[]).filter(Boolean).join('\n');
+const qHash=s=>{let x=5381;for(let i=0;i<s.length;i++)x=((x<<5)+x+s.charCodeAt(i))|0;return x};
+const qFor=id=>(IDX[id]||{}).q;
+async function qTr(id,lang){
+ const u=ui(id),k=id+'|'+lang;u.qt=lang;u.qm=false;
+ const c=QTC[k],q0=qFor(id);   // saved translation is used only while the question text is unchanged
+ if(!(QTR[k]&&QTR[k].text)&&c&&c.text&&q0&&c.h===qHash(qSrc(q0)))QTR[k]={text:c.text};
+ if(!(QTR[k]&&QTR[k].text)){
+  QTR[k]={loading:true};draw();
+  try{const j=await api('/api/qtranslate',{id,to:lang});QTR[k]={text:j.text};QTC[k]={text:j.text,h:qHash(qSrc(qFor(id)||{}))};qtSave()}
+  catch(e){QTR[k]={err:errMsg(e)}}
+ }
+ draw();
+}
+function qtrHTML(q){
+ const u=ui(q.id);if(!u.qt)return'';
+ const k=q.id+'|'+u.qt,r=QTR[k]||{};
+ return `<div class="qtr"><div class="chips" role="group" aria-label="Question translation language">${trKeys(courseOfId(q.id)).map(l=>`<button class="chip" data-act="qtrset" data-id="${q.id}" data-to="${l}" aria-pressed="${u.qt===l}">${TRL[l].n}</button>`).join('')}</div>${r.loading?'<div class="mut" style="margin-top:8px">Anuvaad ho raha hai…</div>':''}${r.text?`<div class="ans trans"><b>${esc(TRL[u.qt].n)}</b><br>${fmt(r.text)}</div>`:''}${r.err?`<div class="err" role="alert">${esc(r.err)}</div>`:''}</div>`;
+}
 
+let awakeAt=0,awakeP=null;
+function wake(){
+ if(Date.now()-awakeAt<420000)return Promise.resolve();
+ if(!awakeP)awakeP=fetch((window.ORBIT_API||'')+'/api/ping',{signal:AbortSignal.timeout(70000)}).then(r=>{if(r.ok)awakeAt=Date.now()}).catch(()=>{}).finally(()=>{awakeP=null});
+ return awakeP}
+wake();
 async function api(path,body){
  const tok=window.CLOUD?await window.CLOUD.token():null;
  if(!tok)throw new Error('Pehle Google se log in karo (menu → Log in).');
- const r=await fetch((window.ORBIT_API||'')+path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body),signal:AbortSignal.timeout(75000)});
+ await wake();
+ const r=await fetch((window.ORBIT_API||'')+path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body),signal:AbortSignal.timeout(90000)});
  const j=await r.json().catch(()=>({}));
  if(!r.ok)throw new Error(j.error||'Kuch gadbad hui. Dobara try karo.');
  return j}
@@ -723,10 +815,25 @@ function say(id){
  if(u.say||speechSynthesis.speaking){speechSynthesis.cancel();u.say=false;draw();return}
  const t=plain(shown(id));if(!t)return;
  const ut=new SpeechSynthesisUtterance(t);
- ut.lang=u.tr?TRL[u.tr].v:'en-IN';
+ ut.lang=u.tr?TRL[u.tr].v:(isHi(courseOfId(id))?'hi-IN':'en-IN');
  ut.onend=ut.onerror=()=>{u.say=false;draw()};
  u.say=true;speechSynthesis.speak(ut);draw();
 }
+// 3-dot menu "Copy question": copies the question text (with its parts / options) so it can be pasted into Get Video.
+async function qCopy(id){
+ const u=ui(id),q=qFor(id);let txt=q?qSrc(q):'';
+ // Maths questions carry their textbook id as invisible characters in front of the text. Get Video cuts it out again and the admin form fills Exercise / Question from it.
+ if(txt&&window.MathVideo&&window.MathVideo.tagQuestion&&(courseOfId(id)||{}).subject==='Mathematics')txt=window.MathVideo.tagQuestion(txt,q.id);
+ let ok=false;
+ if(txt){
+  try{await navigator.clipboard.writeText(txt);ok=true}
+  catch(e){try{const t=document.createElement('textarea');t.value=txt;t.setAttribute('readonly','');t.style.cssText='position:fixed;opacity:0;top:0';document.body.appendChild(t);t.select();ok=document.execCommand('copy');t.remove()}catch(x){}}
+ }
+ u.qcp=ok?'ok':'err';draw();
+ setTimeout(()=>{u.qcp=null;u.qm=false;draw()},1200);
+}
+// Used by the admin Math Video panel: textbook question id -> Class / Subject / Medium / Exercise / Question (null if unknown).
+window.mvQFields=qid=>{const x=IDX[qid];return x&&window.MathVideo&&window.MathVideo.qFields?window.MathVideo.qFields({id:qid,cls:x.course.class,subject:x.course.subject,medium:x.course.medium,chNo:x.ch.no,secNo:(x.ch.sections||[]).findIndex(s=>s.questions.indexOf(x.q)>=0)+1,qNo:x.q.no}):null};
 async function copy(id){
  const u=ui(id);
  try{await navigator.clipboard.writeText(plain(shown(id)));u.copied=true;u.msg=''}
@@ -734,7 +841,73 @@ async function copy(id){
  draw();setTimeout(()=>{u.copied=false;draw()},1500);
 }
 
+// ---- Get Video: student pastes a maths question, AI makes a whiteboard video, the admin approves it for everyone ----
+const GV={sub:'Mathematics',tx:{Mathematics:'',Science:''},text:'',busy:false,msg:'',err:false,plan:null,eng:(()=>{try{const v=+localStorage.getItem('gvEng');return v>=0&&v<=3&&localStorage.getItem('gvEng')!==null?v:2}catch(e){return 2}})()};
+const GV_ENG=[['Bilkul kam','Sab kuch Hindi mein: numbers bhi Hindi words mein (ऋण तीन गुणा चार).'],['Kam','Sirf plus, minus, into, equal to English mein; baaki Hindi.'],['Normal','Maths words English mein, baaki Hindi (jaisa pehle tha).'],['Zyada','Zyada se zyada English words: number line, jump, step, answer...']];
+const gvNorm=t=>window.MathVideo&&window.MathVideo.normQuestion?window.MathVideo.normQuestion(t):String(t||'').toLowerCase().replace(/[−–—]/g,'-').replace(/[×✕·]/g,'*').replace(/÷/g,'/').replace(/\s+/g,'');   // same normaliser as the server (superscripts / ** become ^N), so the library key matches
+async function gvKey(t,eng,pre){            // same question (spaces/case ignored) + same English-words level -> same 40-character id (level 2 keeps the old id); science ids start with 's|'
+ const n=(pre||'')+gvNorm(t)+(eng===2||eng==null?'':'|e'+eng);
+ try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(n));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,40)}
+ catch(e){let h=5381;for(const ch of n)h=((h<<5)+h+ch.charCodeAt(0))>>>0;return h.toString(16).padStart(8,'0').repeat(5).slice(0,40)}
+}
+// Get Video takes only questions that exist in the app, for the chosen subject (the server checks the same).
+function gvKnown(text,sub){
+ const M=window.MathVideo;if(!M||!M.linesMatch)return true;   // checker missing: the server still decides
+ for(const id in IDX){const x=IDX[id];if(x.course.subject!==sub)continue;if(M.linesMatch(text,[x.q.text].concat(x.q.parts||[],x.q.options||[]).filter(Boolean)))return true}
+ return false;
+}
+const GV_SUB={Mathematics:{label:'Maths',noun:'Maths',store:'mathVideo',url:'/api/mathvideo/generate'},Science:{label:'Science',noun:'Science',store:'scienceVideo',url:'/api/sciencevideo/generate'}};
+function gvHTML(){
+ const S=GV.sub,sci=S==='Science';
+ return `<h1 style="font-size:26px;margin-top:14px">Get Video</h1>
+ <div role="tablist" style="display:flex;gap:8px;margin-top:12px">${Object.keys(GV_SUB).map(k=>`<button class="btn" role="tab" aria-selected="${k===S}" data-act="gvsub" data-v="${k}" ${GV.busy?'disabled':''} style="${k===S?'':'opacity:.55'}">${GV_SUB[k].label}</button>`).join('')}</div>
+ <p class="mut" style="margin-top:10px">${sci?'Science':'Maths'} ka question app me question ke bagal ke 3 dots se <b>Copy question</b> karo aur yahan paste karo. Sirf app ke ${sci?'Science':'Maths'} questions chalenge. ${sci?'Whiteboard video book ke notes se banega.':'Powers aur True/False bhi chalenge. Whiteboard video ban jayega.'}</p>
+ <textarea id="gvText" maxlength="760" rows="4" placeholder="${sci?'Yahan copy kiya hua Science question paste karo':'Yahan copy kiya hua Maths question paste karo'}" aria-label="${sci?'Science':'Maths'} question" style="width:100%;margin-top:12px;padding:12px;border:1px solid var(--ln);border-radius:12px;background:var(--card);color:var(--tx);font:inherit;resize:vertical">${esc(GV.text)}</textarea>
+ ${sci?'':`<div style="margin-top:12px"><label for="gvEng" style="font-weight:600">English words: <span id="gvEngLab">${GV_ENG[GV.eng][0]}</span></label>
+ <input id="gvEng" type="range" min="0" max="3" step="1" value="${GV.eng}" ${GV.busy?'disabled':''} aria-label="Video mein English words kitne hon" style="width:100%;accent-color:var(--ac,#e4572e);margin-top:6px">
+ <p class="mut" id="gvEngHint" style="margin:2px 0 0;font-size:13px">${GV_ENG[GV.eng][1]}</p></div>`}
+ <button class="btn" data-act="gvgo" ${GV.busy?'disabled':''}>${GV.busy?'Video ban raha hai…':'Get Video'}</button>
+ ${GV.msg?`<p class="${GV.err?'err':'mut'}" role="status" style="margin-top:12px">${esc(GV.msg)}</p>`:''}
+ ${GV.plan&&!GV.busy?`<button class="btn" data-act="gvplay">Video dobara chalao</button>`:''}
+ <p class="mut" style="margin-top:22px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
+}
+async function gvRun(){
+ if(GV.busy)return;
+ const sub=GV.sub,sci=sub==='Science',SB=GV_SUB[sub];
+ const ta=document.getElementById('gvText');if(ta)GV.text=ta.value;
+ const un=window.MathVideo&&window.MathVideo.untagQuestion?window.MathVideo.untagQuestion(GV.text):{text:GV.text,qid:''};   // cut the hidden textbook id out first: the key and the AI only see the clean question
+ const text=un.text.replace(/\s+/g,' ').trim(),qid=un.qid;
+ if(text.length<8){GV.err=true;GV.plan=null;GV.msg='Question thoda aur likho (kam se kam 8 akshar).';draw();return}
+ if(text.length>(sci?700:400)){GV.err=true;GV.plan=null;GV.msg='Question bahut lamba hai. '+(sci?700:400)+' akshar se chhota rakho.';draw();return}
+ if(!gvKnown(text,sub)){GV.err=true;GV.plan=null;GV.msg='Is box me sirf app ke '+SB.noun+' ke questions chalte hain. Question ke bagal ke 3 dots me "Copy question" dabao aur yahan paste karo.';draw();return}
+ if(!navigator.onLine){GV.err=true;GV.msg='Internet nahi hai. Video banane ke liye online aao.';draw();return}
+ if(!window.MathVideoPlayer||!window.CLOUD||!window.CLOUD[SB.store]){GV.err=true;GV.msg='Video system load nahi hua. Page refresh karo.';draw();return}
+ GV.busy=true;GV.err=false;GV.plan=null;GV.msg='Library mein dhoondh raha hoon…';draw();
+ try{
+  const key=await gvKey(text,sci?null:GV.eng,sci?'s|':'');
+  let plan=null,known=false;
+  try{plan=await window.CLOUD[SB.store].askedGet(key);known=!!plan}catch(e){}
+  if(!plan){
+   GV.msg='AI video bana raha hai. 20 se 40 second lag sakte hain…';draw();
+   const r=await api(SB.url,sci?{text}:{text,eng:GV.eng});
+   if(r.unsupported){GV.err=true;GV.msg=r.reason||'Is type ka video abhi nahi ban sakta.';GV.busy=false;draw();return}
+   plan=r.plan;
+   try{window.CLOUD[SB.store].pendingAdd(key,text,plan,sci?'':qid).catch(()=>{})}catch(e){}   // goes to the admin for review (with the textbook id, if the question was copied from the app); fails quietly if someone already sent the same question
+  }
+  GV.plan=plan;
+  GV.msg=known?'Ye video check ho chuka hai.':'Ye video AI ne abhi banaya hai aur abhi check nahi hua. Apni kitab se mila lo.';
+  GV.busy=false;draw();
+  window.MathVideoPlayer.open(plan);
+ }catch(e){GV.err=true;GV.msg=errMsg(e);GV.busy=false;draw()}
+}
+document.addEventListener('input',e=>{if(e.target&&e.target.id==='gvText')GV.text=e.target.value});
+function gvSwitch(sub){if(GV.busy||!GV_SUB[sub]||sub===GV.sub)return;const ta=document.getElementById('gvText');if(ta)GV.text=ta.value;GV.tx[GV.sub]=GV.text;GV.sub=sub;GV.text=GV.tx[sub]||'';GV.msg='';GV.err=false;GV.plan=null;draw()}
+document.addEventListener('input',e=>{if(e.target&&e.target.id==='gvEng'){GV.eng=+e.target.value;try{localStorage.setItem('gvEng',String(GV.eng))}catch(x){}
+ const l=document.getElementById('gvEngLab'),h=document.getElementById('gvEngHint');if(l)l.textContent=GV_ENG[GV.eng][0];if(h)h.textContent=GV_ENG[GV.eng][1]}});
+
 document.addEventListener('click',e=>{
+ const openQ=Object.keys(UI).filter(k=>UI[k].qm);
+ if(openQ.length&&!(e.target.closest&&e.target.closest('.qmenu,[data-act="qm"]'))){openQ.forEach(k=>{UI[k].qm=false});draw()}
  const b=e.target.closest('[data-act]');
  if(!b){const c=e.target.closest('.q[data-qid]');
   if(c&&!e.target.closest('.ans,.tb,.chips,.vis,.btn,a,button')&&!String(window.getSelection()))toggleOpen(c.dataset.qid);
@@ -750,7 +923,17 @@ document.addEventListener('click',e=>{
  else if(act==='lsall'){const x=curCh();if(x)lessonAll(x.c,x.ch)}
  else if(act==='rul'){const x=curCh();if(x)rulesGo(x.c,x.ch,+b.dataset.si)}
  else if(act==='nav')go(b.dataset.v);
- else if(act==='pin')pin(id);
+ else if(act==='pvopen')openPV(id);
+ else if(act==='pvclose')closePV();
+ else if(act==='gvgo')gvRun();
+ else if(act==='gvsub')gvSwitch(b.dataset.v);
+ else if(act==='gvplay'){if(GV.plan&&window.MathVideoPlayer)window.MathVideoPlayer.open(GV.plan)}
+ else if(act==='pin'){ui(id).qm=false;pin(id)}
+ else if(act==='qm'){const u=ui(id),was=u.qm;for(const k in UI)UI[k].qm=false;u.qm=!was;draw()}
+ else if(act==='qtr'){const u=ui(id);if(u.qt){u.qt=null;u.qm=false;draw()}else qTr(id,dLang(id))}
+ else if(act==='qcp')qCopy(id);
+ else if(act==='qtrset')qTr(id,b.dataset.to);
+ else if(act==='setl'){ST.tlang=b.dataset.v;LS.cid='';stSave();draw()}
  else if(act==='more'){const u=ui(id);u.more=!u.more;draw()}
  else if(act==='mk')setMore(id,b.dataset.k);
  else if(act==='xre')reMore(id,b.dataset.k);
@@ -764,10 +947,11 @@ document.addEventListener('click',e=>{
  else if(act==='lock'){LOCKED=+b.dataset.ch;draw()}
  else if(act==='setd'){ST.dtype=b.dataset.v;stSave();draw()}
  else if(act==='sett'){ST.theme=b.dataset.v;applyTheme();stSave();draw()}
+ else if(act==='seti'){ST.img=b.dataset.v==='off'?'off':'on';stSave();draw();if(ST.img==='on')for(const k in OPEN)if(OPEN[k]&&ANS[k]&&ANS[k].text)ensureImg(k)}
  else if(act==='ask')ask(id,false);
  else if(act==='re')ask(id,true);
  else if(act==='like')like(id);
- else if(act==='tr'){const u=ui(id);u.menu=!u.menu;draw()}
+ else if(act==='tr'){const u=ui(id);u.menu=!u.menu;if(u.menu&&!u.tr)setTr(id,dLang(id));else draw()}
  else if(act==='trset')setTr(id,b.dataset.to);
  else if(act==='vis')toggleVis(id);
  else if(act==='visre')genVis(id,true);
@@ -825,6 +1009,10 @@ fetch('/questions.json').then(r=>r.ok?r:fetch((window.ORBIT_API||'')+'/api/quest
 
 if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{})});
 </script>
+<script src="/team.js"></script>
+<script src="/mathvideo-admin.js"></script>
+<script src="/mathvideo-player.js"></script>
+<script src="/video-admin.js"></script>
 <script type="module">import('/cloud.js').catch(e=>window.onCloudFail&&window.onCloudFail(e))</script>
 </body>
 </html>

@@ -3,3 +3,4 @@ node_modules
 public/questions.json
 public/videos.json
 .firebase/
+public/publicvideos.json
