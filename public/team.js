@@ -138,7 +138,7 @@
     if (mvMode) {
       o.innerHTML = '<div class="tm-in"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Math Video</h2><button class="tm-b2" data-tact="mvback">Back</button></div><div id="tm-mv"></div></div>';
       var box = document.getElementById('tm-mv');
-      if (window.MathVideo && window.CLOUD && window.CLOUD.mathVideo) window.MathVideo.mountAdmin(box, window.CLOUD.mathVideo, { preview: function (p) { if (window.MathVideoPlayer) window.MathVideoPlayer.open(p); }, qFields: function (id) { return window.mvQFields ? window.mvQFields(id) : null; }, science: window.CLOUD.scienceVideo });
+      if (window.MathVideo && window.CLOUD && window.CLOUD.mathVideo) window.MathVideo.mountAdmin(box, window.CLOUD.mathVideo, { preview: function (p) { if (window.MathVideoPlayer) window.MathVideoPlayer.open(p); }, qFields: function (id) { return window.mvQFields ? window.mvQFields(id) : null; }, science: window.CLOUD.scienceVideo, extra: function (c) { if (!window.NarrationAdmin || !window.CLOUD.narration) return; var nb = document.createElement('div'); nb.style.cssText = 'margin-top:18px;padding-top:12px;border-top:1px solid rgba(128,128,128,.35)'; c.el.appendChild(nb); window.NarrationAdmin.mount(nb, { getCode: c.getCode, getPlan: c.getPlan, store: window.CLOUD.narration, preview: function (p, o) { if (window.MathVideoPlayer) window.MathVideoPlayer.open(p, o); } }); } });
       else box.textContent = 'Cloud load nahi hua. Page refresh karo.';
       return;
     }
