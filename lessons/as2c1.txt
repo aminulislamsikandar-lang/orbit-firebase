@@ -1,0 +1,18 @@
+# Class 2 Assamese, Chapter 1: ৰ'দালি (poem). One block per stanza, blank line between stanzas.
+# Each stanza gets its own Translate button in the app (English, Hinglish, Bengali).
+# Lines that start with # are ignored.
+
+পুৱাৰ ৰ'দালি
+ৰাংঢালী ৰাঙলী।
+পূবেদি ওলায়
+পোহৰ বিলায়।
+
+লাহে লাহে কই
+উঠে আকাশলৈ।
+মূৰৰ ওপৰ
+উঠিলে দুপৰ।
+
+লাহ দিলে হয়
+আবেলি সময়।
+লুকালে ৰ'দালি
+পায়হি গধূলি।

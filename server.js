@@ -584,7 +584,9 @@ const HI_STYLES = {
   words: (l, t) => `From the Hindi text below pick the 6 to 10 hardest words a school student may not know. Do NOT translate the whole text.\nFormat: one per line, starting with "- ", as: Hindi word: meaning in ${l}.\nOutput only this list.\n\n${t}`,
   brackets: (l, t) => `Rewrite the Hindi text below exactly as it is (same words, same line breaks), but after each difficult word put its meaning in ${l} inside round brackets, for example: word (meaning). Add brackets only for hard words (about one word in eight). Output only the rewritten text.\n\n${t}`
 };
-const stylesFor = course => (course && course.sourceLang === 'Hindi') ? HI_STYLES : TR_STYLES;
+// Assamese source text (Class 2 Assamese poem stanzas): same styles as Hindi, with the source language named Assamese.
+const AS_STYLES = Object.fromEntries(Object.entries(HI_STYLES).map(([k, f]) => [k, (l, t) => f(l, t).split('Hindi').join('Assamese')]));
+const stylesFor = course => !course ? TR_STYLES : course.sourceLang === 'Hindi' ? HI_STYLES : course.sourceLang === 'Assamese' ? AS_STYLES : TR_STYLES;
 app.post('/api/translate', async (req, res) => {
   const hit = guard(req, res); if (!hit) return;
   const { q, course, ch } = hit, P = profileFor(course);

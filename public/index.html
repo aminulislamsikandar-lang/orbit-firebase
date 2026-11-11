@@ -196,9 +196,10 @@ const I={
 // Translation styles (3-dot menu). 'para' is the original paragraph translation. The student can make any style the default.
 // A course with sourceLang 'Hindi' (Class 6 Hindi) has Hindi text; its translations go to English / Assamese / Bengali.
 const isHi=c=>!!(c&&c.sourceLang==='Hindi');
+const isAs=c=>!!(c&&c.sourceLang==='Assamese');   // Class 2 Assamese: poem and answers are Assamese; translations go to English / Hinglish / Bengali
 const courseOfId=id=>{const e=IDX[rid(id)];return e&&e.course};
-const trKeys=c=>isHi(c)?['en','as','bn']:['hing','as','bn'];
-const origName=c=>isHi(c)?'Hindi':'English';
+const trKeys=c=>isHi(c)?['en','as','bn']:isAs(c)?['en','hing','bn']:['hing','as','bn'];
+const origName=c=>isHi(c)?'Hindi':isAs(c)?'অসমীয়া':'English';
 const TSTY=[['para','Paragraph'],['sent','Sentence by sentence'],['words','Kuch words ka meaning'],['brackets','Meaning in brackets']];
 const TRL={en:{n:'English',v:'en-IN'},hing:{n:'Hinglish',v:'hi-IN'},as:{n:'অসমীয়া',v:'as-IN'},bn:{n:'বাংলা',v:'bn-IN'}};
 
@@ -227,10 +228,10 @@ const CATALOG={
   {t:'Boards',items:[{id:'seba',name:'SEBA',sub:'Assam board'},{id:'cbse',name:'CBSE',sub:'Central board'}]},
   {t:'Schools',items:[{id:'nashib',name:'Nashib Ali Academy'},{id:'popular',name:'Popular Academy'},{id:'halimon',name:'Halimon Nessa Academy'}]}
  ],
- classes:{seba:[9,10],cbse:[9,10],nashib:[6,7,8,9,10],popular:[6,7,8,9,10],halimon:[6,7,8,9,10]},
+ classes:{seba:[9,10],cbse:[9,10],nashib:[2,6,7,8,9,10],popular:[6,7,8,9,10],halimon:[6,7,8,9,10]},
  content:{
   seba:{10:[['c10-science','General Science']]},
-  nashib:{6:[['c6-english','English'],['c6-grammar','English Grammar'],['c6-social','Social Science'],['c6-science','General Science'],['c6-hindi','Hindi'],['c6-assamese','Assamese'],['c6-arabic','Arabic'],['c6-maths']],7:[['c7-english'],['c7-maths'],['c7-science']]},
+  nashib:{2:[['c2-assamese','Assamese']],6:[['c6-english','English'],['c6-grammar','English Grammar'],['c6-social','Social Science'],['c6-science','General Science'],['c6-hindi','Hindi'],['c6-assamese','Assamese'],['c6-arabic','Arabic'],['c6-maths']],7:[['c7-english'],['c7-maths'],['c7-science']]},
   popular:{7:[['c7-english'],['c7-maths'],['c7-science']]},
   halimon:{7:[['c7-english'],['c7-maths'],['c7-science']],8:[['c8-english']]}
  }
@@ -452,9 +453,9 @@ const lcSave=()=>{try{localStorage.setItem(LKEY,JSON.stringify(LC))}catch(e){}};
 const LS={open:false,to:'as',sty:'para',cid:''};
 const LTS=[['para','Paragraph'],['sent','Line by line'],['words','Word meanings'],['brackets','Meaning in brackets']];
 const LTS_HI=[['para','Stanza / paragraph'],['sent','Line by line'],['mean','Meaning (bhavarth)'],['words','Word meanings'],['brackets','Meaning in brackets']];
-const ltsOf=c=>isHi(c)?LTS_HI:LTS;
+const ltsOf=c=>(isHi(c)||isAs(c))?LTS_HI:LTS;
 function lsFix(c){
- if(LS.cid!==c.id){LS.cid=c.id;LS.to=trKeys(c).includes(ST.tlang)?ST.tlang:(isHi(c)?'en':'as');LS.sty='para'}
+ if(LS.cid!==c.id){LS.cid=c.id;LS.to=trKeys(c).includes(ST.tlang)?ST.tlang:((isHi(c)||isAs(c))?'en':'as');LS.sty='para'}
  if(!trKeys(c).includes(LS.to))LS.to=trKeys(c)[0];
  if(!ltsOf(c).some(x=>x[0]===LS.sty))LS.sty='para';
 }
@@ -872,7 +873,7 @@ function say(id){
  if(u.say||speechSynthesis.speaking){speechSynthesis.cancel();u.say=false;draw();return}
  const t=plain(shown(id));if(!t)return;
  const ut=new SpeechSynthesisUtterance(t);
- ut.lang=u.tr?TRL[u.tr].v:(isHi(courseOfId(id))?'hi-IN':'en-IN');
+ ut.lang=u.tr?TRL[u.tr].v:(isHi(courseOfId(id))?'hi-IN':isAs(courseOfId(id))?'as-IN':'en-IN');
  ut.onend=ut.onerror=()=>{u.say=false;draw()};
  u.say=true;speechSynthesis.speak(ut);draw();
 }
