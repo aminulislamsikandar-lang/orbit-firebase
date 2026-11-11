@@ -786,7 +786,7 @@ async function api(path,body){
  const tok=window.CLOUD?await window.CLOUD.token():null;
  if(!tok)throw new Error('Pehle Google se log in karo (menu → Log in).');
  await wake();
- const r=await fetch((window.ORBIT_API||'')+path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(body),signal:AbortSignal.timeout(90000)});
+ const r=await fetch((window.ORBIT_API||'')+path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok,...(window.PARENT_KEY?PARENT_KEY.headers():{})},body:JSON.stringify(body),signal:AbortSignal.timeout(90000)});
  const j=await r.json().catch(()=>({}));
  if(!r.ok)throw new Error(j.error||'Kuch gadbad hui. Dobara try karo.');
  return j}
@@ -1083,6 +1083,7 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/video-admin.js"></script>
 <script src="/qvideo.js"></script>
 <script src="/analytics.js"></script>
+<script src="/parent-key.js"></script>
 <script type="module">import('/cloud.js').catch(e=>window.onCloudFail&&window.onCloudFail(e))</script>
 </body>
 </html>
