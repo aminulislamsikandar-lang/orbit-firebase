@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orbit narration sync - manual check</title></head>
+<body style="font-family:system-ui,sans-serif;padding:16px">
+<h3>Narration sync - manual check</h3>
+<p>No Sonex needed. <b>demo.wav</b> is 15 s of silence with a short beep at 2.4 s, 5.5 s, 9.5 s and 12.5 s. Press Play and check that:
+the pen underline appears at 1 s, the car drives in at 2.4 s (beep), the bird appears and flaps 5.5 s - 9 s, the sun glows from 9.5 s, the flower sways from 12.5 s.
+Then try Pause / Play, drag the progress bar back and forward, Replay, and (device settings) "reduce motion".</p>
+<button id="go" style="padding:12px 18px;font-size:16px">Open demo lesson</button>
+<script src="../../public/narration-sync.js"></script>
+<script src="../../public/narration-sprites.js"></script>
+<script src="../../public/mathvideo-player.js"></script>
+<script>
+document.getElementById('go').onclick = function () {
+  try { localStorage.setItem('mvLang', 'en'); } catch (e) {}
+  var plan = { title: { en: 'Narration sync demo' }, steps: [
+    { cap: { en: 'The car is blue. The bird is on the branch. The sun is hot. The flower is beautiful.' }, say: { en: 'demo' },
+      anim: { lines: ['The car is blue', 'The bird is on the branch'], cues: [{ point: { line: 0, word: 'car' } }] } } ] };
+  var narration = { lang: { en: { segments: [ { index: 0, url: 'demo.wav', duration: 15, events: [
+      { start: 1, cue: 0 },
+      { start: 2.4, end: 5.5, target: 'car', action: 'enter' },
+      { start: 5.5, end: 9, target: 'bird', action: 'appear-and-flap' },
+      { start: 9.5, end: 12.5, target: 'sun', action: 'highlight' },
+      { start: 12.5, target: 'flower', action: 'appear-and-sway' } ] } ] } },
+    steps: [ { index: 0, scene: [
+      { id: 'car', sprite: 'car', x: 20, y: 270 }, { id: 'bird', sprite: 'bird', x: 330, y: 150, scale: 0.9 },
+      { id: 'sun', sprite: 'sun', x: 440, y: 0, scale: 0.8 }, { id: 'flower', sprite: 'flower', x: 230, y: 250 } ] } ] };
+  MathVideoPlayer.open(plan, { narration: narration });
+};
+</script></body></html>

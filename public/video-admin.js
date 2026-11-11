@@ -88,6 +88,7 @@
     var newBtn = h("button", { type: "button", text: "Naya form", style: "padding:10px 14px;border-radius:10px;border:0;background:rgba(128,128,128,.18);color:inherit;cursor:pointer" });
     var bar = h("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin-top:12px" }, [saveBtn, newBtn]);
     var list = h("div", { style: "display:flex;flex-direction:column;gap:6px;margin-top:10px" });
+    var voBox = h("div", {});                                 // AI voiceover panel (public/voiceover-admin.js) opens here
 
     function clear() { editing = null; chapter.value = ""; title.value = ""; key.value = ""; free.checked = true; file.value = ""; upHint(""); say("", true); }
     newBtn.onclick = clear;
@@ -119,7 +120,12 @@
         if (!confirm("Is video ko list se hatana hai?\n" + v.title + "\n(Backblaze mein file rahegi, wahan se alag delete karni hogi.)")) return;
         store.del(v.id).then(function () { say("Hata di gayi.", true); if (editing === v.id) clear(); refresh(); }, function (e) { say("Delete fail: " + (e && e.message ? e.message : e)); });
       };
-      return h("div", { style: "display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:rgba(128,128,128,.1)" }, [info, ed, dl]);
+      var vo = h("button", { type: "button", text: "Voiceover", style: "padding:7px 10px;border-radius:8px;border:0;background:rgba(128,128,128,.18);color:inherit;cursor:pointer" });
+      vo.onclick = function () {
+        if (!g.VoiceoverAdmin || !g.CLOUD || !g.CLOUD.narration) return say("Voiceover panel load nahi hua. Page refresh karo.");
+        g.VoiceoverAdmin.mount(voBox, { video: v, store: g.CLOUD.narration }); voBox.scrollIntoView && voBox.scrollIntoView();
+      };
+      return h("div", { style: "display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:rgba(128,128,128,.1)" }, [info, vo, ed, dl]);
     }
     function refresh() {
       store.list().then(function (items) {
@@ -132,7 +138,7 @@
 
     var freeLab = h("label", { style: "display:flex;gap:8px;align-items:center;font-size:13px;margin-top:10px" }, [free, document.createTextNode("Free video (sabko dikhegi)")]);
     [h("h3", { text: "Video lessons" }), lab("Course", course), lab("Chapter number", chapter), lab("Video ka naam", title), lab("Backblaze file ka naam", key), upBox, freeLab, bar, msg,
-      h("div", { text: "Admin panel se add ki hui videos:", style: "font-size:12px;margin-top:8px" }), list].forEach(function (n) { box.appendChild(n); });
+      h("div", { text: "Admin panel se add ki hui videos:", style: "font-size:12px;margin-top:8px" }), list, voBox].forEach(function (n) { box.appendChild(n); });
     refresh();
   }
 

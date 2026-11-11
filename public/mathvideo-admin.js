@@ -535,6 +535,8 @@
       fill: function (it) { clearAutoFill(); return it.qid ? "\nTextbook question: " + it.qid : ""; },
       approvedMsg: "Approved. Ab ye science question paste karne par sabhi students ko turant milega."
     });
+    // extra panels (AI narration) get the lesson code and the validated plan of this panel
+    if (typeof opts.extra === "function") opts.extra({ el: el, getCode: function () { return code.value.trim(); }, getPlan: planOnly });
   }
 
   var api = { validate: validate, mountAdmin: mountAdmin, makeCode: makeCode, calc: calc, calcEx: calcEx, prepQuestion: prepQuestion, normQuestion: normQuestion, parseTF: parseTF, isTrueFalse: isTrueFalse, tagQuestion: tagQuestion, untagQuestion: untagQuestion, qFields: qFields, linesMatch: linesMatch, CODE_RE: CODE_RE };

@@ -1,5 +1,7 @@
 /* mathvideo-player.js
  * 1) MathVideoPlayer.open(plan): SVG whiteboard + browser text-to-speech (Hindi voice dropdown).
+ * 1b) MathVideoPlayer.open(plan, {narration, refreshUrl}): if narration audio (Sonex MP3) exists for the chosen language+step, the audio
+ *    element is the clock for the pen/dot cues and the SVG sprites (narration-sync.js, narration-sprites.js); steps without audio keep the browser voice.
  * 2) Student side: chapter khulte hi us chapter ke video plans ek query se aate hain, jis question ka video hai uske neeche "Video" button.
  * Plan ka text sirf textContent / SVG textContent se render hota hai, innerHTML me kabhi nahi jata.
  */
@@ -173,10 +175,12 @@
     document.removeEventListener("keydown", cur.key); cur = null;
   }
 
-  function open(plan) {
+  function open(plan, narrOpts) {
     close();
     if (!plan || !plan.steps || !plan.steps.length) return;
     var st = { i: 0, playing: false, token: 0, timer: 0 };
+    var NAR = (narrOpts && narrOpts.narration) || null, au = null, audioSeg = null, audioTok = 0, wake = 0, sched = null, spriteEls = {}, spriteLayer = null;
+    var instant = false, dragging = false, audioFailed = {}, retried = {};   // instant = cue is drawn in its final state at once (seek / restore)
     var lang = ls(LANG_KEY) || "hg";
     if (!LANGS.some(function (o) { return o[0] === lang; })) lang = "hg";
     // caption / title: exactly the text in the plan. No English-words slider in the player any more: the level is chosen on the
@@ -199,7 +203,9 @@
     var bPrev = btn("Prev", function () { go(st.i - 1, st.playing); });
     var bPlay = btn("Play", function () { st.playing ? pause() : play(); });
     var bNext = btn("Next", function () { go(st.i + 1, st.playing); });
-    var bar = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin:8px 0" }, [bPrev, bPlay, bNext]);
+    var bReplay = btn("Replay", function () { go(st.i, true); });
+    var bar = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin:8px 0" }, [bPrev, bPlay, bReplay, bNext]);
+    var seek = el("input", { type: "range", min: 0, max: 1000, value: 0, style: "width:100%;display:none;margin:4px 0" }); seek.setAttribute("aria-label", "Audio progress");
 
     function sel(label, onchange) {
       var s = el("select", { style: "padding:8px;border-radius:10px;border:1px solid var(--ln,#999);background:var(--card,#fff);color:inherit;max-width:100%" });
@@ -215,7 +221,7 @@
     var enSel = sel("English voice", function () { ls(EN_KEY, enSel.s.value); if (st.playing) { stopSpeech(); speak(); } });
     var opts = el("div", { style: "display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:6px 0" }, [langSel.wrap, voiceSel.wrap, enSel.wrap]);
 
-    [top, board, cap, bar, opts, msg, prog].forEach(function (n) { inner.appendChild(n); });
+    [top, board, cap, bar, seek, opts, msg, prog].forEach(function (n) { inner.appendChild(n); });
     root.appendChild(inner); document.body.appendChild(root);
 
     function fillVoices() {
@@ -276,10 +282,11 @@
     function addDot(d, fade) {
       if (!NL || typeof d.v !== "number") return;
       var c = svg("circle", { cx: nx(d.v), cy: NLY, r: 8, fill: colorOf(d.color), stroke: "#fff", "stroke-width": 1.5 });
-      if (fade) { c.style.opacity = "0"; c.style.transition = "opacity .4s"; }
+      var fadeIn = fade && !instant;
+      if (fadeIn) { c.style.opacity = "0"; c.style.transition = "opacity .4s"; }
       dynG.appendChild(c);
       if (d.label) dynG.appendChild(svg("text", { x: nx(d.v), y: NLY - 18, "text-anchor": "middle", "font-size": 18, "font-weight": "700", fill: colorOf(d.color), "font-family": "system-ui,sans-serif" }, d.label));
-      if (fade) setTimeout(function () { c.style.opacity = "1"; }, 20);
+      if (fadeIn) setTimeout(function () { c.style.opacity = "1"; }, 20);
     }
     function resetDyn() {
       while (dynG && dynG.firstChild) dynG.removeChild(dynG.firstChild);
@@ -288,7 +295,7 @@
     }
     function movePen(x, y, flip) {
       penShape.setAttribute("transform", flip ? "scale(1,-1)" : "");
-      if (!penPlaced) { pen.style.transition = "none"; pen.style.transform = "translate(" + x + "px," + y + "px)"; void pen.getBoundingClientRect(); pen.style.transition = "transform .7s ease, opacity .3s"; penPlaced = true; }
+      if (!penPlaced || instant) { pen.style.transition = "none"; pen.style.transform = "translate(" + x + "px," + y + "px)"; if (instant) pen.style.opacity = "1"; void pen.getBoundingClientRect(); pen.style.transition = "transform .7s ease, opacity .3s"; penPlaced = true; }
       else pen.style.transform = "translate(" + x + "px," + y + "px)";
       pen.style.opacity = "1";
     }
@@ -309,8 +316,10 @@
         movePen(x, NLY - 16, true);
       } else {
         var w = wordBox(p.line, p.word); if (!w) return;
-        mark = svg("rect", { x: w.x0 - 3, y: w.y + 6, width: 0, height: 4, rx: 2, fill: "#d74747" }); mark.style.transition = "width .5s ease";
-        dynG.appendChild(mark); setTimeout(function () { mark.setAttribute("width", Math.max(8, w.x1 - w.x0 + 6)); }, 30);
+        mark = svg("rect", { x: w.x0 - 3, y: w.y + 6, width: 0, height: 4, rx: 2, fill: "#d74747" }); mark.style.transition = instant ? "none" : "width .5s ease";
+        dynG.appendChild(mark);
+        var mk = mark;                                  // the timer must not use the shared `mark`: a seek / next cue can replace it first
+        if (instant) mk.setAttribute("width", Math.max(8, w.x1 - w.x0 + 6)); else setTimeout(function () { mk.setAttribute("width", Math.max(8, w.x1 - w.x0 + 6)); }, 30);
         movePen((w.x0 + w.x1) / 2, w.y + 10, false);
       }
     }
@@ -320,8 +329,8 @@
       var path = svg("path", { d: "M" + x1 + " " + ya + " Q" + ((x1 + x2) / 2) + " " + cy + " " + x2 + " " + ya, fill: "none", stroke: "#d74747", "stroke-width": 3, "stroke-linecap": "round" });
       dynG.appendChild(path);
       var L = 0; try { L = path.getTotalLength(); } catch (e) {}
-      if (L) { path.style.strokeDasharray = L; path.style.strokeDashoffset = L; void path.getBoundingClientRect(); path.style.transition = "stroke-dashoffset .9s ease"; path.style.strokeDashoffset = "0"; }
-      setTimeout(function () { dynG.appendChild(svg("polygon", { points: x2 + "," + (ya + 2) + " " + (x2 - 6) + "," + (ya - 11) + " " + (x2 + 6) + "," + (ya - 11), fill: "#d74747" })); }, 850);
+      if (L && !instant) { path.style.strokeDasharray = L; path.style.strokeDashoffset = L; void path.getBoundingClientRect(); path.style.transition = "stroke-dashoffset .9s ease"; path.style.strokeDashoffset = "0"; }
+      (instant ? function (f) { f(); } : function (f) { setTimeout(f, 850); })(function () { dynG.appendChild(svg("polygon", { points: x2 + "," + (ya + 2) + " " + (x2 - 6) + "," + (ya - 11) + " " + (x2 + 6) + "," + (ya - 11), fill: "#d74747" })); });
       movePen(x2, NLY - 16, true);
     }
     function doCue(c) {
@@ -335,7 +344,7 @@
     }
 
     function show(i) {
-      st.i = i; var s = plan.steps[i]; curStep = s; clearCues();
+      st.i = i; var s = plan.steps[i]; curStep = s; clearCues(); stopAudio();
       while (board.firstChild) board.removeChild(board.firstChild);
       var lines = (s.anim && s.anim.lines) || [], hl = (s.anim && s.anim.highlight) || [];
       NL = (s.anim && s.anim.numberline) || null;
@@ -361,10 +370,137 @@
       prog.textContent = "Step " + (i + 1) + " / " + plan.steps.length + ((lang === "as" || lang === "bn") && !(s.say && s.say[lang]) ? "  •  Is video me " + LANG_NAME[lang] + " nahi hai, English dikha raha hoon" : "");
       bPrev.disabled = i === 0; bNext.disabled = i === plan.steps.length - 1;
       bPlay.textContent = st.playing ? "Pause" : "Play";
-      runCues(((s.anim && s.anim.cues) || []).length * 1800 + 500);
+      if (segFor(i)) resetDyn(); else runCues(((s.anim && s.anim.cues) || []).length * 1800 + 500);   // with narration audio the cues wait for the audio clock
     }
 
-    function stopSpeech() { st.token++; clearTimeout(st.timer); clearCues(); if (g.speechSynthesis) g.speechSynthesis.cancel(); }
+
+    /* ---------- narration audio (Sonex MP3) + visuals driven by the audio clock ----------
+       NAR = { lang: { as: { segments: [ { index, url, duration?, events?: [ {start,end?,cue:i} | {start,end?,target,action} ] } ] } },
+               steps: [ { index, scene: [ { id, sprite, x, y, scale?, color? } ] } ] }
+       Audio currentTime is the only clock. timeupdate / seeked / ended and ONE wake-up timer aimed at the next event call tick(). */
+    function segFor(i) {
+      var L = NAR && NAR.lang && NAR.lang[lang], segs = L && L.segments;
+      if (!segs || audioFailed[lang + ":" + i]) return null;
+      for (var k = 0; k < segs.length; k++) if (segs[k].index === i && segs[k].url) return segs[k];
+      return null;
+    }
+    function sceneFor(i) {
+      var list = NAR && NAR.steps; if (!list) return [];
+      for (var k = 0; k < list.length; k++) if (list[k].index === i) return Array.isArray(list[k].scene) ? list[k].scene : [];
+      return [];
+    }
+    function pausedVisual(on) { if (g.NarrationSprites) g.NarrationSprites.setPaused(board, on); }
+    function stopAudio() {
+      clearTimeout(wake); wake = 0; audioSeg = null; sched = null;
+      if (au) { try { au.pause(); au.removeAttribute("src"); au.load(); } catch (e) {} }
+      seek.style.display = "none"; seek.value = 0; dragging = false;
+      pausedVisual(false);
+    }
+    function resetSprites() { if (g.NarrationSprites) Object.keys(spriteEls).forEach(function (k) { g.NarrationSprites.reset(spriteEls[k]); }); }
+    function prepareAudioStep(i) {
+      resetDyn(); spriteEls = {};
+      if (spriteLayer && spriteLayer.parentNode) spriteLayer.parentNode.removeChild(spriteLayer); spriteLayer = null;
+      var scene = sceneFor(i);
+      if (!scene.length || !g.NarrationSprites) return;
+      g.NarrationSprites.ensureStyle();
+      spriteLayer = svg("g", {});
+      scene.slice(0, 8).forEach(function (sp) {
+        var e = sp && typeof sp.id === "string" ? g.NarrationSprites.build(sp) : null;
+        if (e) { spriteEls[sp.id] = e; spriteLayer.appendChild(e); }
+      });
+      board.insertBefore(spriteLayer, pen);
+    }
+    function buildSched() {
+      if (!audioSeg || !g.NarrationSync) return;
+      var s = plan.steps[st.i], cues = (s.anim && s.anim.cues) || [], ids = Object.keys(spriteEls);
+      var dur = au && isFinite(au.duration) && au.duration > 0 ? au.duration : audioSeg.duration;
+      sched = g.NarrationSync.createScheduler(g.NarrationSync.buildEvents(audioSeg, cues.length, ids, dur), {
+        reset: function () { resetDyn(); resetSprites(); },
+        start: function (ev, inst) {
+          instant = !!inst;
+          try { if (ev.kind === "cue") doCue(cues[ev.cue]); else g.NarrationSprites.start(spriteEls[ev.target], ev.action, !!inst); } catch (e) {}
+          instant = false;
+        },
+        end: function (ev) { if (ev.kind === "sprite") g.NarrationSprites.end(spriteEls[ev.target]); }
+      });
+      tick(true);
+    }
+    function tick(restore) {
+      if (!audioSeg) return;
+      if (!sched) { buildSched(); return; }
+      sched.sync(au.currentTime, { restore: !!restore });
+      arm();
+    }
+    function arm() {
+      clearTimeout(wake); wake = 0;
+      if (!sched || !au || au.paused || au.ended) return;
+      var n = sched.nextAt(au.currentTime); if (n === null) return;
+      wake = setTimeout(function () { tick(false); }, Math.max(0, (n - au.currentTime) / (au.playbackRate || 1) * 1000) + 5);
+    }
+    function updateSeek() { if (!au || !audioSeg || dragging) return; var d = au.duration; if (isFinite(d) && d > 0) seek.value = Math.round(au.currentTime / d * 1000); }
+    seek.oninput = function () { dragging = true; if (au && audioSeg && isFinite(au.duration)) au.currentTime = seek.value / 1000 * au.duration; };
+    seek.onchange = function () { dragging = false; updateSeek(); };
+    function onEnded() {
+      if (!audioSeg) return;
+      var tok = audioTok;
+      clearTimeout(wake); wake = 0;
+      Object.keys(spriteEls).forEach(function (k) { g.NarrationSprites.end(spriteEls[k]); });   // nothing keeps animating after the audio has ended
+      seek.value = 1000; advance(tok);
+    }
+    function failAudio() {
+      audioFailed[lang + ":" + st.i] = true;
+      var playing = st.playing; stopAudio();
+      msg.textContent = "Is step ki narration audio nahi chal payi" + (g.speechSynthesis ? ", browser awaaz use ho rahi hai." : ".");
+      if (playing) speak();                                  // segFor() is null now, so the existing browser voice takes over
+    }
+    function onAudioError() {
+      if (!audioSeg) return;
+      var seg = audioSeg, key = lang + ":" + st.i, tok = audioTok;
+      clearTimeout(wake); wake = 0;
+      if (narrOpts && narrOpts.refreshUrl && !retried[key]) {   // expired signed link: ask for a new one once
+        retried[key] = true; msg.textContent = "Audio ka naya link ban raha hai...";
+        Promise.resolve(narrOpts.refreshUrl(seg, lang, st.i)).then(function (url) {
+          if (tok !== st.token) return;
+          if (!url) throw new Error("no url");
+          seg.url = url; var playing = st.playing; stopAudio(); if (playing) speakAudio(seg);
+        }).catch(function () { if (tok === st.token) failAudio(); });
+        return;
+      }
+      failAudio();
+    }
+    function ensureAudio() {
+      if (au) return au;
+      au = new Audio(); au.preload = "auto";
+      au.addEventListener("loadedmetadata", function () { if (audioSeg) { buildSched(); updateSeek(); } });
+      au.addEventListener("playing", function () { if (!audioSeg) return; msg.textContent = ""; retried[lang + ":" + st.i] = false; pausedVisual(false); tick(false); });
+      au.addEventListener("waiting", function () { if (audioSeg && st.playing) msg.textContent = "Audio load ho rahi hai..."; });
+      au.addEventListener("play", function () { if (audioSeg) pausedVisual(false); });
+      au.addEventListener("pause", function () { if (audioSeg && !au.ended) { pausedVisual(true); clearTimeout(wake); wake = 0; } });
+      au.addEventListener("timeupdate", function () { if (audioSeg) { tick(false); updateSeek(); } });
+      au.addEventListener("seeked", function () { if (audioSeg) { tick(true); updateSeek(); } });
+      au.addEventListener("ended", onEnded);
+      au.addEventListener("error", onAudioError);
+      return au;
+    }
+    function speakAudio(seg) {
+      var tok = ++st.token; audioTok = tok;
+      clearTimeout(st.timer); if (g.speechSynthesis) g.speechSynthesis.cancel();    // the browser voice must never talk over the narration
+      ensureAudio();
+      audioSeg = seg; sched = null;
+      prepareAudioStep(st.i);
+      seek.style.display = ""; seek.value = 0; dragging = false;
+      msg.textContent = "Audio load ho rahi hai..."; pausedVisual(false);
+      au.src = seg.url; try { au.currentTime = 0; } catch (e) {}
+      buildSched();
+      var pr = au.play();
+      if (pr && pr.catch) pr.catch(function (e) {
+        if (tok !== st.token || (e && e.name === "AbortError")) return;
+        st.playing = false; bPlay.textContent = "Play";
+        msg.textContent = e && e.name === "NotAllowedError" ? "Browser ne audio apne aap chalne nahi di. Play dabao." : "Audio nahi chal payi.";
+      });
+    }
+
+    function stopSpeech() { st.token++; clearTimeout(st.timer); clearCues(); stopAudio(); if (g.speechSynthesis) g.speechSynthesis.cancel(); }
     function advance(tok) {
       if (tok !== st.token || !st.playing) return;
       st.timer = setTimeout(function () {
@@ -378,6 +514,7 @@
         (code === "en" ? list.filter(function (v) { return /en-IN/i.test(v.lang); })[0] : null) || list[0] || null;
     }
     function speak() {
+      var aseg = segFor(st.i); if (aseg) return speakAudio(aseg);                  // narration MP3 exists for this language + step
       var tok = ++st.token, s = plan.steps[st.i], say = s.say || {}, code = regionalCode() || "en", text;
       if (code !== "en" && !pickList(code).length) code = "en";                   // is language ki voice nahi: English line, English awaaz
       text = code === "en" ? say.en : (say[code] || (code === "hi" ? say.en : ""));
@@ -398,8 +535,16 @@
         g.speechSynthesis.speak(u);
       })();
     }
-    function play() { st.playing = true; bPlay.textContent = "Pause"; speak(); }
-    function pause() { st.playing = false; stopSpeech(); bPlay.textContent = "Play"; }
+    function play() {
+      st.playing = true; bPlay.textContent = "Pause";
+      if (audioSeg && au && !au.ended && au.getAttribute("src")) { var pr = au.play(); if (pr && pr.catch) pr.catch(function () {}); return; }   // resume the same audio
+      speak();
+    }
+    function pause() {
+      st.playing = false; bPlay.textContent = "Play";
+      if (audioSeg && au && !au.ended) { au.pause(); return; }                  // audio + animations freeze together (the pause event does the rest)
+      stopSpeech();
+    }
     function go(i, resume) {
       if (i < 0 || i >= plan.steps.length) return;
       stopSpeech(); show(i); if (resume) { st.playing = true; speak(); }
@@ -485,7 +630,7 @@
       var b = e.target.closest && e.target.closest('[data-act="mv"]'); if (!b) return;
       var p = MV[b.dataset.code]; if (!p) return;
       try { var card = b.closest("[data-qid]"); if (card && typeof ui === "function") { ui(card.dataset.qid).qm = false; draw(); } } catch (x) {}
-      open(p);
+      if (g.NarrationLoader) g.NarrationLoader.open(p, b.dataset.code); else open(p);     // narration (if the admin made it) attaches itself; otherwise exactly as before
     });
   }
 })(typeof window !== "undefined" ? window : globalThis);

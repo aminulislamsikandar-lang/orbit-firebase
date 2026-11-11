@@ -589,7 +589,7 @@ window.onCloudVideos=list=>{CLOUD_V=Array.isArray(list)?list:[];mergeV()};
 function videosHTML(c,ch){
  const vs=VIDEOS.filter(v=>!v.qid&&(v.course||'c10-science')===c.id&&v.chapter===ch.no);if(!vs.length)return'';
  return `<div class="vid"><h2 class="sec">Video lessons</h2>${vs.map(v=>{const s=VID[v.id]||{};
-  return `<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button>${s.url?`<video controls playsinline preload="metadata" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}</div>`}).join('')}</div>`;
+  return `<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button>${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}</div>`}).join('')}</div>`;
 }
 // ---- videos tied to ONE question: the admin adds them with 3-dot menu > Add video (public/qvideo.js, Admin mode) ----
 const qVids=qid=>VIDEOS.filter(v=>v.qid===qid);
@@ -598,7 +598,7 @@ function qvHTML(q){
  const adm=!!(window.QVideo&&window.QVideo.active());
  return `<div class="vid qv">${vs.map(v=>{const s=VID[v.id]||{};
   const row=adm?`<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button><button class="qvd" data-act="qvdel" data-id="${esc(v.id)}" aria-label="Ye video hatao">Hatao</button></div>`:'';
-  return `${row}${s.url?`<video controls playsinline preload="metadata" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}`}).join('')}</div>`;
+  return `${row}${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}`}).join('')}</div>`;
 }
 const qvMenuVideos=id=>{const vs=qVids(id);return vs.map((v,i)=>`<button class="qmi" role="menuitem" data-act="qvopen" data-id="${esc(v.id)}">${I.vid}<span>Video${vs.length>1?` (${i+1})`:''}</span></button>`).join('')};
 const qvMenuItem=id=>window.QVideo&&window.QVideo.active()?`<button class="qmi" role="menuitem" data-act="qvadd" data-id="${id}">${I.vid}<span>Add video</span></button>`:'';
@@ -631,7 +631,7 @@ async function openCodeVideo(rec){
   s.loading=false;draw();
   if(rec.kind==='plan'){
    if(!s.code.plan||!window.MathVideoPlayer)throw new Error('Video player load nahi hua. Page refresh karo.');
-   stopSay();window.MathVideoPlayer.open(s.code.plan);
+   stopSay();if(window.NarrationLoader)window.NarrationLoader.open(s.code.plan,rec.id);else window.MathVideoPlayer.open(s.code.plan);
   }else{
    if(typeof s.code.html!=='string')throw new Error('Video nahi mili.');
    openHtmlVideo(rec.title,s.code.html);
@@ -1072,7 +1072,13 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 </script>
 <script src="/team.js"></script>
 <script src="/mathvideo-admin.js"></script>
+<script src="/narration-sync.js"></script>
+<script src="/narration-sprites.js"></script>
 <script src="/mathvideo-player.js"></script>
+<script src="/narration-loader.js"></script>
+<script src="/voiceover.js"></script>
+<script src="/voiceover-admin.js"></script>
+<script src="/narration-admin.js"></script>
 <script src="/video-admin.js"></script>
 <script src="/qvideo.js"></script>
 <script src="/analytics.js"></script>

@@ -4,7 +4,9 @@ const crypto = require('crypto');
 const QUIZ = require('./questions');
 
 const app = express();
-app.use(express.json({ limit: '10kb' }));
+const jsonSmall = express.json({ limit: '10kb' });
+const jsonNarration = express.json({ limit: '128kb' });      // Assamese/Hindi text is 3 bytes per character, so narration text needs more room
+app.use((req, res, next) => (req.path === '/api/narration/generate' ? jsonNarration : jsonSmall)(req, res, next));
 
 // ---- CORS + Firebase login check --------------------------------------------
 // The website lives on Firebase Hosting; this server only answers AI requests from logged-in users.
@@ -1023,6 +1025,70 @@ app.post('/api/video/upload-url', async (req, res) => {
   } catch (e) {
     console.error('B2 upload sign failed', e.message);
     res.status(502).json({ error: 'Upload ka link nahi ban paya. Dobara try karo.' });
+  }
+});
+
+// ---- AI narration (Sonex Labs) -> private Backblaze B2 ---------------------------------------------------------
+// Render env vars: SONEX_API_KEY, SONEX_BASE_URL (optional), SONEX_DEFAULT_VOICE_ID (optional), NARRATION_URL_TTL (seconds, default 3600),
+// NARRATION_FREE=true (optional: narration is free for everyone even when REQUIRE_SUBSCRIPTION=true).
+// Audio is generated ONCE by the admin (never when a student presses play), stored under audio/generated/... and only short-lived signed links are handed out.
+const { HeadObjectCommand } = require('@aws-sdk/client-s3');
+const { createSonex } = require('./sonex');
+const NARR = require('./narration');
+const SONEX = createSonex({ apiKey: process.env.SONEX_API_KEY, baseUrl: process.env.SONEX_BASE_URL, defaultVoiceId: process.env.SONEX_DEFAULT_VOICE_ID });
+const narrationStore = {
+  async head(key) {
+    try { const r = await B2.send(new HeadObjectCommand({ Bucket: process.env.B2_BUCKET, Key: key })); return { size: Number(r.ContentLength) || 0 }; }
+    catch (e) { if (e && (e.name === 'NotFound' || (e.$metadata && e.$metadata.httpStatusCode === 404))) return null; throw e; }
+  },
+  async put(key, buf) {
+    await B2.send(new PutObjectCommand({ Bucket: process.env.B2_BUCKET, Key: key, Body: buf, ContentLength: buf.length, ContentType: 'audio/mpeg', CacheControl: 'private, max-age=31536000' }));
+  }
+};
+const NARRATION = NARR.createNarration({ sonex: SONEX, store: narrationStore, log: (...a) => console.error('narration:', ...a) });
+const narrationErr = (res, e) => res.status(e && e.status >= 400 && e.status < 600 ? e.status : 500).json({ error: (e && e.code) ? e.message : 'Narration mein problem aayi.', code: (e && e.code) || 'ERROR' });
+
+// Admin: voices available on the Sonex account (+ which one is the default).
+app.get('/api/narration/voices', async (req, res) => {
+  if (!isAdminReq(req)) return res.status(403).json({ error: 'Sirf admin.' });
+  try {
+    const voices = await SONEX.listVoices(req.query.refresh === '1');
+    res.json({ voices, defaultVoiceId: SONEX.defaultVoiceId || null });
+  } catch (e) { narrationErr(res, e); }
+});
+
+// Admin: generate (or reuse) the MP3 of each segment. Body: { lessonId, folder?, language, voiceId?, speed?, segments:[{index?, text}] }
+// Answer: per-segment { status, audioKey, contentHash, bytes, cached }. The admin page saves this to Firestore narration/<lessonId>.
+app.post('/api/narration/generate', async (req, res) => {
+  if (!isAdminReq(req)) return res.status(403).json({ error: 'Sirf admin narration bana sakta hai.' });
+  if (!SONEX.configured()) return res.status(503).json({ error: 'Sonex abhi set nahi hai (Render mein SONEX_API_KEY daalo).', code: 'NOT_CONFIGURED' });
+  if (!B2) return res.status(503).json({ error: 'Audio storage (Backblaze) abhi set nahi hai.', code: 'NO_STORAGE' });
+  try { res.json(await NARRATION.generate(req.body)); }
+  catch (e) { narrationErr(res, e); }
+});
+
+// Student: short-lived links for the audio of ONE lesson. Body: { lessonId, keys:[...] }. Never signs a key that is not a narration file of that lesson.
+const NARR_TTL = Math.min(86400, Math.max(60, parseInt(process.env.NARRATION_URL_TTL || '3600', 10) || 3600));
+async function lessonIsFree(req, lessonId) {
+  if (process.env.NARRATION_FREE === 'true') return true;
+  const id = String(lessonId).toLowerCase();
+  const v = VBY.get(id) || await fsVideo(req, id);                      // same lookup as /api/video: videos.js list, then videos/<id> in Firestore (both carry `free`)
+  return !!(v && v.free);
+}
+app.post('/api/narration/url', async (req, res) => {
+  const { lessonId, keys } = req.body || {};
+  if (typeof lessonId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{2,119}$/.test(lessonId)) return res.status(400).json({ error: 'Lesson galat hai.' });
+  if (!Array.isArray(keys) || !keys.length || keys.length > 30) return res.status(400).json({ error: 'Audio keys galat hain.' });
+  if (!keys.every(k => NARR.keyBelongsToLesson(k, lessonId))) return res.status(400).json({ error: 'Ye audio is lesson ki nahi hai.' });
+  if (!B2) return res.status(503).json({ error: 'Audio storage abhi set nahi hai.' });
+  if (!isAdminReq(req) && !(await hasAccess(req, { free: await lessonIsFree(req, lessonId) }))) return res.status(403).json({ error: 'Ye narration sunne ke liye subscription chahiye.' });
+  try {
+    const urls = {};
+    for (const k of keys) urls[k] = await getSignedUrl(B2, new GetObjectCommand({ Bucket: process.env.B2_BUCKET, Key: k }), { expiresIn: NARR_TTL });
+    res.json({ urls, expiresIn: NARR_TTL });
+  } catch (e) {
+    console.error('narration sign failed', e.message);
+    res.status(502).json({ error: 'Audio ka link nahi ban paya. Dobara try karo.' });
   }
 });
 

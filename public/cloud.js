@@ -3,7 +3,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithPopup, signInWithRedirect, GoogleAuthProvider, signOut }
   from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, documentId }
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, documentId, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -41,6 +41,12 @@ async function loadPeople() {
 }
 
 window.CLOUD = {
+  // AI narration metadata (collection narration, doc id = lesson code): audio KEYS and timings only, never audio. Read: signed-in. Write: admin only (firestore.rules).
+  narration: {
+    async get(id) { const s = await getDoc(doc(db, 'narration', id)); return s.exists() ? s.data() : null; },
+    set(id, data) { const d = JSON.parse(JSON.stringify(data)); d.updatedAt = serverTimestamp(); return setDoc(doc(db, 'narration', id), d); },
+    del(id) { return deleteDoc(doc(db, 'narration', id)); }
+  },
   // Maths video plans (collection mathVideos, doc id = question code). Read: signed-in. Write: admin only (firestore.rules).
   mathVideo: {
     async get(code) { const s = await getDoc(doc(db, 'mathVideos', code)); return s.exists() ? s.data() : null; },
