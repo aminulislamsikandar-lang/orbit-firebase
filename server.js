@@ -1289,7 +1289,28 @@ function mvParse(text) {
   let t = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
   const a = t.indexOf('{'), b = t.lastIndexOf('}');
   if (a < 0 || b <= a) return null;
-  try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { return null; }
+  t = t.slice(a, b + 1);
+  const tries = [
+    t,
+    t.replace(/,\s*([}\]])/g, '$1'),                                   // trailing commas
+    t.replace(/,\s*([}\]])/g, '$1').replace(/\\(?!["\\/bfnrtu])/g, '\\\\')   // stray backslashes such as \( or \times
+  ];
+  for (const x of tries) { try { return JSON.parse(x); } catch (e) { /* try the next repair */ } }
+  return null;
+}
+// Small models often give a highlight index that does not exist. Highlight is only emphasis, so drop the bad indexes instead of throwing the whole video away.
+function mvFix(plan) {
+  if (!plan || !Array.isArray(plan.steps)) return plan;
+  for (const st of plan.steps) {
+    const a = st && st.anim;
+    if (!a || typeof a !== 'object' || !Array.isArray(a.lines)) continue;
+    a.highlight = Array.isArray(a.highlight) ? [...new Set(a.highlight.filter(n => Number.isInteger(n) && n >= 0 && n < a.lines.length))] : [];
+  }
+  return plan;
+}
+function mvBad(label, r) {      // log WHY a reply was unusable (first/last part only)
+  const t = String((r && r.text) || '');
+  console.error(label + ' reply was not usable JSON (' + (r.provider || 'gemini') + ', ' + t.length + ' chars): ' + JSON.stringify(t.slice(0, 160)) + ' ... ' + JSON.stringify(t.slice(-80)));
 }
 
 // Get Video accepts ONLY questions that exist in the app (the same text "Copy question" gives). Typed text or another subject is refused.
@@ -1341,12 +1362,13 @@ app.post('/api/mathvideo/generate', async (req, res) => {
     const r = await gemini(mvSystem(eng, raw), prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
-    if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
+    if (!plan) { mvBad('Video', r); prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
     if (plan.unsupported) {
       const out = { unsupported: true, reason: String(plan.reason || 'Is type ka video abhi nahi ban sakta.').slice(0, 200) };
       MV_CACHE.set(norm, out);
       return res.json(out);
     }
+    mvFix(plan);
     plan.id = 'ask-' + crypto.createHash('sha1').update(norm).digest('hex').slice(0, 20);
     const v = MV.validate(plan, { question: raw });   // True/False plans are checked against the statement in the question
     // soft problems: spoken-Hindi issues and too-short / motionless plans. Retry if there is time; the last try is always accepted.
@@ -1456,13 +1478,14 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
     const r = await gemini(SCI_SYSTEM, prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
-    if (!plan) { prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
+    if (!plan) { mvBad('Video', r); prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
     if (plan.unsupported) {
       const out = { unsupported: true, reason: String(plan.reason || 'Is type ka video abhi nahi ban sakta.').slice(0, 200) };
       MV_CACHE.set(norm, out);
       return res.json(out);
     }
     plan.type = 'science';
+    mvFix(plan);
     plan.id = 'ask-' + crypto.createHash('sha1').update(norm).digest('hex').slice(0, 20);
     const v = MV.validate(plan, { question: typed });
     const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : sciQuality(plan));
