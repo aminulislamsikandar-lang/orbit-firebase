@@ -20,7 +20,7 @@ app.use('/api', (req, res, next) => {
   if (o && ORIGINS.includes(o)) {
     res.setHeader('Access-Control-Allow-Origin', o);
     res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-User-Key');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   }
   if (req.method === 'OPTIONS') return res.sendStatus(204);
@@ -40,6 +40,18 @@ app.use(express.static(path.join(__dirname, 'public')));
 // GEMINI_API_KEY (single) still works. When one key hits its free limit, the next key is used automatically.
 const KEYS = [...new Set([...(process.env.GEMINI_API_KEYS || '').split(','), process.env.GEMINI_API_KEY || ''].map(k => k.trim()).filter(Boolean))];
 const KEY = KEYS[0];
+const USER_KEY_RE = /^AIza[0-9A-Za-z_-]{35}$/;
+const userKeyOf = req => { const k = String(req.headers['x-user-key'] || '').trim(); return USER_KEY_RE.test(k) ? k : ''; };
+// Free daily limit for people without their own key. In memory: resets if Render restarts.
+const FREE_DAILY = 1, FREE_USED = new Map();
+const dayKey = () => new Date(Date.now() + 19800000).toISOString().slice(0, 10);   // IST day
+function takeFree(uid) {
+  const k = uid + '|' + dayKey(), n = FREE_USED.get(k) || 0;
+  if (n >= FREE_DAILY) return false;
+  FREE_USED.set(k, n + 1); return true;
+}
+function freeLeft(uid) { return Math.max(0, FREE_DAILY - (FREE_USED.get(uid + '|' + dayKey()) || 0)); }
+setInterval(() => { const d = dayKey(); for (const k of FREE_USED.keys()) if (!k.endsWith('|' + d)) FREE_USED.delete(k); }, 3600000).unref();
 let keyStart = 0; // round-robin so load is spread across keys
 // Models are tried in priority order: first one first. Set GEMINI_MODELS in Render, comma separated,
 // e.g. GEMINI_MODELS=gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.8-flash
@@ -469,13 +481,13 @@ async function fallbackChat(system, prompt, opts, deadline, lastStatus) {
 async function gemini(system, prompt, opts = {}) {
   const t0 = Date.now();
   const BUDGET = opts.budgetMs || 55000;
-  const fbIds = (opts.fallback || ['groq', 'openrouter']).filter(id => FALLBACK[id] && FALLBACK[id].key());
+  const fbIds = opts.userKey ? [] : (opts.fallback || ['groq', 'openrouter']).filter(id => FALLBACK[id] && FALLBACK[id].key());
   const reserve = fbIds.length ? Math.min(opts.fbMs || 15000, Math.floor(BUDGET / 2)) : 0;   // time kept back for the backup providers
   const DEADLINE = t0 + BUDGET - reserve;
   let lastStatus = 0;
   let useJson = !!opts.json;
   const start = keyStart++ % Math.max(KEYS.length, 1);
-  const order = KEYS.map((_, i) => KEYS[(start + i) % KEYS.length]);
+  const order = opts.userKey ? [opts.userKey] : KEYS.map((_, i) => KEYS[(start + i) % KEYS.length]);
   // Overload (503), timeout and wrong-model errors belong to the MODEL, so the other keys would hit the same wall: jump straight to the next model.
   // Only 429 (this key's own quota) moves on to the next key of the same model.
   modelLoop:
@@ -545,13 +557,25 @@ function guard(req, res) {
   return hit;
 }
 function guardAI(req, res) {
-  if (!KEYS.length) { res.status(500).json({ error: 'Server mein GEMINI_API_KEY set nahi hai.' }); return false; }
+  if (!KEYS.length && !userKeyOf(req)) { res.status(500).json({ error: 'Server mein GEMINI_API_KEY set nahi hai.' }); return false; }
   if (limited(req.ip)) { res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' }); return false; }
   return true;
 }
 
 app.get('/api/ping', (req, res) => res.json({ ok: true, upload: process.env.VIDEO_UPLOAD === 'true' && !!B2 })); // wakes the sleeping Render server
 app.get('/api/questions', (req, res) => res.json(PUBLIC));
+
+// ---- parent-assisted BYOK: check a key the parent pasted. The key is used once and never stored or logged. ----
+app.post('/api/byok/test', async (req, res) => {
+  const k = userKeyOf(req);
+  if (!k) return res.status(400).json({ code: 'bad_format' });
+  if (limited(req.ip)) return res.status(429).json({ code: 'busy' });
+  const r = await gemini('Reply with the single word OK.', 'ping', { userKey: k, maxTokens: 8, budgetMs: 12000, models: [MODELS[0]] });
+  if (r.text) return res.json({ ok: true });
+  const s = r.status;
+  res.status(s === 429 ? 429 : 400).json({ code: (s === 400 || s === 403) ? 'invalid' : s === 429 ? 'quota' : 'busy' });
+});
+app.get('/api/recall/quota', (req, res) => res.json({ left: freeLeft(req.user.uid) }));
 
 // ---- answer ---------------------------------------------------------------
 app.post('/api/answer', async (req, res) => {

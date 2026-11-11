@@ -103,6 +103,8 @@ window.CLOUD = {
     }
   },
   logout() { return signOut(auth); },
+  // Parent consent for BYOK: users/{uid}/consent/byok (covered by the existing users/{uid}/** rule).
+  async consentSet(d) { if (!auth.currentUser) throw new Error('login'); return setDoc(doc(db, 'users', auth.currentUser.uid, 'consent', 'byok'), { ...d, at: serverTimestamp() }); },
   async token() { return auth.currentUser ? auth.currentUser.getIdToken() : null; },
   async push({ saved, pins, settings }) {
     const user = auth.currentUser; if (!user) return;
