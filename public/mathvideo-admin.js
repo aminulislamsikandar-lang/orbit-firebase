@@ -211,6 +211,17 @@
     keys.forEach(function (k) { str(o[k], max, path + "." + k, errors, true); });
   }
 
+  /* Optional Assamese ("as") and Bengali ("bn") text. Plans made before this feature do not have it. Both use the Bengali-Assamese script block. */
+  function optLangs(o, max, path, errors, warnings, spoken) {
+    if (!o || typeof o !== "object") return;
+    ["as", "bn"].forEach(function (k) {
+      if (o[k] === undefined) return;
+      if (!str(o[k], max, path + "." + k, errors, true) || !spoken) return;
+      if (/[0-9]/.test(o[k])) warnings.push(path + "." + k + " me digits hain — numbers ko English words me likho (jaise minus three)");
+      if (!/[\u0980-\u09FF]/.test(o[k])) warnings.push(path + "." + k + " Bengali-Assamese script me nahi hai");
+    });
+  }
+
   /* ---------- number line + cues (optional) ---------- */
   var COLORS = ["red", "green", "blue", "orange"];
   function isInt(n) { return typeof n === "number" && Number.isInteger(n); }
@@ -266,6 +277,7 @@
     if (plan.type !== "equation" && !sci) errors.push("type \"equation\" ya \"science\" hona chahiye");
     if (plan.version !== 1) errors.push("version 1 hona chahiye");
     langs(plan.title, ["en", "hg", "hi"], MAX_LEN, "title", errors);
+    optLangs(plan.title, MAX_LEN, "title", errors, warnings, false);
     if (!Array.isArray(plan.steps) || plan.steps.length < 1 || plan.steps.length > MAX_STEPS) {
       errors.push("steps 1 se " + MAX_STEPS + " ke beech hone chahiye"); return { errors: errors, warnings: warnings };
     }
@@ -273,7 +285,9 @@
       var p = "steps[" + (i + 1) + "]";
       if (!st || typeof st !== "object") { errors.push(p + ": object chahiye"); return; }
       langs(st.cap, ["en", "hg", "hi"], MAX_LEN, p + ".cap", errors);
+      optLangs(st.cap, MAX_LEN, p + ".cap", errors, warnings, false);
       langs(st.say, ["en", "hi"], MAX_LEN, p + ".say", errors);
+      optLangs(st.say, MAX_LEN, p + ".say", errors, warnings, true);
       if (st.say && typeof st.say.hi === "string") {
         if (/[0-9]/.test(st.say.hi)) warnings.push(p + ".say.hi me digits hain — numbers ko Devanagari words me likho");
         if (!/[\u0900-\u097F]/.test(st.say.hi)) warnings.push(p + ".say.hi Devanagari me nahi hai");
@@ -427,6 +441,17 @@
 
     btn("Validate", parse);
     if (opts.preview) btn("Preview", function () { var r = parse(); if (r) opts.preview(r.plan); });
+    // Adds Assamese + Bengali text to the plan in the box (the server translates the English text). Read it, then Save / Approve as usual.
+    if (opts.translate) btn("Assamese/Bengali text banao", function () {
+      var plan; try { plan = JSON.parse(area.value); } catch (e) { say(["JSON galat hai: " + e.message]); return; }
+      var r0 = validate(plan); if (r0.errors.length) { say(["Pehle plan valid karo:"].concat(r0.errors)); return; }
+      say(["Assamese aur Bengali text ban raha hai… (20 se 50 second)"], true);
+      opts.translate(plan).then(function (res) {
+        area.value = JSON.stringify(res.plan, null, 2);
+        var r1 = validate(res.plan);
+        say(["Ban gaya: " + res.added.join(" + ").toUpperCase() + ". Padh kar check karo, phir Save / Approve dabao."].concat(r1.warnings.map(function (w) { return "Dhyan: " + w; })), true);
+      }, function (e) { say(["Translate nahi hua: " + (e && e.message ? e.message : e)]); });
+    });
     btn("Save", function () {
       var r = parse(); if (!r) return;
       store.set(r.code, r.plan).then(function () { say(["Saved: " + r.code], true); refresh(); },

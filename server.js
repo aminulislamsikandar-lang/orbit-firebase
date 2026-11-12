@@ -6,7 +6,8 @@ const QUIZ = require('./questions');
 const app = express();
 const jsonSmall = express.json({ limit: '10kb' });
 const jsonNarration = express.json({ limit: '128kb' });      // Assamese/Hindi text is 3 bytes per character, so narration text needs more room
-app.use((req, res, next) => (req.path === '/api/narration/generate' ? jsonNarration : jsonSmall)(req, res, next));
+const jsonPlan = express.json({ limit: '128kb' });             // a video plan with Hindi text is bigger than 10 kb
+app.use((req, res, next) => (req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : jsonSmall)(req, res, next));
 
 // ---- CORS + Firebase login check --------------------------------------------
 // The website lives on Firebase Hosting; this server only answers AI requests from logged-in users.
@@ -1118,6 +1119,78 @@ app.post('/api/narration/url', async (req, res) => {
   }
 });
 
+// ---- Assamese + Bengali text for a video plan (a second, small AI call) ----------------------------------
+// The main call writes en / hg / hi. This call adds "as" and "bn" (title, caption and spoken line of every step), translated from the ENGLISH
+// text, so a student can pick Assamese or Bengali in the player. Best effort: if it fails or time is short, the video still works and the player
+// shows the English text. The player's "English words" slider works on the Latin-letter phrases kept here (minus three, equal to ...).
+const MV_TR_LANGS = ['as', 'bn'];
+const MV_TR_MS = 24000;       // time for the translation call
+const MV_HARD = 85000;        // the app gives up waiting at 90 s: translation must end before this (measured from the start of the request)
+const MV_TR_CACHE = new Map();   // sha1(English text) -> { as: {title, steps:[{cap, say}]}, bn: {...} }. The same English text is never translated twice.
+const MV_TR_BUSY = new Map();    // same key -> Promise, so two students asking at the same time share one AI call
+const MV_TR_SYSTEM = `You translate the captions and spoken lines of a school maths or science video (Class 6-8) from English into Assamese and Bengali.
+Input: JSON {"title": "...", "steps": [{"cap": "...", "say": "..."}]} in English.
+Reply with ONE JSON object only, no markdown: {"as": {"title": "...", "steps": [{"cap": "...", "say": "..."}]}, "bn": {"title": "...", "steps": [{"cap": "...", "say": "..."}]}}
+"as" and "bn" must each have exactly the same number of steps as the input, in the same order.
+- "as" = Assamese in Assamese script (use ৰ and ৱ correctly). "bn" = Bengali in Bengali script. Simple, friendly, spoken school language.
+- In every "say": keep each maths expression, every number and the words plus, minus, into, equal to in ENGLISH LETTERS, copied exactly from the English line (for example "minus eight plus five", "three into four"). A text-to-speech engine reads those parts with an English voice. Never write digits in "say" (the English line already has the numbers as words). Translate all the other words. Do not attach Assamese or Bengali suffixes to an English phrase: rephrase so that the English phrase stands on its own, usually at the end of the sentence.
+- In "cap" and "title" you may keep digits and symbols exactly as in the English text, for example (-8) + 5.
+- Each text is at most 140 characters. No HTML, no links, no emoji.
+Example. English say: "Our question is minus eight plus five." -> bn: "আমাদের প্রশ্ন হলো minus eight plus five।", as: "আমাৰ প্ৰশ্ন হ'ল minus eight plus five।"`;
+const mvTrSource = plan => ({ title: plan.title.en, steps: plan.steps.map(st => ({ cap: st.cap.en, say: st.say.en })) });
+const mvHasLangs = plan => MV_TR_LANGS.every(k => typeof plan.title[k] === 'string' && plan.steps.every(st => st.cap && st.say && typeof st.cap[k] === 'string' && typeof st.say[k] === 'string'));
+function mvApplyLang(plan, k, tr) { plan.title[k] = tr.title; plan.steps.forEach((st, i) => { st.cap[k] = tr.steps[i].cap; st.say[k] = tr.steps[i].say; }); }
+async function mvTranslateCall(src, budgetMs) {
+  const r = await gemini(MV_TR_SYSTEM, JSON.stringify(src), { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 8000, temperature: 0.2, maxTokens: 8192, reqMs: Math.min(30000, budgetMs), budgetMs });
+  if (!r.text) return null;
+  const o = mvParse(r.text);
+  if (!o || typeof o !== 'object') { mvBad('Translate', r); return null; }
+  const out = {};
+  for (const k of MV_TR_LANGS) {      // keep a language only if its shape is right (same number of steps, every cap and say a string)
+    const x = o[k];
+    if (x && typeof x.title === 'string' && Array.isArray(x.steps) && x.steps.length === src.steps.length && x.steps.every(s => s && typeof s.cap === 'string' && typeof s.say === 'string')) {
+      out[k] = { title: x.title.trim(), steps: x.steps.map(s => ({ cap: s.cap.trim(), say: s.say.trim() })) };
+    }
+  }
+  return out;
+}
+// Adds "as" / "bn" to the plan (in place). Returns the languages that were added ([] if nothing was added). Never throws.
+// valOpts = the same options the plan was validated with (the question, for True/False plans). Each language must pass the validator on its own.
+async function mvLangs(plan, budgetMs, valOpts) {
+  try {
+    if (!plan || !plan.title || !Array.isArray(plan.steps) || !plan.steps.length || mvHasLangs(plan) || !(budgetMs >= 8000)) return [];
+    const src = mvTrSource(plan), key = crypto.createHash('sha1').update(JSON.stringify(src)).digest('hex');
+    let got = MV_TR_CACHE.get(key);
+    if (!got) {
+      if (!MV_TR_BUSY.has(key)) MV_TR_BUSY.set(key, mvTranslateCall(src, budgetMs).finally(() => MV_TR_BUSY.delete(key)));
+      got = await MV_TR_BUSY.get(key);
+      if (got && MV_TR_LANGS.every(k => got[k])) { MV_TR_CACHE.set(key, got); if (MV_TR_CACHE.size > 500) MV_TR_CACHE.delete(MV_TR_CACHE.keys().next().value); }
+    }
+    const added = [];
+    for (const k of MV_TR_LANGS) {
+      if (!got || !got[k]) continue;
+      const c = JSON.parse(JSON.stringify(plan)); mvApplyLang(c, k, got[k]);
+      const v = MV.validate(c, valOpts), mine = new RegExp('\\.' + k + '(:|\\s|$)');
+      if (v.errors.some(e => mine.test(e)) || v.warnings.some(w => mine.test(w))) { console.error('MathVideo translate ' + k + ' rejected:', v.errors.concat(v.warnings).filter(m => mine.test(m)).slice(0, 3).join(' | ')); continue; }
+      mvApplyLang(plan, k, got[k]); added.push(k);
+    }
+    return added;
+  } catch (e) { console.error('MathVideo translate failed:', e && e.message); return []; }
+}
+// Admin: add (or redo) Assamese + Bengali text for a plan that is already valid. Used by the "Assamese/Bengali text banao" button of the admin panel,
+// so videos that were approved before this feature get the text too.
+app.post('/api/mathvideo/translate', async (req, res) => {
+  if (!isAdminReq(req)) return res.status(403).json({ error: 'Sirf admin ye kar sakta hai.' });
+  if (!guardAI(req, res)) return;
+  const plan = (req.body || {}).plan, v = MV.validate(plan);
+  if (v.errors.length) return res.status(400).json({ error: 'Plan pehle valid hona chahiye: ' + v.errors.slice(0, 3).join(' | ') });
+  const copy = JSON.parse(JSON.stringify(plan));
+  MV_TR_LANGS.forEach(k => { delete copy.title[k]; copy.steps.forEach(st => { delete st.cap[k]; delete st.say[k]; }); });   // start clean: the admin asked for a fresh translation
+  const added = await mvLangs(copy, 50000, {});
+  if (!added.length) return res.status(502).json({ error: 'Assamese/Bengali text nahi ban paya. Thodi der baad dobara try karo.' });
+  res.json({ plan: copy, added });
+});
+
 // ---- Get Video: student pastes a maths question, AI makes a video plan (JSON) ----------------------------
 // The plan is checked by the same validator the admin panel uses (public/mathvideo-admin.js), including the
 // arithmetic check. If it fails, the errors are sent back to the AI and it tries again (within a time budget).
@@ -1361,7 +1434,7 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   const raw = MV.prepQuestion(typed);   // superscripts / ** / flattened powers -> ^N, before the AI sees the question
   const eng = [0, 1, 2, 3].includes(+(req.body || {}).eng) ? +(req.body || {}).eng : 2;   // English-words level from the student
   const norm = mvNorm(raw) + (eng === 2 ? '' : '|e' + eng);
-  if (MV_CACHE.has(norm)) return res.json({ ...MV_CACHE.get(norm), cached: true });
+  if (MV_CACHE.has(norm)) { const c = MV_CACHE.get(norm); if (c.plan) await mvLangs(c.plan, MV_TR_MS, { question: raw }); return res.json({ ...c, cached: true }); }   // an older cached plan gets its Assamese/Bengali text now
   const pre = mvPrecheck(raw);
   if (pre) { const out = { unsupported: true, reason: pre }; MV_CACHE.set(norm, out); return res.json(out); }   // cached per normalised question + level, like every unsupported answer
 
@@ -1375,11 +1448,12 @@ app.post('/api/mathvideo/generate', async (req, res) => {
 
   const t0 = Date.now(), TOTAL = 82000;
   let prompt = 'Question:\n"""\n' + raw + '\n"""', lastErrors = [], lastStatus = 0, best = null;
-  const mvDone = (plan, how) => {
+  const mvDone = async (plan, how) => {
+    const tr = await mvLangs(plan, Math.min(MV_TR_MS, MV_HARD - (Date.now() - t0)), { question: raw });   // Assamese + Bengali text (best effort)
     const out = { plan };
     MV_CACHE.set(norm, out);
     if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
-    console.log('MathVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps');
+    console.log('MathVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps', 'translated: ' + (tr.join(',') || 'none'));
     return res.json(out);
   };
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -1400,12 +1474,12 @@ app.post('/api/mathvideo/generate', async (req, res) => {
     // soft problems: spoken-Hindi issues and too-short / motionless plans. Retry if there is time; the last try is always accepted.
     const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : mvQuality(plan, raw));
     if (!v.errors.length) best = plan;                                    // newest valid plan = fallback if a later try fails
-    if (!v.errors.length && !(soft.length && attempt < 3)) return mvDone(plan, 'try ' + attempt);
+    if (!v.errors.length && !(soft.length && attempt < 3)) return await mvDone(plan, 'try ' + attempt);
     lastErrors = v.errors.length ? v.errors : soft;
     console.error('MathVideo invalid (try ' + attempt + '):', lastErrors.slice(0, 4).join(' | '));
     prompt = 'Question:\n"""\n' + raw + '\n"""\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
   }
-  if (best) return mvDone(best, 'fallback');                              // a valid (if plainer) plan beats an error
+  if (best) return await mvDone(best, 'fallback');                              // a valid (if plainer) plan beats an error
   if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
   res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Question ko seedha number wala likh ke dobara try karo.' });
 });
@@ -1477,7 +1551,7 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
   const hit = mvKnown(typed, 'Science');
   if (!hit) return res.status(400).json({ error: MV_UNKNOWN_MSG('Science') });
   const norm = 's|' + mvNorm(typed);
-  if (MV_CACHE.has(norm)) return res.json({ ...MV_CACHE.get(norm), cached: true });
+  if (MV_CACHE.has(norm)) { const c = MV_CACHE.get(norm); if (c.plan) await mvLangs(c.plan, MV_TR_MS, { question: typed }); return res.json({ ...c, cached: true }); }
 
   const email = String((req.user && req.user.email) || '').toLowerCase();
   if (!MV_ADMINS.includes(email)) {
@@ -1491,11 +1565,12 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
   const head = 'Chapter: ' + (hit.ch.title || hit.ch.name || '') + (hit.ch.context ? '\nTextbook notes for this chapter (explain only from these): ' + String(hit.ch.context).slice(0, 6000) : '') +
     (hit.q.context ? '\nNotes for this question: ' + String(hit.q.context).slice(0, 2000) : '') + '\n\nQuestion:\n"""\n' + typed + '\n"""';
   let prompt = head, lastErrors = [], lastStatus = 0, best = null;
-  const done = (plan, how) => {
+  const done = async (plan, how) => {
+    const tr = await mvLangs(plan, Math.min(MV_TR_MS, MV_HARD - (Date.now() - t0)), { question: typed });
     const out = { plan };
     MV_CACHE.set(norm, out);
     if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
-    console.log('ScienceVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps');
+    console.log('ScienceVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps', 'translated: ' + (tr.join(',') || 'none'));
     return res.json(out);
   };
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -1516,12 +1591,12 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
     const v = MV.validate(plan, { question: typed });
     const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : sciQuality(plan));
     if (!v.errors.length) best = plan;
-    if (!v.errors.length && !(soft.length && attempt < 3)) return done(plan, 'try ' + attempt);
+    if (!v.errors.length && !(soft.length && attempt < 3)) return await done(plan, 'try ' + attempt);
     lastErrors = v.errors.length ? v.errors : soft;
     console.error('ScienceVideo invalid (try ' + attempt + '):', lastErrors.slice(0, 4).join(' | '));
     prompt = head + '\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
   }
-  if (best) return done(best, 'fallback');
+  if (best) return await done(best, 'fallback');
   if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
   res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Thodi der baad dobara try karo.' });
 });

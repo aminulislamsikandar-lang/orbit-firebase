@@ -1,6 +1,6 @@
 // Orbit service worker: keeps the app page and fonts so the app opens offline.
 // API calls (/api/*) are never cached here; answers are stored by the page itself.
-const SHELL = 'orbit-shell-v24';
+const SHELL = 'orbit-shell-v25';
 const FONTS = 'orbit-fonts-v1';
 
 self.addEventListener('install', e => {
