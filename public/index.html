@@ -666,7 +666,7 @@ function openPV(id){
  const v=PVS.find(x=>x.id===id);if(!v)return;
  closePV();stopSay();
  const o=document.createElement('div');o.className='pvo';o.id='pvo';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');
- o.innerHTML=`<div class="pvb"><button class="btn" data-act="pvclose">Close</button><b>${esc(v.title)}</b></div><iframe src="/public-videos/${encodeURIComponent(v.file)}" title="${esc(v.title)}" allow="autoplay; fullscreen"></iframe>`;
+ o.innerHTML=`<div class="pvb"><button class="btn" data-act="pvclose">Close</button><b>${esc(v.title)}</b></div><iframe src="/public-videos/${encodeURIComponent(v.file)}" title="${esc(v.title)}" sandbox="allow-scripts" allow="autoplay; fullscreen"></iframe>`;
  document.body.appendChild(o);
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closePV()});

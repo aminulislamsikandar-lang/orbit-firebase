@@ -14,7 +14,7 @@
  *   - No user id is sent to GA4, Google signals and ad personalisation are off, ad consent is denied.
  *   - The admin's own visits are not counted (tools start only after login state is known, and not for admin accounts).
  *   - Nothing runs on localhost / file://.
- *   - Profile block and the Get Video text box carry data-clarity-mask="true" (index.html). In Clarity set
+ *   - Profile block, the Get Video text box (index.html) and the Gemini key box (parent-key.js) carry data-clarity-mask="true". In Clarity set
  *     Settings > Masking to "Strict" as well.
  */
 (function (g) {

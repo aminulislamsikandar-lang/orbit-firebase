@@ -2,12 +2,19 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const QUIZ = require('./questions');
+const { securityHeaders, rateKey, createLimiter, cspReport } = require('./security');
 
 const app = express();
+app.disable('x-powered-by');
+app.use(securityHeaders);
 const jsonSmall = express.json({ limit: '10kb' });
 const jsonNarration = express.json({ limit: '128kb' });      // Assamese/Hindi text is 3 bytes per character, so narration text needs more room
 const jsonPlan = express.json({ limit: '128kb' });             // a video plan with Hindi text is bigger than 10 kb
 app.use((req, res, next) => (req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : jsonSmall)(req, res, next));
+
+// The browser reports Content-Security-Policy violations here (the policy is set in firebase.json, in Report-Only mode first). No login, tiny body.
+app.post('/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '8kb' }), cspReport());
+app.use('/csp-report', (err, req, res, next) => res.status(204).end());   // a broken report body is ignored, never logged as a crash
 
 // ---- CORS + Firebase login check --------------------------------------------
 // The website lives on Firebase Hosting; this server only answers AI requests from logged-in users.
@@ -405,14 +412,10 @@ function buildPrompt(q, course, ch) {
 
 // ---- caches + rate limit -------------------------------------------------
 const CACHE = new Map();   // "id|en", "id|hi", "id|tr|hi", "id|vis"
-const HITS = new Map();
-function limited(ip) {
-  const now = Date.now();
-  const arr = (HITS.get(ip) || []).filter(t => now - t < 60000);
-  arr.push(now);
-  HITS.set(ip, arr);
-  return arr.length > 20;
-}
+// AI requests per minute: counted per logged-in student (rateKey), not per IP. Without "trust proxy" every student looks like the same IP
+// behind Render's proxy, and a school WiFi is one IP anyway.
+const aiLimiter = createLimiter(20, 60000);
+const limited = key => aiLimiter.hit(key);
 
 // ---- one place that talks to Gemini -------------------------------------
 // Tries each model in order. If Google says "busy" (503/429/500) or is slow,
@@ -572,7 +575,7 @@ function guard(req, res) {
 }
 function guardAI(req, res) {
   if (!KEYS.length && !userKeyOf(req)) { res.status(500).json({ error: 'Server mein GEMINI_API_KEY set nahi hai.' }); return false; }
-  if (limited(req.ip)) { res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' }); return false; }
+  if (limited(rateKey(req))) { res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' }); return false; }
   return true;
 }
 
@@ -583,7 +586,7 @@ app.get('/api/questions', (req, res) => res.json(PUBLIC));
 app.post('/api/byok/test', async (req, res) => {
   const k = userKeyOf(req);
   if (!k) return res.status(400).json({ code: 'bad_format' });
-  if (limited(req.ip)) return res.status(429).json({ code: 'busy' });
+  if (limited(rateKey(req))) return res.status(429).json({ code: 'busy' });
   const r = await gemini('Reply with the single word OK.', 'ping', { userKey: k, maxTokens: 8, budgetMs: 12000, models: [MODELS[0]] });
   if (r.text) return res.json({ ok: true });
   const s = r.status;
@@ -772,7 +775,7 @@ app.post('/api/visual', async (req, res) => {
 const WIKI_UA = process.env.WIKI_UA || 'OrbitTutor/1.0 (school tutor app, Assam India)';
 const IMG_CACHE = new Map();     // question id -> {url,page,title,by,lic,licUrl} or null (no good picture)
 const IMG_PENDING = new Map();   // question id -> promise (two students asking at once share one search)
-const IMG_HITS = new Map();
+const imgLimiter = createLimiter(40, 60000);   // picture searches per minute per student
 const STOP = new Set(('a an the is are was were be been being of in on at to for and or but why what how which who whom when where does do did ' +
   'give write state explain define name list differentiate distinguish following given below above with by from that this it its as can should ' +
   'would will if then than into any all each one two three four only also you your we our they their them these those not no yes find mention ' +
@@ -957,9 +960,7 @@ app.post('/api/image', async (req, res) => {
   const id = req.body.id;
   if (hit.course.subject !== 'Science') return res.json({});
   if (IMG_CACHE.has(id)) return res.json(IMG_CACHE.get(id) || {});
-  const now = Date.now(), arr = (IMG_HITS.get(req.ip) || []).filter(t => now - t < 60000);
-  arr.push(now); IMG_HITS.set(req.ip, arr);
-  if (arr.length > 40) return res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' });
+  if (imgLimiter.hit(rateKey(req))) return res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' });
   try {
     if (!IMG_PENDING.has(id)) IMG_PENDING.set(id, findImage(hit, id).finally(() => IMG_PENDING.delete(id)));
     const found = await IMG_PENDING.get(id);
