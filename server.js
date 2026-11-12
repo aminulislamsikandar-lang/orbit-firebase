@@ -481,6 +481,7 @@ async function fallbackChat(system, prompt, opts, deadline, lastStatus) {
 
 async function gemini(system, prompt, opts = {}) {
   const t0 = Date.now();
+  const keyLabel = k => (opts.userKey && k === opts.userKey ? 'own-key' : 'key#' + (KEYS.indexOf(k) + 1));   // logs never contain a key, not even a student's own
   const BUDGET = opts.budgetMs || 55000;
   const fbIds = opts.userKey ? [] : (opts.fallback || ['groq', 'openrouter']).filter(id => FALLBACK[id] && FALLBACK[id].key());
   const reserve = fbIds.length ? Math.min(opts.fbMs || 15000, Math.floor(BUDGET / 2)) : 0;   // time kept back for the backup providers
@@ -515,12 +516,14 @@ async function gemini(system, prompt, opts = {}) {
           const j = await r.json().catch(() => ({}));
           if (r.ok) {
             const text = ((j.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
-            if (text) { console.log('Gemini ok', model, 'key#' + (KEYS.indexOf(apiKey) + 1), (Date.now() - t0) + 'ms'); return { text }; }
+            if (text) { console.log('Gemini ok', model, keyLabel(apiKey), (Date.now() - t0) + 'ms'); return { text }; }
             console.error('Gemini empty answer', model);
             break;
           }
           lastStatus = r.status;
-          console.error('Gemini error', r.status, model, 'key#' + (KEYS.indexOf(apiKey) + 1), JSON.stringify(j).slice(0, 300));
+          console.error('Gemini error', r.status, model, keyLabel(apiKey), JSON.stringify(j).slice(0, 300));
+          // The student's own key is wrong or switched off: stop at once (the other models would say the same). 401 = "your key does not work".
+          if (opts.userKey && (r.status === 401 || r.status === 403 || (r.status === 400 && /API_KEY_INVALID|API key not valid/i.test(JSON.stringify(j))))) return { status: 401 };
           if (r.status === 400 && useJson && attempt === 1) { useJson = false; continue; } // model refused JSON mode: retry as plain text
           if (r.status === 429) break; // this key is out of quota: try the next key right away
           if ((r.status === 503 || r.status === 500) && attempt === 1) {
@@ -551,6 +554,16 @@ function failMsg(status) {
   return 'AI se answer nahi mila. Dobara try karo.';
 }
 
+// A student whose parent connected a Gemini key (X-User-Key header) pays with that key: it is used for EVERY AI call of the request and is never
+// mixed with the shared keys or the backup providers (gemini() skips them when userKey is set). Everybody else uses the shared keys as before.
+const geminiFor = (req, system, prompt, opts = {}) => gemini(system, prompt, userKeyOf(req) ? { ...opts, userKey: userKeyOf(req) } : opts);
+function failMsgFor(req, status) {
+  if (!userKeyOf(req)) return failMsg(status);
+  if (status === 401 || status === 403) return 'Aapki Gemini key kaam nahi kar rahi (galat ya band ho gayi). Menu > Advanced AI Features mein key dobara lagayein, ya wahan se key hata dein.';
+  if (status === 429) return 'Aapki Gemini key ki aaj ki free limit khatam ho gayi. Kal dobara chalega, ya Advanced AI Features se key hata dein.';
+  return failMsg(status);
+}
+
 // Common checks for every AI route. Returns {q, course, ch}, or null after replying.
 function guard(req, res) {
   const hit = BY_ID.get((req.body || {}).id);
@@ -574,7 +587,7 @@ app.post('/api/byok/test', async (req, res) => {
   const r = await gemini('Reply with the single word OK.', 'ping', { userKey: k, maxTokens: 8, budgetMs: 12000, models: [MODELS[0]] });
   if (r.text) return res.json({ ok: true });
   const s = r.status;
-  res.status(s === 429 ? 429 : 400).json({ code: (s === 400 || s === 403) ? 'invalid' : s === 429 ? 'quota' : 'busy' });
+  res.status(s === 429 ? 429 : 400).json({ code: (s === 400 || s === 401 || s === 403) ? 'invalid' : s === 429 ? 'quota' : 'busy' });
 });
 app.get('/api/recall/quota', (req, res) => res.json({ left: freeLeft(req.user.uid) }));
 
@@ -587,8 +600,8 @@ app.post('/api/answer', async (req, res) => {
   if (fresh) for (const k of [...CACHE.keys()]) if (k.startsWith(id + '|')) CACHE.delete(k); // old translations/diagram are stale too
   if (!fresh && CACHE.has(key)) return res.json({ answer: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const r = await gemini(P.answer, buildPrompt(q, course, ch));
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, P.answer, buildPrompt(q, course, ch));
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ answer: r.text });
 });
@@ -625,8 +638,8 @@ app.post('/api/translate', async (req, res) => {
   const key = id + '|tr|' + to + '|' + style + '|' + hash(base);
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const r = await gemini(P.tr, ST[style](LANGS[to], base), { temperature: 0.2 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, P.tr, ST[style](LANGS[to], base), { temperature: 0.2 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
 });
@@ -643,8 +656,8 @@ app.post('/api/qtranslate', async (req, res) => {
   const key = id + '|qtr|' + to;
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const r = await gemini(P.tr, stylesFor(course).para(LANGS[to], base), { temperature: 0.2 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, P.tr, stylesFor(course).para(LANGS[to], base), { temperature: 0.2 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
 });
@@ -663,8 +676,8 @@ app.post('/api/lesson', async (req, res) => {
   const key = ['lesson', course, chNo, p, to, style].join('|');
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const r = await gemini(profileFor(hit.course).tr, ST[style](LANGS[to], text), { temperature: 0.2 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, profileFor(hit.course).tr, ST[style](LANGS[to], text), { temperature: 0.2 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
 });
@@ -697,8 +710,8 @@ Rules for your reply:
   const body = kind === 'writing'
     ? `Topic: ${topic}\nExplain the standard format step by step: where the sender's details, date, receiver, subject line, salutation, body (opening line, reason, request), closing line, and signature (name, class, roll no.) go; what language and tone to use; 5 common mistakes; then one short model application in English with the local-language meaning of its first paragraph.`
     : `Topic: ${topic}\nExplain the standard rules: what it is, its kinds, the rule for each kind with examples, the exceptions the textbook mentions, 5 common mistakes, and a quick memory trick.${hindi ? ' Give the Hindi examples in Devanagari.' : ''}\nTextbook notes: ${hit.ch.context || ''}`;
-  const r = await gemini(system, body, { temperature: 0.3, maxTokens: 6000 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, system, body, { temperature: 0.3, maxTokens: 6000 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
 });
@@ -716,8 +729,8 @@ app.post('/api/more', async (req, res) => {
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
   const prompt = `${buildPrompt(q, course, ch)}\n\nHere is the answer:\n${base}\n\nExtra help kind: ${kind}.\n${P.kinds[kind]}` + (req.body.fresh ? '\nThe student wants a different version than before. Use new wording and a different example.' : '');
-  const r = await gemini(P.more, prompt, { temperature: 0.5 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, P.more, prompt, { temperature: 0.5 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
 });
@@ -744,8 +757,8 @@ app.post('/api/visual', async (req, res) => {
   if (!guardAI(req, res)) return;
   const prompt = buildPrompt(q, course, ch) + (base ? `\n\nHere is the answer to illustrate:\n${base}` : '') + '\n\nDraw ONE clear diagram for this.' + (DTYPES[dtype] ? '\n' + DTYPES[dtype] : '')
     + (fresh ? '\nThe student did not like the previous diagram. Use a clearly different layout and style.' : '');
-  const r = await gemini(P.vis, prompt, { temperature: 0.4, maxTokens: 4096 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, P.vis, prompt, { temperature: 0.4, maxTokens: 4096 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   const svg = cleanSvg(r.text);
   if (!svg) return res.status(502).json({ error: 'Diagram sahi nahi bana. Dobara try karo.' });
   CACHE.set(key, svg);
@@ -822,12 +835,12 @@ No quotes, no punctuation, no explanation.`;
 
 // Asks Gemini once per question for the picture topic. It sees the question and (if already made) the answer.
 // If Gemini is busy or fails we return '' and the old keyword search still runs.
-async function pictureTopic({ q, ch }, id) {
-  if (!KEY) return '';
+async function pictureTopic({ q, ch }, id, userKey) {
+  if (!KEY && !userKey) return '';
   try {
     const prompt = `Question: ${[q.text].concat(q.parts || []).join(' ').slice(0, 500)}\nChapter: ${(ch && ch.title) || ''}\nAnswer: ${String(CACHE.get(id + '|en') || '').slice(0, 400)}`;
     const r = await Promise.race([
-      gemini(SYSTEM_TOPIC, prompt, { temperature: 0, maxTokens: 200 }),
+      gemini(SYSTEM_TOPIC, prompt, { temperature: 0, maxTokens: 200, ...(userKey ? { userKey } : {}) }),
       new Promise(ok => setTimeout(() => ok({}), 15000))
     ]);
     const t = String(r.text || '').split('\n')[0].replace(/[^A-Za-z0-9 '-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
@@ -923,7 +936,7 @@ async function pexelsImage(topic) {
 // Tries the sources in order. A source that errors is skipped. If nothing was found and something errored,
 // we throw so the "no picture" result is not remembered and the next student tries again.
 async function findImage(hit, id) {
-  const topic = await pictureTopic(hit, id);
+  const topic = await pictureTopic(hit, id, userKeyOf(req));
   if (topic === 'NONE') return null;            // Gemini: nothing specific to picture, so show no image
   const tw = keywords(topic, 4);
   const steps = [];
@@ -1140,8 +1153,8 @@ Example. English say: "Our question is minus eight plus five." -> bn: "আমা
 const mvTrSource = plan => ({ title: plan.title.en, steps: plan.steps.map(st => ({ cap: st.cap.en, say: st.say.en })) });
 const mvHasLangs = plan => MV_TR_LANGS.every(k => typeof plan.title[k] === 'string' && plan.steps.every(st => st.cap && st.say && typeof st.cap[k] === 'string' && typeof st.say[k] === 'string'));
 function mvApplyLang(plan, k, tr) { plan.title[k] = tr.title; plan.steps.forEach((st, i) => { st.cap[k] = tr.steps[i].cap; st.say[k] = tr.steps[i].say; }); }
-async function mvTranslateCall(src, budgetMs) {
-  const r = await gemini(MV_TR_SYSTEM, JSON.stringify(src), { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 8000, temperature: 0.2, maxTokens: 8192, reqMs: Math.min(30000, budgetMs), budgetMs });
+async function mvTranslateCall(src, budgetMs, userKey) {
+  const r = await gemini(MV_TR_SYSTEM, JSON.stringify(src), { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 8000, temperature: 0.2, maxTokens: 8192, reqMs: Math.min(30000, budgetMs), budgetMs, ...(userKey ? { userKey } : {}) });
   if (!r.text) return null;
   const o = mvParse(r.text);
   if (!o || typeof o !== 'object') { mvBad('Translate', r); return null; }
@@ -1156,13 +1169,13 @@ async function mvTranslateCall(src, budgetMs) {
 }
 // Adds "as" / "bn" to the plan (in place). Returns the languages that were added ([] if nothing was added). Never throws.
 // valOpts = the same options the plan was validated with (the question, for True/False plans). Each language must pass the validator on its own.
-async function mvLangs(plan, budgetMs, valOpts) {
+async function mvLangs(plan, budgetMs, valOpts, userKey) {
   try {
     if (!plan || !plan.title || !Array.isArray(plan.steps) || !plan.steps.length || mvHasLangs(plan) || !(budgetMs >= 8000)) return [];
     const src = mvTrSource(plan), key = crypto.createHash('sha1').update(JSON.stringify(src)).digest('hex');
     let got = MV_TR_CACHE.get(key);
     if (!got) {
-      if (!MV_TR_BUSY.has(key)) MV_TR_BUSY.set(key, mvTranslateCall(src, budgetMs).finally(() => MV_TR_BUSY.delete(key)));
+      if (!MV_TR_BUSY.has(key)) MV_TR_BUSY.set(key, mvTranslateCall(src, budgetMs, userKey).finally(() => MV_TR_BUSY.delete(key)));
       got = await MV_TR_BUSY.get(key);
       if (got && MV_TR_LANGS.every(k => got[k])) { MV_TR_CACHE.set(key, got); if (MV_TR_CACHE.size > 500) MV_TR_CACHE.delete(MV_TR_CACHE.keys().next().value); }
     }
@@ -1434,12 +1447,12 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   const raw = MV.prepQuestion(typed);   // superscripts / ** / flattened powers -> ^N, before the AI sees the question
   const eng = [0, 1, 2, 3].includes(+(req.body || {}).eng) ? +(req.body || {}).eng : 2;   // English-words level from the student
   const norm = mvNorm(raw) + (eng === 2 ? '' : '|e' + eng);
-  if (MV_CACHE.has(norm)) { const c = MV_CACHE.get(norm); if (c.plan) await mvLangs(c.plan, MV_TR_MS, { question: raw }); return res.json({ ...c, cached: true }); }   // an older cached plan gets its Assamese/Bengali text now
+  if (MV_CACHE.has(norm)) { const c = MV_CACHE.get(norm); if (c.plan) await mvLangs(c.plan, MV_TR_MS, { question: raw }, userKeyOf(req)); return res.json({ ...c, cached: true }); }   // an older cached plan gets its Assamese/Bengali text now
   const pre = mvPrecheck(raw);
   if (pre) { const out = { unsupported: true, reason: pre }; MV_CACHE.set(norm, out); return res.json(out); }   // cached per normalised question + level, like every unsupported answer
 
   const email = String((req.user && req.user.email) || '').toLowerCase();
-  if (!MV_ADMINS.includes(email)) {
+  if (!MV_ADMINS.includes(email) && !userKeyOf(req)) {   // a student with a parent's key pays with that key: no daily limit
     const u = MV_USE.get(req.user.uid), day = mvDay();
     const cur = u && u.day === day ? u : { day, n: 0 };
     if (cur.n >= MV_DAILY) return res.status(429).json({ error: `Aaj ki video limit (${MV_DAILY}) poori ho gayi. Kal dobara try karo.` });
@@ -1449,7 +1462,7 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   const t0 = Date.now(), TOTAL = 82000;
   let prompt = 'Question:\n"""\n' + raw + '\n"""', lastErrors = [], lastStatus = 0, best = null;
   const mvDone = async (plan, how) => {
-    const tr = await mvLangs(plan, Math.min(MV_TR_MS, MV_HARD - (Date.now() - t0)), { question: raw });   // Assamese + Bengali text (best effort)
+    const tr = await mvLangs(plan, Math.min(MV_TR_MS, MV_HARD - (Date.now() - t0)), { question: raw }, userKeyOf(req));   // Assamese + Bengali text (best effort)
     const out = { plan };
     MV_CACHE.set(norm, out);
     if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
@@ -1459,7 +1472,7 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(mvSystem(eng, raw), prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
+    const r = await geminiFor(req, mvSystem(eng, raw), prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { mvBad('Video', r); prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
@@ -1480,7 +1493,7 @@ app.post('/api/mathvideo/generate', async (req, res) => {
     prompt = 'Question:\n"""\n' + raw + '\n"""\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
   }
   if (best) return await mvDone(best, 'fallback');                              // a valid (if plainer) plan beats an error
-  if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
+  if (lastStatus) return res.status(502).json({ error: failMsgFor(req, lastStatus) });
   res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Question ko seedha number wala likh ke dobara try karo.' });
 });
 
@@ -1551,10 +1564,10 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
   const hit = mvKnown(typed, 'Science');
   if (!hit) return res.status(400).json({ error: MV_UNKNOWN_MSG('Science') });
   const norm = 's|' + mvNorm(typed);
-  if (MV_CACHE.has(norm)) { const c = MV_CACHE.get(norm); if (c.plan) await mvLangs(c.plan, MV_TR_MS, { question: typed }); return res.json({ ...c, cached: true }); }
+  if (MV_CACHE.has(norm)) { const c = MV_CACHE.get(norm); if (c.plan) await mvLangs(c.plan, MV_TR_MS, { question: typed }, userKeyOf(req)); return res.json({ ...c, cached: true }); }
 
   const email = String((req.user && req.user.email) || '').toLowerCase();
-  if (!MV_ADMINS.includes(email)) {
+  if (!MV_ADMINS.includes(email) && !userKeyOf(req)) {   // a student with a parent's key pays with that key: no daily limit
     const u = MV_USE.get(req.user.uid), day = mvDay();
     const cur = u && u.day === day ? u : { day, n: 0 };
     if (cur.n >= MV_DAILY) return res.status(429).json({ error: `Aaj ki video limit (${MV_DAILY}) poori ho gayi. Kal dobara try karo.` });
@@ -1566,7 +1579,7 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
     (hit.q.context ? '\nNotes for this question: ' + String(hit.q.context).slice(0, 2000) : '') + '\n\nQuestion:\n"""\n' + typed + '\n"""';
   let prompt = head, lastErrors = [], lastStatus = 0, best = null;
   const done = async (plan, how) => {
-    const tr = await mvLangs(plan, Math.min(MV_TR_MS, MV_HARD - (Date.now() - t0)), { question: typed });
+    const tr = await mvLangs(plan, Math.min(MV_TR_MS, MV_HARD - (Date.now() - t0)), { question: typed }, userKeyOf(req));
     const out = { plan };
     MV_CACHE.set(norm, out);
     if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
@@ -1576,7 +1589,7 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(SCI_SYSTEM, prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
+    const r = await geminiFor(req, SCI_SYSTEM, prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { mvBad('Video', r); prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
@@ -1597,7 +1610,7 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
     prompt = head + '\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
   }
   if (best) return await done(best, 'fallback');
-  if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
+  if (lastStatus) return res.status(502).json({ error: failMsgFor(req, lastStatus) });
   res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Thodi der baad dobara try karo.' });
 });
 

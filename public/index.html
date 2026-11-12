@@ -921,7 +921,7 @@ function gvKnown(text,sub){
 const GV_SUB={Mathematics:{label:'Maths',noun:'Maths',store:'mathVideo',url:'/api/mathvideo/generate'},Science:{label:'Science',noun:'Science',store:'scienceVideo',url:'/api/sciencevideo/generate'}};
 function gvHTML(){
  const S=GV.sub,sci=S==='Science';
- return `<h1 style="font-size:26px;margin-top:14px">Get Video</h1>
+ return `<h1 style="font-size:26px;margin-top:14px">Get Video</h1>${window.PARENT_KEY&&PARENT_KEY.has()?'<p class="mut" style="margin:6px 0 0">Aapki apni Gemini key use ho rahi hai, isliye roz ki video limit nahi lagegi.</p>':''}
  <div role="tablist" style="display:flex;gap:8px;margin-top:12px">${Object.keys(GV_SUB).map(k=>`<button class="btn" role="tab" aria-selected="${k===S}" data-act="gvsub" data-v="${k}" ${GV.busy?'disabled':''} style="${k===S?'':'opacity:.55'}">${GV_SUB[k].label}</button>`).join('')}</div>
  <p class="mut" style="margin-top:10px">${sci?'Science':'Maths'} ka question app me question ke bagal ke 3 dots se <b>Copy question</b> karo aur yahan paste karo. Sirf app ke ${sci?'Science':'Maths'} questions chalenge. ${sci?'Whiteboard video book ke notes se banega.':'Powers aur True/False bhi chalenge. Whiteboard video ban jayega.'}</p>
  <textarea id="gvText" data-clarity-mask="true" maxlength="760" rows="4" placeholder="${sci?'Yahan copy kiya hua Science question paste karo':'Yahan copy kiya hua Maths question paste karo'}" aria-label="${sci?'Science':'Maths'} question" style="width:100%;margin-top:12px;padding:12px;border:1px solid var(--ln);border-radius:12px;background:var(--card);color:var(--tx);font:inherit;resize:vertical">${esc(GV.text)}</textarea>
