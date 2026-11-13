@@ -587,7 +587,7 @@ app.post('/api/byok/test', async (req, res) => {
   const k = userKeyOf(req);
   if (!k) return res.status(400).json({ code: 'bad_format' });
   if (limited(rateKey(req))) return res.status(429).json({ code: 'busy' });
-  const r = await gemini('Reply with the single word OK.', 'ping', { userKey: k, maxTokens: 8, budgetMs: 12000, models: [MODELS[0]] });
+  const r = await gemini('Reply with the single word OK.', 'ping', { userKey: k, maxTokens: 8, budgetMs: 25000, models: MODELS.slice(0, 3) });
   if (r.text) return res.json({ ok: true });
   const s = r.status;
   res.status(s === 429 ? 429 : 400).json({ code: (s === 400 || s === 401 || s === 403) ? 'invalid' : s === 429 ? 'quota' : 'busy' });
