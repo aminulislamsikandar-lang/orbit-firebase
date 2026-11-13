@@ -5,6 +5,17 @@
     "predeploy": ["node build-questions.js"],
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "headers": [
+      {
+        "source": "**",
+        "headers": [
+          { "key": "X-Content-Type-Options", "value": "nosniff" },
+          { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+          { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+          { "key": "Permissions-Policy", "value": "camera=(), geolocation=(), payment=(), microphone=(self)" },
+          { "key": "Content-Security-Policy-Report-Only", "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://www.googletagmanager.com https://www.clarity.ms https://*.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://upload.wikimedia.org https://images.pexels.com https://lh3.googleusercontent.com https://*.google-analytics.com https://www.googletagmanager.com https://*.clarity.ms https://c.bing.com; media-src 'self' blob: https://*.backblazeb2.com; connect-src 'self' https://orbit-firebase.onrender.com https://*.googleapis.com https://orbitai-9feb8.firebaseapp.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://*.clarity.ms https://*.backblazeb2.com; frame-src 'self' https://orbitai-9feb8.firebaseapp.com https://accounts.google.com https://www.youtube-nocookie.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; report-uri https://orbit-firebase.onrender.com/csp-report" }
+        ]
+      },
+      { "source": "/public-videos/**", "headers": [{ "key": "Content-Security-Policy", "value": "sandbox allow-scripts allow-popups allow-presentation" }] },
       { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
       { "source": "/config.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
       { "source": "**/*.json", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }

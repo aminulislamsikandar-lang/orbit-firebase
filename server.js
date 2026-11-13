@@ -2,11 +2,19 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const QUIZ = require('./questions');
+const { securityHeaders, rateKey, createLimiter, cspReport } = require('./security');
 
 const app = express();
+app.disable('x-powered-by');
+app.use(securityHeaders);
 const jsonSmall = express.json({ limit: '10kb' });
 const jsonNarration = express.json({ limit: '128kb' });      // Assamese/Hindi text is 3 bytes per character, so narration text needs more room
-app.use((req, res, next) => (req.path === '/api/narration/generate' ? jsonNarration : jsonSmall)(req, res, next));
+const jsonPlan = express.json({ limit: '128kb' });             // a video plan with Hindi text is bigger than 10 kb
+app.use((req, res, next) => (req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : jsonSmall)(req, res, next));
+
+// The browser reports Content-Security-Policy violations here (the policy is set in firebase.json, in Report-Only mode first). No login, tiny body.
+app.post('/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '8kb' }), cspReport());
+app.use('/csp-report', (err, req, res, next) => res.status(204).end());   // a broken report body is ignored, never logged as a crash
 
 // ---- CORS + Firebase login check --------------------------------------------
 // The website lives on Firebase Hosting; this server only answers AI requests from logged-in users.
@@ -404,14 +412,10 @@ function buildPrompt(q, course, ch) {
 
 // ---- caches + rate limit -------------------------------------------------
 const CACHE = new Map();   // "id|en", "id|hi", "id|tr|hi", "id|vis"
-const HITS = new Map();
-function limited(ip) {
-  const now = Date.now();
-  const arr = (HITS.get(ip) || []).filter(t => now - t < 60000);
-  arr.push(now);
-  HITS.set(ip, arr);
-  return arr.length > 20;
-}
+// AI requests per minute: counted per logged-in student (rateKey), not per IP. Without "trust proxy" every student looks like the same IP
+// behind Render's proxy, and a school WiFi is one IP anyway.
+const aiLimiter = createLimiter(20, 60000);
+const limited = key => aiLimiter.hit(key);
 
 // ---- one place that talks to Gemini -------------------------------------
 // Tries each model in order. If Google says "busy" (503/429/500) or is slow,
@@ -480,6 +484,7 @@ async function fallbackChat(system, prompt, opts, deadline, lastStatus) {
 
 async function gemini(system, prompt, opts = {}) {
   const t0 = Date.now();
+  const keyLabel = k => (opts.userKey && k === opts.userKey ? 'own-key' : 'key#' + (KEYS.indexOf(k) + 1));   // logs never contain a key, not even a student's own
   const BUDGET = opts.budgetMs || 55000;
   const fbIds = opts.userKey ? [] : (opts.fallback || ['groq', 'openrouter']).filter(id => FALLBACK[id] && FALLBACK[id].key());
   const reserve = fbIds.length ? Math.min(opts.fbMs || 15000, Math.floor(BUDGET / 2)) : 0;   // time kept back for the backup providers
@@ -514,12 +519,14 @@ async function gemini(system, prompt, opts = {}) {
           const j = await r.json().catch(() => ({}));
           if (r.ok) {
             const text = ((j.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
-            if (text) { console.log('Gemini ok', model, 'key#' + (KEYS.indexOf(apiKey) + 1), (Date.now() - t0) + 'ms'); return { text }; }
+            if (text) { console.log('Gemini ok', model, keyLabel(apiKey), (Date.now() - t0) + 'ms'); return { text }; }
             console.error('Gemini empty answer', model);
             break;
           }
           lastStatus = r.status;
-          console.error('Gemini error', r.status, model, 'key#' + (KEYS.indexOf(apiKey) + 1), JSON.stringify(j).slice(0, 300));
+          console.error('Gemini error', r.status, model, keyLabel(apiKey), JSON.stringify(j).slice(0, 300));
+          // The student's own key is wrong or switched off: stop at once (the other models would say the same). 401 = "your key does not work".
+          if (opts.userKey && (r.status === 401 || r.status === 403 || (r.status === 400 && /API_KEY_INVALID|API key not valid/i.test(JSON.stringify(j))))) return { status: 401 };
           if (r.status === 400 && useJson && attempt === 1) { useJson = false; continue; } // model refused JSON mode: retry as plain text
           if (r.status === 429) break; // this key is out of quota: try the next key right away
           if ((r.status === 503 || r.status === 500) && attempt === 1) {
@@ -550,6 +557,16 @@ function failMsg(status) {
   return 'AI se answer nahi mila. Dobara try karo.';
 }
 
+// A student whose parent connected a Gemini key (X-User-Key header) pays with that key: it is used for EVERY AI call of the request and is never
+// mixed with the shared keys or the backup providers (gemini() skips them when userKey is set). Everybody else uses the shared keys as before.
+const geminiFor = (req, system, prompt, opts = {}) => gemini(system, prompt, userKeyOf(req) ? { ...opts, userKey: userKeyOf(req) } : opts);
+function failMsgFor(req, status) {
+  if (!userKeyOf(req)) return failMsg(status);
+  if (status === 401 || status === 403) return 'Aapki Gemini key kaam nahi kar rahi (galat ya band ho gayi). Menu > Advanced AI Features mein key dobara lagayein, ya wahan se key hata dein.';
+  if (status === 429) return 'Aapki Gemini key ki aaj ki free limit khatam ho gayi. Kal dobara chalega, ya Advanced AI Features se key hata dein.';
+  return failMsg(status);
+}
+
 // Common checks for every AI route. Returns {q, course, ch}, or null after replying.
 function guard(req, res) {
   const hit = BY_ID.get((req.body || {}).id);
@@ -558,7 +575,7 @@ function guard(req, res) {
 }
 function guardAI(req, res) {
   if (!KEYS.length && !userKeyOf(req)) { res.status(500).json({ error: 'Server mein GEMINI_API_KEY set nahi hai.' }); return false; }
-  if (limited(req.ip)) { res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' }); return false; }
+  if (limited(rateKey(req))) { res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' }); return false; }
   return true;
 }
 
@@ -569,11 +586,11 @@ app.get('/api/questions', (req, res) => res.json(PUBLIC));
 app.post('/api/byok/test', async (req, res) => {
   const k = userKeyOf(req);
   if (!k) return res.status(400).json({ code: 'bad_format' });
-  if (limited(req.ip)) return res.status(429).json({ code: 'busy' });
+  if (limited(rateKey(req))) return res.status(429).json({ code: 'busy' });
   const r = await gemini('Reply with the single word OK.', 'ping', { userKey: k, maxTokens: 8, budgetMs: 12000, models: [MODELS[0]] });
   if (r.text) return res.json({ ok: true });
   const s = r.status;
-  res.status(s === 429 ? 429 : 400).json({ code: (s === 400 || s === 403) ? 'invalid' : s === 429 ? 'quota' : 'busy' });
+  res.status(s === 429 ? 429 : 400).json({ code: (s === 400 || s === 401 || s === 403) ? 'invalid' : s === 429 ? 'quota' : 'busy' });
 });
 app.get('/api/recall/quota', (req, res) => res.json({ left: freeLeft(req.user.uid) }));
 
@@ -586,8 +603,8 @@ app.post('/api/answer', async (req, res) => {
   if (fresh) for (const k of [...CACHE.keys()]) if (k.startsWith(id + '|')) CACHE.delete(k); // old translations/diagram are stale too
   if (!fresh && CACHE.has(key)) return res.json({ answer: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const r = await gemini(P.answer, buildPrompt(q, course, ch));
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, P.answer, buildPrompt(q, course, ch));
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ answer: r.text });
 });
@@ -624,8 +641,8 @@ app.post('/api/translate', async (req, res) => {
   const key = id + '|tr|' + to + '|' + style + '|' + hash(base);
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const r = await gemini(P.tr, ST[style](LANGS[to], base), { temperature: 0.2 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, P.tr, ST[style](LANGS[to], base), { temperature: 0.2 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
 });
@@ -642,8 +659,8 @@ app.post('/api/qtranslate', async (req, res) => {
   const key = id + '|qtr|' + to;
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const r = await gemini(P.tr, stylesFor(course).para(LANGS[to], base), { temperature: 0.2 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, P.tr, stylesFor(course).para(LANGS[to], base), { temperature: 0.2 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
 });
@@ -662,8 +679,8 @@ app.post('/api/lesson', async (req, res) => {
   const key = ['lesson', course, chNo, p, to, style].join('|');
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
-  const r = await gemini(profileFor(hit.course).tr, ST[style](LANGS[to], text), { temperature: 0.2 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, profileFor(hit.course).tr, ST[style](LANGS[to], text), { temperature: 0.2 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
 });
@@ -696,8 +713,8 @@ Rules for your reply:
   const body = kind === 'writing'
     ? `Topic: ${topic}\nExplain the standard format step by step: where the sender's details, date, receiver, subject line, salutation, body (opening line, reason, request), closing line, and signature (name, class, roll no.) go; what language and tone to use; 5 common mistakes; then one short model application in English with the local-language meaning of its first paragraph.`
     : `Topic: ${topic}\nExplain the standard rules: what it is, its kinds, the rule for each kind with examples, the exceptions the textbook mentions, 5 common mistakes, and a quick memory trick.${hindi ? ' Give the Hindi examples in Devanagari.' : ''}\nTextbook notes: ${hit.ch.context || ''}`;
-  const r = await gemini(system, body, { temperature: 0.3, maxTokens: 6000 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, system, body, { temperature: 0.3, maxTokens: 6000 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
 });
@@ -715,8 +732,8 @@ app.post('/api/more', async (req, res) => {
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
   if (!guardAI(req, res)) return;
   const prompt = `${buildPrompt(q, course, ch)}\n\nHere is the answer:\n${base}\n\nExtra help kind: ${kind}.\n${P.kinds[kind]}` + (req.body.fresh ? '\nThe student wants a different version than before. Use new wording and a different example.' : '');
-  const r = await gemini(P.more, prompt, { temperature: 0.5 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, P.more, prompt, { temperature: 0.5 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
   res.json({ text: r.text });
 });
@@ -743,8 +760,8 @@ app.post('/api/visual', async (req, res) => {
   if (!guardAI(req, res)) return;
   const prompt = buildPrompt(q, course, ch) + (base ? `\n\nHere is the answer to illustrate:\n${base}` : '') + '\n\nDraw ONE clear diagram for this.' + (DTYPES[dtype] ? '\n' + DTYPES[dtype] : '')
     + (fresh ? '\nThe student did not like the previous diagram. Use a clearly different layout and style.' : '');
-  const r = await gemini(P.vis, prompt, { temperature: 0.4, maxTokens: 4096 });
-  if (!r.text) return res.status(502).json({ error: failMsg(r.status) });
+  const r = await geminiFor(req, P.vis, prompt, { temperature: 0.4, maxTokens: 4096 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   const svg = cleanSvg(r.text);
   if (!svg) return res.status(502).json({ error: 'Diagram sahi nahi bana. Dobara try karo.' });
   CACHE.set(key, svg);
@@ -758,7 +775,7 @@ app.post('/api/visual', async (req, res) => {
 const WIKI_UA = process.env.WIKI_UA || 'OrbitTutor/1.0 (school tutor app, Assam India)';
 const IMG_CACHE = new Map();     // question id -> {url,page,title,by,lic,licUrl} or null (no good picture)
 const IMG_PENDING = new Map();   // question id -> promise (two students asking at once share one search)
-const IMG_HITS = new Map();
+const imgLimiter = createLimiter(40, 60000);   // picture searches per minute per student
 const STOP = new Set(('a an the is are was were be been being of in on at to for and or but why what how which who whom when where does do did ' +
   'give write state explain define name list differentiate distinguish following given below above with by from that this it its as can should ' +
   'would will if then than into any all each one two three four only also you your we our they their them these those not no yes find mention ' +
@@ -821,12 +838,12 @@ No quotes, no punctuation, no explanation.`;
 
 // Asks Gemini once per question for the picture topic. It sees the question and (if already made) the answer.
 // If Gemini is busy or fails we return '' and the old keyword search still runs.
-async function pictureTopic({ q, ch }, id) {
-  if (!KEY) return '';
+async function pictureTopic({ q, ch }, id, userKey) {
+  if (!KEY && !userKey) return '';
   try {
     const prompt = `Question: ${[q.text].concat(q.parts || []).join(' ').slice(0, 500)}\nChapter: ${(ch && ch.title) || ''}\nAnswer: ${String(CACHE.get(id + '|en') || '').slice(0, 400)}`;
     const r = await Promise.race([
-      gemini(SYSTEM_TOPIC, prompt, { temperature: 0, maxTokens: 200 }),
+      gemini(SYSTEM_TOPIC, prompt, { temperature: 0, maxTokens: 200, ...(userKey ? { userKey } : {}) }),
       new Promise(ok => setTimeout(() => ok({}), 15000))
     ]);
     const t = String(r.text || '').split('\n')[0].replace(/[^A-Za-z0-9 '-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
@@ -922,7 +939,7 @@ async function pexelsImage(topic) {
 // Tries the sources in order. A source that errors is skipped. If nothing was found and something errored,
 // we throw so the "no picture" result is not remembered and the next student tries again.
 async function findImage(hit, id) {
-  const topic = await pictureTopic(hit, id);
+  const topic = await pictureTopic(hit, id, userKeyOf(req));
   if (topic === 'NONE') return null;            // Gemini: nothing specific to picture, so show no image
   const tw = keywords(topic, 4);
   const steps = [];
@@ -943,9 +960,7 @@ app.post('/api/image', async (req, res) => {
   const id = req.body.id;
   if (hit.course.subject !== 'Science') return res.json({});
   if (IMG_CACHE.has(id)) return res.json(IMG_CACHE.get(id) || {});
-  const now = Date.now(), arr = (IMG_HITS.get(req.ip) || []).filter(t => now - t < 60000);
-  arr.push(now); IMG_HITS.set(req.ip, arr);
-  if (arr.length > 40) return res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' });
+  if (imgLimiter.hit(rateKey(req))) return res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' });
   try {
     if (!IMG_PENDING.has(id)) IMG_PENDING.set(id, findImage(hit, id).finally(() => IMG_PENDING.delete(id)));
     const found = await IMG_PENDING.get(id);
@@ -1116,6 +1131,78 @@ app.post('/api/narration/url', async (req, res) => {
     console.error('narration sign failed', e.message);
     res.status(502).json({ error: 'Audio ka link nahi ban paya. Dobara try karo.' });
   }
+});
+
+// ---- Assamese + Bengali text for a video plan (a second, small AI call) ----------------------------------
+// The main call writes en / hg / hi. This call adds "as" and "bn" (title, caption and spoken line of every step), translated from the ENGLISH
+// text, so a student can pick Assamese or Bengali in the player. Best effort: if it fails or time is short, the video still works and the player
+// shows the English text. The player's "English words" slider works on the Latin-letter phrases kept here (minus three, equal to ...).
+const MV_TR_LANGS = ['as', 'bn'];
+const MV_TR_MS = 24000;       // time for the translation call
+const MV_HARD = 85000;        // the app gives up waiting at 90 s: translation must end before this (measured from the start of the request)
+const MV_TR_CACHE = new Map();   // sha1(English text) -> { as: {title, steps:[{cap, say}]}, bn: {...} }. The same English text is never translated twice.
+const MV_TR_BUSY = new Map();    // same key -> Promise, so two students asking at the same time share one AI call
+const MV_TR_SYSTEM = `You translate the captions and spoken lines of a school maths or science video (Class 6-8) from English into Assamese and Bengali.
+Input: JSON {"title": "...", "steps": [{"cap": "...", "say": "..."}]} in English.
+Reply with ONE JSON object only, no markdown: {"as": {"title": "...", "steps": [{"cap": "...", "say": "..."}]}, "bn": {"title": "...", "steps": [{"cap": "...", "say": "..."}]}}
+"as" and "bn" must each have exactly the same number of steps as the input, in the same order.
+- "as" = Assamese in Assamese script (use ৰ and ৱ correctly). "bn" = Bengali in Bengali script. Simple, friendly, spoken school language.
+- In every "say": keep each maths expression, every number and the words plus, minus, into, equal to in ENGLISH LETTERS, copied exactly from the English line (for example "minus eight plus five", "three into four"). A text-to-speech engine reads those parts with an English voice. Never write digits in "say" (the English line already has the numbers as words). Translate all the other words. Do not attach Assamese or Bengali suffixes to an English phrase: rephrase so that the English phrase stands on its own, usually at the end of the sentence.
+- In "cap" and "title" you may keep digits and symbols exactly as in the English text, for example (-8) + 5.
+- Each text is at most 140 characters. No HTML, no links, no emoji.
+Example. English say: "Our question is minus eight plus five." -> bn: "আমাদের প্রশ্ন হলো minus eight plus five।", as: "আমাৰ প্ৰশ্ন হ'ল minus eight plus five।"`;
+const mvTrSource = plan => ({ title: plan.title.en, steps: plan.steps.map(st => ({ cap: st.cap.en, say: st.say.en })) });
+const mvHasLangs = plan => MV_TR_LANGS.every(k => typeof plan.title[k] === 'string' && plan.steps.every(st => st.cap && st.say && typeof st.cap[k] === 'string' && typeof st.say[k] === 'string'));
+function mvApplyLang(plan, k, tr) { plan.title[k] = tr.title; plan.steps.forEach((st, i) => { st.cap[k] = tr.steps[i].cap; st.say[k] = tr.steps[i].say; }); }
+async function mvTranslateCall(src, budgetMs, userKey) {
+  const r = await gemini(MV_TR_SYSTEM, JSON.stringify(src), { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 8000, temperature: 0.2, maxTokens: 8192, reqMs: Math.min(30000, budgetMs), budgetMs, ...(userKey ? { userKey } : {}) });
+  if (!r.text) return null;
+  const o = mvParse(r.text);
+  if (!o || typeof o !== 'object') { mvBad('Translate', r); return null; }
+  const out = {};
+  for (const k of MV_TR_LANGS) {      // keep a language only if its shape is right (same number of steps, every cap and say a string)
+    const x = o[k];
+    if (x && typeof x.title === 'string' && Array.isArray(x.steps) && x.steps.length === src.steps.length && x.steps.every(s => s && typeof s.cap === 'string' && typeof s.say === 'string')) {
+      out[k] = { title: x.title.trim(), steps: x.steps.map(s => ({ cap: s.cap.trim(), say: s.say.trim() })) };
+    }
+  }
+  return out;
+}
+// Adds "as" / "bn" to the plan (in place). Returns the languages that were added ([] if nothing was added). Never throws.
+// valOpts = the same options the plan was validated with (the question, for True/False plans). Each language must pass the validator on its own.
+async function mvLangs(plan, budgetMs, valOpts, userKey) {
+  try {
+    if (!plan || !plan.title || !Array.isArray(plan.steps) || !plan.steps.length || mvHasLangs(plan) || !(budgetMs >= 8000)) return [];
+    const src = mvTrSource(plan), key = crypto.createHash('sha1').update(JSON.stringify(src)).digest('hex');
+    let got = MV_TR_CACHE.get(key);
+    if (!got) {
+      if (!MV_TR_BUSY.has(key)) MV_TR_BUSY.set(key, mvTranslateCall(src, budgetMs, userKey).finally(() => MV_TR_BUSY.delete(key)));
+      got = await MV_TR_BUSY.get(key);
+      if (got && MV_TR_LANGS.every(k => got[k])) { MV_TR_CACHE.set(key, got); if (MV_TR_CACHE.size > 500) MV_TR_CACHE.delete(MV_TR_CACHE.keys().next().value); }
+    }
+    const added = [];
+    for (const k of MV_TR_LANGS) {
+      if (!got || !got[k]) continue;
+      const c = JSON.parse(JSON.stringify(plan)); mvApplyLang(c, k, got[k]);
+      const v = MV.validate(c, valOpts), mine = new RegExp('\\.' + k + '(:|\\s|$)');
+      if (v.errors.some(e => mine.test(e)) || v.warnings.some(w => mine.test(w))) { console.error('MathVideo translate ' + k + ' rejected:', v.errors.concat(v.warnings).filter(m => mine.test(m)).slice(0, 3).join(' | ')); continue; }
+      mvApplyLang(plan, k, got[k]); added.push(k);
+    }
+    return added;
+  } catch (e) { console.error('MathVideo translate failed:', e && e.message); return []; }
+}
+// Admin: add (or redo) Assamese + Bengali text for a plan that is already valid. Used by the "Assamese/Bengali text banao" button of the admin panel,
+// so videos that were approved before this feature get the text too.
+app.post('/api/mathvideo/translate', async (req, res) => {
+  if (!isAdminReq(req)) return res.status(403).json({ error: 'Sirf admin ye kar sakta hai.' });
+  if (!guardAI(req, res)) return;
+  const plan = (req.body || {}).plan, v = MV.validate(plan);
+  if (v.errors.length) return res.status(400).json({ error: 'Plan pehle valid hona chahiye: ' + v.errors.slice(0, 3).join(' | ') });
+  const copy = JSON.parse(JSON.stringify(plan));
+  MV_TR_LANGS.forEach(k => { delete copy.title[k]; copy.steps.forEach(st => { delete st.cap[k]; delete st.say[k]; }); });   // start clean: the admin asked for a fresh translation
+  const added = await mvLangs(copy, 50000, {});
+  if (!added.length) return res.status(502).json({ error: 'Assamese/Bengali text nahi ban paya. Thodi der baad dobara try karo.' });
+  res.json({ plan: copy, added });
 });
 
 // ---- Get Video: student pastes a maths question, AI makes a video plan (JSON) ----------------------------
@@ -1361,12 +1448,12 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   const raw = MV.prepQuestion(typed);   // superscripts / ** / flattened powers -> ^N, before the AI sees the question
   const eng = [0, 1, 2, 3].includes(+(req.body || {}).eng) ? +(req.body || {}).eng : 2;   // English-words level from the student
   const norm = mvNorm(raw) + (eng === 2 ? '' : '|e' + eng);
-  if (MV_CACHE.has(norm)) return res.json({ ...MV_CACHE.get(norm), cached: true });
+  if (MV_CACHE.has(norm)) { const c = MV_CACHE.get(norm); if (c.plan) await mvLangs(c.plan, MV_TR_MS, { question: raw }, userKeyOf(req)); return res.json({ ...c, cached: true }); }   // an older cached plan gets its Assamese/Bengali text now
   const pre = mvPrecheck(raw);
   if (pre) { const out = { unsupported: true, reason: pre }; MV_CACHE.set(norm, out); return res.json(out); }   // cached per normalised question + level, like every unsupported answer
 
   const email = String((req.user && req.user.email) || '').toLowerCase();
-  if (!MV_ADMINS.includes(email)) {
+  if (!MV_ADMINS.includes(email) && !userKeyOf(req)) {   // a student with a parent's key pays with that key: no daily limit
     const u = MV_USE.get(req.user.uid), day = mvDay();
     const cur = u && u.day === day ? u : { day, n: 0 };
     if (cur.n >= MV_DAILY) return res.status(429).json({ error: `Aaj ki video limit (${MV_DAILY}) poori ho gayi. Kal dobara try karo.` });
@@ -1375,17 +1462,18 @@ app.post('/api/mathvideo/generate', async (req, res) => {
 
   const t0 = Date.now(), TOTAL = 82000;
   let prompt = 'Question:\n"""\n' + raw + '\n"""', lastErrors = [], lastStatus = 0, best = null;
-  const mvDone = (plan, how) => {
+  const mvDone = async (plan, how) => {
+    const tr = await mvLangs(plan, Math.min(MV_TR_MS, MV_HARD - (Date.now() - t0)), { question: raw }, userKeyOf(req));   // Assamese + Bengali text (best effort)
     const out = { plan };
     MV_CACHE.set(norm, out);
     if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
-    console.log('MathVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps');
+    console.log('MathVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps', 'translated: ' + (tr.join(',') || 'none'));
     return res.json(out);
   };
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(mvSystem(eng, raw), prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
+    const r = await geminiFor(req, mvSystem(eng, raw), prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { mvBad('Video', r); prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
@@ -1400,13 +1488,13 @@ app.post('/api/mathvideo/generate', async (req, res) => {
     // soft problems: spoken-Hindi issues and too-short / motionless plans. Retry if there is time; the last try is always accepted.
     const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : mvQuality(plan, raw));
     if (!v.errors.length) best = plan;                                    // newest valid plan = fallback if a later try fails
-    if (!v.errors.length && !(soft.length && attempt < 3)) return mvDone(plan, 'try ' + attempt);
+    if (!v.errors.length && !(soft.length && attempt < 3)) return await mvDone(plan, 'try ' + attempt);
     lastErrors = v.errors.length ? v.errors : soft;
     console.error('MathVideo invalid (try ' + attempt + '):', lastErrors.slice(0, 4).join(' | '));
     prompt = 'Question:\n"""\n' + raw + '\n"""\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
   }
-  if (best) return mvDone(best, 'fallback');                              // a valid (if plainer) plan beats an error
-  if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
+  if (best) return await mvDone(best, 'fallback');                              // a valid (if plainer) plan beats an error
+  if (lastStatus) return res.status(502).json({ error: failMsgFor(req, lastStatus) });
   res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Question ko seedha number wala likh ke dobara try karo.' });
 });
 
@@ -1477,10 +1565,10 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
   const hit = mvKnown(typed, 'Science');
   if (!hit) return res.status(400).json({ error: MV_UNKNOWN_MSG('Science') });
   const norm = 's|' + mvNorm(typed);
-  if (MV_CACHE.has(norm)) return res.json({ ...MV_CACHE.get(norm), cached: true });
+  if (MV_CACHE.has(norm)) { const c = MV_CACHE.get(norm); if (c.plan) await mvLangs(c.plan, MV_TR_MS, { question: typed }, userKeyOf(req)); return res.json({ ...c, cached: true }); }
 
   const email = String((req.user && req.user.email) || '').toLowerCase();
-  if (!MV_ADMINS.includes(email)) {
+  if (!MV_ADMINS.includes(email) && !userKeyOf(req)) {   // a student with a parent's key pays with that key: no daily limit
     const u = MV_USE.get(req.user.uid), day = mvDay();
     const cur = u && u.day === day ? u : { day, n: 0 };
     if (cur.n >= MV_DAILY) return res.status(429).json({ error: `Aaj ki video limit (${MV_DAILY}) poori ho gayi. Kal dobara try karo.` });
@@ -1491,17 +1579,18 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
   const head = 'Chapter: ' + (hit.ch.title || hit.ch.name || '') + (hit.ch.context ? '\nTextbook notes for this chapter (explain only from these): ' + String(hit.ch.context).slice(0, 6000) : '') +
     (hit.q.context ? '\nNotes for this question: ' + String(hit.q.context).slice(0, 2000) : '') + '\n\nQuestion:\n"""\n' + typed + '\n"""';
   let prompt = head, lastErrors = [], lastStatus = 0, best = null;
-  const done = (plan, how) => {
+  const done = async (plan, how) => {
+    const tr = await mvLangs(plan, Math.min(MV_TR_MS, MV_HARD - (Date.now() - t0)), { question: typed }, userKeyOf(req));
     const out = { plan };
     MV_CACHE.set(norm, out);
     if (MV_CACHE.size > 500) MV_CACHE.delete(MV_CACHE.keys().next().value);
-    console.log('ScienceVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps');
+    console.log('ScienceVideo ok', how, (Date.now() - t0) + 'ms', plan.steps.length + ' steps', 'translated: ' + (tr.join(',') || 'none'));
     return res.json(out);
   };
   for (let attempt = 1; attempt <= 3; attempt++) {
     const left = TOTAL - (Date.now() - t0);
     if (left < 8000) break;
-    const r = await gemini(SCI_SYSTEM, prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
+    const r = await geminiFor(req, SCI_SYSTEM, prompt, { json: true, models: VIDEO_MODELS, fallback: ['openrouter'], fbMs: 22000, temperature: 0.2, maxTokens: 8192, reqMs: 40000, budgetMs: Math.min(left, attempt === 1 ? 62000 : 40000) });
     if (!r.text) { lastStatus = r.status; break; }
     const plan = mvParse(r.text);
     if (!plan) { mvBad('Video', r); prompt += '\n\nYour last reply was not valid JSON. Reply with the JSON object only.'; lastErrors = ['not valid JSON']; continue; }
@@ -1516,13 +1605,13 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
     const v = MV.validate(plan, { question: typed });
     const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : sciQuality(plan));
     if (!v.errors.length) best = plan;
-    if (!v.errors.length && !(soft.length && attempt < 3)) return done(plan, 'try ' + attempt);
+    if (!v.errors.length && !(soft.length && attempt < 3)) return await done(plan, 'try ' + attempt);
     lastErrors = v.errors.length ? v.errors : soft;
     console.error('ScienceVideo invalid (try ' + attempt + '):', lastErrors.slice(0, 4).join(' | '));
     prompt = head + '\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
   }
-  if (best) return done(best, 'fallback');
-  if (lastStatus) return res.status(502).json({ error: failMsg(lastStatus) });
+  if (best) return await done(best, 'fallback');
+  if (lastStatus) return res.status(502).json({ error: failMsgFor(req, lastStatus) });
   res.status(502).json({ error: 'Is question ka video theek se nahi ban paya. Thodi der baad dobara try karo.' });
 });
 

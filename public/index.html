@@ -165,6 +165,7 @@ const LOGO='<svg viewBox="0 0 48 48" style="width:1.1em;height:1.1em;flex:none" 
 const ic=p=>`<svg viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
 const HEART='<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/>';
 const I={
+ ai:ic('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>'),
  heart:ic(HEART),
  re:ic('<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>'),
  tr:ic('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z"/>'),
@@ -204,6 +205,8 @@ const TSTY=[['para','Paragraph'],['sent','Sentence by sentence'],['words','Kuch 
 const TRL={en:{n:'English',v:'en-IN'},hing:{n:'Hinglish',v:'hi-IN'},as:{n:'অসমীয়া',v:'as-IN'},bn:{n:'বাংলা',v:'bn-IN'}};
 
 let DATA=null,VIEW='home';
+const PARENT_LINK=/[?&]parent-setup=1/.test(location.search);   // link a parent gets on WhatsApp: opens the Advanced AI Features page (guide only until logged in)
+if(PARENT_LINK)VIEW='ai';
 // DATA = {courses:[{id,class,subject,chapters:[{no,title,kind,author,locked,sections}]}]}.
 // Older cached data (one course without "courses") is converted by norm().
 const norm=d=>{
@@ -554,7 +557,7 @@ function syncSoon(){
  SYNCT=setTimeout(()=>window.CLOUD.push({saved:SAVED,pins:PINS,settings:ST}).catch(e=>console.warn('sync failed',e)),1500);
 }
 window.onCloudFail=e=>{CLOUDFAIL=String((e&&e.message)||e||'unknown');console.error('cloud.js failed',e);if(navigator.onLine&&!USER)draw()};
-window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR=''}else{openSide(false,true)}if(DATA||!u)draw()};
+window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR=''}else{openSide(false,true)}if(DATA||!u)draw()};
 // First login on a device: merge this device's data with the cloud. After that the cloud copy wins.
 window.onCloudData=cd=>{
  let uid=USER&&USER.uid,first=true;
@@ -663,7 +666,7 @@ function openPV(id){
  const v=PVS.find(x=>x.id===id);if(!v)return;
  closePV();stopSay();
  const o=document.createElement('div');o.className='pvo';o.id='pvo';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');
- o.innerHTML=`<div class="pvb"><button class="btn" data-act="pvclose">Close</button><b>${esc(v.title)}</b></div><iframe src="/public-videos/${encodeURIComponent(v.file)}" title="${esc(v.title)}" allow="autoplay; fullscreen"></iframe>`;
+ o.innerHTML=`<div class="pvb"><button class="btn" data-act="pvclose">Close</button><b>${esc(v.title)}</b></div><iframe src="/public-videos/${encodeURIComponent(v.file)}" title="${esc(v.title)}" sandbox="allow-scripts" allow="autoplay; fullscreen"></iframe>`;
  document.body.appendChild(o);
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closePV()});
@@ -687,7 +690,7 @@ function screenInfo(){
  if(n.org)o.org=n.org;if(n.cls)o.cls=n.cls;if(n.sub)o.sub=n.sub;if(n.med)o.med=n.med;if(n.ch)o.ch=n.ch;
  return o}
 function draw(){
- if((AUTH_READY||(CLOUDFAIL&&navigator.onLine))&&!USER){openSide(false,true);$('#app').innerHTML=gateHTML();window.scrollTo(0,0);if(window.Analytics)window.Analytics.screen({name:'login_gate'});return}
+ if((AUTH_READY||(CLOUDFAIL&&navigator.onLine))&&!USER){openSide(false,true);$('#app').innerHTML=PARENT_LINK&&window.PARENT_KEY?`<div class="logo" style="margin:14px 0">${LOGO}Orbit Tutorial</div>`+PARENT_KEY.viewHTML():gateHTML();window.scrollTo(0,0);if(window.Analytics)window.Analytics.screen({name:'login_gate'});return}
  if(!DATA)return;
  const d=DATA,y=window.scrollY;
  let body;
@@ -699,6 +702,7 @@ function draw(){
   body=head1(TITLES[VIEW])+listHTML(fn,empty,entries,true)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
  }else if(VIEW==='getvideo')body=gvHTML();
  else if(VIEW==='pubvideo')body=pvHTML();
+ else if(VIEW==='ai')body=window.PARENT_KEY?PARENT_KEY.viewHTML():'';
  else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
@@ -710,7 +714,7 @@ function draw(){
 function drawSide(){
  const item=(v,ico,label,badge)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}
+ ${item('home','home','Home')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}${item('ai','ai','Advanced AI Features')}
  <div class="sline"></div>
  ${item('pyq','pyq','PYQ')}${item('pass','pass','Pass mark')}${item('topper','topper','Topper')}${item('faculty','fac','Faculty')}${item('dev','dev','Developer')}
  <div class="sgap"></div><div class="sline"></div>
@@ -917,7 +921,7 @@ function gvKnown(text,sub){
 const GV_SUB={Mathematics:{label:'Maths',noun:'Maths',store:'mathVideo',url:'/api/mathvideo/generate'},Science:{label:'Science',noun:'Science',store:'scienceVideo',url:'/api/sciencevideo/generate'}};
 function gvHTML(){
  const S=GV.sub,sci=S==='Science';
- return `<h1 style="font-size:26px;margin-top:14px">Get Video</h1>
+ return `<h1 style="font-size:26px;margin-top:14px">Get Video</h1>${window.PARENT_KEY&&PARENT_KEY.has()?'<p class="mut" style="margin:6px 0 0">Aapki apni Gemini key use ho rahi hai, isliye roz ki video limit nahi lagegi.</p>':''}
  <div role="tablist" style="display:flex;gap:8px;margin-top:12px">${Object.keys(GV_SUB).map(k=>`<button class="btn" role="tab" aria-selected="${k===S}" data-act="gvsub" data-v="${k}" ${GV.busy?'disabled':''} style="${k===S?'':'opacity:.55'}">${GV_SUB[k].label}</button>`).join('')}</div>
  <p class="mut" style="margin-top:10px">${sci?'Science':'Maths'} ka question app me question ke bagal ke 3 dots se <b>Copy question</b> karo aur yahan paste karo. Sirf app ke ${sci?'Science':'Maths'} questions chalenge. ${sci?'Whiteboard video book ke notes se banega.':'Powers aur True/False bhi chalenge. Whiteboard video ban jayega.'}</p>
  <textarea id="gvText" data-clarity-mask="true" maxlength="760" rows="4" placeholder="${sci?'Yahan copy kiya hua Science question paste karo':'Yahan copy kiya hua Maths question paste karo'}" aria-label="${sci?'Science':'Maths'} question" style="width:100%;margin-top:12px;padding:12px;border:1px solid var(--ln);border-radius:12px;background:var(--card);color:var(--tx);font:inherit;resize:vertical">${esc(GV.text)}</textarea>
