@@ -358,7 +358,7 @@
      info = { cls, subject, medium, chNo, secNo, qNo }. School is not known from the question, so the admin's remembered School stays.
      Returns null when something is missing. */
   function qFields(info) {
-    if (!info || !info.chNo || !info.secNo || !info.qNo || !info.cls) return null;
+    if (!info || info.chNo == null || info.chNo === "" || !info.secNo || !info.qNo || !info.cls) return null;   // chapter 0 = the Revision section, so 0 is allowed
     var subject = String(info.subject || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     return { cls: "class" + info.cls, subject: subject === "mathematics" ? "math" : subject, medium: String(info.medium || "English").toLowerCase() + "medium",
              ex: info.chNo + "." + info.secNo, q: String(info.qNo), part: "" };

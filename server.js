@@ -181,7 +181,7 @@ Rules: plain text only, you may use **bold** for key words; no headings, no tabl
   };
   return { answer, tr, vis, more, kinds };
 }
-function mathsProfile(cls) {
+function mathsProfile(cls, medium) {
   const answer = `You are a friendly Class ${cls} Mathematics tutor for students in Assam, working from their textbook.
 Solve ONLY the given textbook question, at Class ${cls} level, the way the textbook teaches.
 Rules:
@@ -218,6 +218,14 @@ Rules: plain text only, you may use **bold** for key words; no headings, no tabl
     mistakes: 'List 3 common mistakes students make on this kind of question (for example sign errors). For each: the mistake, then the correct step. 1 or 2 lines each.',
     mcq: `Make 3 multiple-choice practice questions on the same topic, Class ${cls} level, with small easy numbers. Do not repeat the original question. Use exactly this format for each, with a blank line between questions:\nQ1. question\nA) option\nB) option\nC) option\nD) option\nAnswer: X (one-line working)`
   };
+  if (medium === 'Assamese') {   // Assamese-medium maths (SEBA): the explanation is in Assamese; numbers, symbols and equations stay in normal maths notation
+    const terms = 'Use these Assamese terms: HCF = গ.সা.গু., LCM = ল.সা.গু., prime factor = মৌলিক উৎপাদক, prime number = মৌলিক সংখ্যা, composite number = যৌগিক সংখ্যা, integer = পূৰ্ণসংখ্যা, rational = মূলদ, irrational = অমূলদ, quotient = ভাগফল, remainder = ভাগশেষ, divisor = ভাজক, dividend = ভাজ্য, proof = প্ৰমাণ, hence = গতিকে.';
+    const keep = 'Keep numbers (0-9), symbols, equations, √, powers and **bold** in normal maths notation.';
+    const o = { answer, more, vis };
+    return { answer: o.answer + `\n- LANGUAGE: Write the whole answer in simple Assamese (Assamese script) that a Class ${cls} student can write in an exam. ${keep} ${terms}`,
+      tr, vis: o.vis + '\n- Write any text labels in short Assamese; numbers and symbols stay as they are.',
+      more: o.more.replace('in simple English', 'in simple Assamese (Assamese script)') + `\n${keep} ${terms}`, kinds };
+  }
   return { answer, tr, vis, more, kinds };
 }
 function socialProfile(cls) {
@@ -385,13 +393,22 @@ Rules: plain text only, you may use **bold** for key words; no headings, no tabl
   return { answer, tr, vis, more, kinds };
 }
 const isEnglish = course => /^English/.test(course.subject);
-const profileFor = course => course.custom ? CUSTOM.customProfile(course.class, course.subject, course.sourceLang || 'English')
+// Assamese-medium Social Science and Science (SEBA): the explanation is written in Assamese; names, numbers, formulas and symbols stay as they are.
+function assameseMedium(P, cls) {
+  const rule = `- LANGUAGE: Write the whole answer in simple Assamese (Assamese script) that a Class ${cls} student can write in an exam; this replaces "simple English" above. Keep it exam-friendly: 1 mark = one line, 2 to 3 marks = 3 to 5 lines, 4 to 5 marks = short structured points. Keep numbers, chemical formulas, symbols and **bold** as they are. If the chapter notes give model answers, follow them.`;
+  return { ...P, answer: P.answer + '\n' + rule,
+    vis: P.vis ? P.vis + '\n- Write any text labels in short Assamese; numbers, formulas and symbols stay as they are.' : P.vis,
+    more: P.more ? P.more.replace(/in simple English/g, 'in simple Assamese (Assamese script)') + '\nWrite in Assamese; keep numbers, formulas and symbols as they are.' : P.more };
+}
+const baseProfileFor = course => course.custom ? CUSTOM.customProfile(course.class, course.subject, course.sourceLang || 'English')
   : course.subject === 'Assamese' ? assameseProfile(course.class)
   : isEnglish(course) ? englishProfile(course.class)
   : course.subject === 'Hindi' ? hindiProfile(course.class)
   : course.subject === 'Arabic' ? arabicProfile(course.class)
   : course.subject === 'Social Science' ? socialProfile(course.class)
-  : course.subject === 'Mathematics' ? mathsProfile(course.class) : scienceProfile(course.class);
+  : course.subject === 'Mathematics' ? mathsProfile(course.class, course.medium) : scienceProfile(course.class);
+const profileFor = course => (course.medium === 'Assamese' && (course.subject === 'Social Science' || course.subject === 'Science'))
+  ? assameseMedium(baseProfileFor(course), course.class) : baseProfileFor(course);
 
 const MAX_CLIENT_TEXT = 2500;   // saved answers the browser may send back if the server forgot them (free-tier restarts)
 const hash = t => crypto.createHash('sha1').update(String(t)).digest('hex').slice(0, 10);
@@ -400,7 +417,7 @@ const clientText = t => (typeof t === 'string' && t.length > 0 && t.length <= MA
 function buildPrompt(q, course, ch) {
   const parts = [];
   if (course && (isEnglish(course) || ['Hindi', 'Arabic', 'Assamese'].includes(course.subject)) && ch) parts.push(`Lesson: ${ch.title}${ch.author ? ' by ' + ch.author : ''}`);
-  if (course && (course.custom || course.subject === 'Mathematics' || course.subject === 'Social Science' || (course.subject === 'Science' && course.class !== 10)) && ch && ch.title) parts.push(`Chapter: ${ch.title}`);
+  if (course && (course.custom || course.subject === 'Mathematics' || course.subject === 'Social Science' || (course.subject === 'Science' && (course.class !== 10 || course.medium === 'Assamese'))) && ch && ch.title) parts.push(`Chapter: ${ch.title}`);
   parts.push((q.label || q.no) ? `Question ${q.label || q.no}: ${q.text}` : `Question: ${q.text}`);
   if (q.table) {
     parts.push('Table:');
@@ -413,7 +430,8 @@ function buildPrompt(q, course, ch) {
   if (q.context) parts.push('\n(Textbook context, do not repeat it: ' + q.context + ')');
   const lang = course && course.custom ? (course.sourceLang === 'Hindi' ? 'Reply in simple Hindi (Devanagari).' : course.sourceLang === 'Assamese' ? 'Reply in simple Assamese (Assamese script).' : 'Reply in simple English.')
     : course && course.subject === 'Hindi' ? 'Reply in simple Hindi (Devanagari).'
-    : course && course.subject === 'Assamese' ? 'Reply in simple Assamese (Assamese script).' : 'Reply in simple English.';
+    : course && course.subject === 'Assamese' ? 'Reply in simple Assamese (Assamese script).'
+    : course && course.medium === 'Assamese' && ['Mathematics', 'Social Science', 'Science'].includes(course.subject) ? 'Reply in simple Assamese (Assamese script). Keep numbers, symbols, formulas and equations in normal notation.' : 'Reply in simple English.';
   return `${lang}\n\n${parts.join('\n')}`;
 }
 

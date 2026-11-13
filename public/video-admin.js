@@ -7,7 +7,7 @@
  */
 (function (g) {
   "use strict";
-  var FALLBACK = [["c10-science", "Class 10 Science"], ["c7-english", "Class 7 English"], ["c7-maths", "Class 7 Mathematics"]];
+  var FALLBACK = [["c10-science", "Class 10 Science"], ["c7-english", "Class 7 English"], ["c7-maths", "Class 7 Mathematics"], ["c10-maths", "Class 10 Mathematics (Assamese)"]];
   var ID_RE = /^[a-z0-9][a-z0-9-]{2,79}$/;
 
   function h(tag, props, kids) {
