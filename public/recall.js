@@ -17,6 +17,7 @@
   const st = { key: '', type: 'concept', text: '', busy: false, err: '', res: null, left: null, quotaFor: '' };
   const hasKey = () => !!(g.PARENT_KEY && g.PARENT_KEY.has && g.PARENT_KEY.has());
 
+  const readyCh = ch => !!ch && !ch.locked && Array.isArray(ch.sections) && ch.sections.length > 0;   // locked / empty chapters (Coming soon) cannot be tested
   function chapters() {
     const d = typeof DATA !== 'undefined' ? DATA : null;
     return d && Array.isArray(d.courses) ? d.courses : [];
@@ -58,7 +59,7 @@
 
   function form() {
     const cs = chapters(), blocked = !hasKey() && st.left === 0;
-    const opts = cs.map(c => `<optgroup label="${esc('Class ' + c.class + ' ' + c.subject)}">${(c.chapters || []).map(ch => { const v = c.id + '|' + ch.no; return `<option value="${esc(v)}" ${v === st.key ? 'selected' : ''}>${esc('Ch ' + ch.no + ': ' + ch.title)}</option>`; }).join('')}</optgroup>`).join('');
+    const opts = cs.map(c => `<optgroup label="${esc('Class ' + c.class + ' ' + c.subject)}">${(c.chapters || []).filter(readyCh).map(ch => { const v = c.id + '|' + ch.no; return `<option value="${esc(v)}" ${v === st.key ? 'selected' : ''}>${esc('Ch ' + ch.no + ': ' + ch.title)}</option>`; }).join('')}</optgroup>`).join('').replace(/<optgroup[^>]*><\/optgroup>/g, '');
     const w = W[st.type], field = 'width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit';
     return `<div class="card"><h2 class="sec" style="margin-top:0">Test your knowledge</h2>
       <p class="mut" style="margin:0 0 10px">Book band karo. Jo yaad hai, apne words mein explain karo.</p>
