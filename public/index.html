@@ -167,6 +167,7 @@ const HEART='<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-
 const I={
  ai:ic('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>'),
  recall:ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+ mic:ic('<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'),
  heart:ic(HEART),
  re:ic('<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>'),
  tr:ic('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z"/>'),
@@ -705,6 +706,7 @@ function draw(){
  else if(VIEW==='pubvideo')body=pvHTML();
  else if(VIEW==='ai')body=window.PARENT_KEY?PARENT_KEY.viewHTML():'';
  else if(VIEW==='recall')body=window.RECALL?RECALL.viewHTML():'';
+ else if(VIEW==='bolo')body=window.BOLO?BOLO.viewHTML():'';
  else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
@@ -716,7 +718,7 @@ function draw(){
 function drawSide(){
  const item=(v,ico,label,badge)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}${item('recall','recall','Recall AI')}${item('ai','ai','Advanced AI Features')}
+ ${item('home','home','Home')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo')}${item('ai','ai','Advanced AI Features')}
  <div class="sline"></div>
  ${item('pyq','pyq','PYQ')}${item('pass','pass','Pass mark')}${item('topper','topper','Topper')}${item('faculty','fac','Faculty')}${item('dev','dev','Developer')}
  <div class="sgap"></div><div class="sline"></div>
@@ -737,6 +739,7 @@ function stopSay(){
 function navTo(n,push=true){
  stopSay();
  NAV=n;LOCKED=null;VIEW='home';navSave();
+ if(window.BOLO)BOLO.leave();   // the mic must never stay on after the student leaves the Bolo screen
  draw();window.scrollTo(0,0);
  if(push){try{history.pushState({nav:n},'')}catch(e){}}
 }
@@ -748,11 +751,12 @@ function goBack(){
 function go(v){
  if(v==='home'){openSide(false,true);navTo({page:'home'});return}
  stopSay();
- VIEW=v;draw();openSide(false,true);window.scrollTo(0,0);
+ VIEW=v;if(window.BOLO&&v!=='bolo')BOLO.leave();
+ draw();openSide(false,true);window.scrollTo(0,0);
 }
 window.addEventListener('popstate',e=>{
  if(!(e.state&&e.state.nav)||!DATA)return;
- NAV=e.state.nav;LOCKED=null;VIEW='home';fixNav();navSave();draw();window.scrollTo(0,0);
+ if(window.BOLO)BOLO.leave();NAV=e.state.nav;LOCKED=null;VIEW='home';fixNav();navSave();draw();window.scrollTo(0,0);
 });
 try{history.replaceState({nav:NAV},'')}catch(e){}
 function pin(id){if(PINS[id])delete PINS[id];else PINS[id]=Date.now();pinPersist();draw()}
@@ -1091,6 +1095,8 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/analytics.js"></script>
 <script src="/parent-key.js"></script>
 <script src="/recall.js"></script>
+<script src="/bolo-core.js"></script>
+<script src="/bolo.js"></script>
 <script type="module">import('/cloud.js').catch(e=>window.onCloudFail&&window.onCloudFail(e))</script>
 </body>
 </html>

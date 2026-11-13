@@ -91,3 +91,10 @@ Files: `public/qvideo.js` (new), `public/index.html`, `public/team.js`, `firesto
 
 - `npm test` runs every file in `tests/` (add `jsdom` with `npm i --no-save jsdom` to include the DOM tests; CI does this and treats a skipped test as a failure).
 - Security notes, the Content-Security-Policy rollout and open items: [docs/SECURITY.md](docs/SECURITY.md).
+
+## Bolo (bolo bolke seekho)
+Sidebar > **Bolo**. Bachha mic dabake A se Z, 2 se 10 tak ke table ya poem bolta hai; browser ki speech recognition sunti hai, `public/bolo-core.js` check karta hai (letter ka naam, shabd, number words/digits, poem ki line). Koi server ya AI cost nahi.
+- Files: `public/bolo-core.js` (content + matching, pure), `public/bolo.js` (screen, mic, timer, parent section).
+- Awaaz ya bola hua text kabhi save/upload nahi hota. Sirf sahi/dobara ke nishaan, roz ka time aur parent settings (limit 5-30 min, mic allow, optional 4 number PIN as hash) is device par `localStorage` (`orbit.bolo.<uid>`) mein rehte hain.
+- Mic sirf Chrome/Edge jaise browsers mein chalta hai (internet chahiye). Baaki browsers mein "Maine bol diya" wale buttons aate hain.
+- Naya poem jodna ho to `POEMS` mein ek object add karo (`bolo-core.js`). Tests: `tests/bolo.test.js`, `tests/bolo-dom.test.js` (jsdom).
