@@ -62,5 +62,16 @@ t('page never stores the typed text', !/localStorage\.setItem\([^)]*text/.test(C
 t('page escapes AI text before showing it', /esc\(x\)/.test(C) && /esc\(r\.revise\)/.test(C));
 t('no emoji in the page', !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(C));
 
+// voice recording with a timer
+t('has a Record Voice button and a visible timer', /Record Voice/.test(C) && /id="rcTimer"/.test(C) && /role="timer"/.test(C));
+t('recording stops by itself at a maximum', /MAX_REC = 120/.test(C) && /rc\.sec >= MAX_REC/.test(C));
+t('voice uses the browser speech recognition, not audio upload', /SpeechRecognition/.test(C) && !/MediaRecorder|getUserMedia|FileReader|new Blob|audio\/webm/.test(C));
+t('mic goes off when the page is hidden or the screen changes', /visibilitychange/.test(C) && /pagehide/.test(C) && /getElementById\('rcText'\) \|\| /.test(C));
+t('mic is stopped before evaluating', /if \(rc\.on\) stopVoice\(\);\s*st\.busy = true/.test(C));
+t('voice text is capped to the server limit', /slice\(0, MAX_CHARS\)/.test(C) && /MAX_CHARS = 1500/.test(C));
+t('unsupported browsers get a clear message and typing still works', /Chrome ya Edge/.test(C) && /!SR && !rc\.on/.test(C));
+t('page says audio is not recorded or stored', /Orbit awaaz record ya save nahi karta/.test(C));
+t('mic permission error is explained', /Browser ne mic ki ijazat nahi di/.test(C));
+t('the page still sends only text to the server', /\{ course: cur\.c\.id, ch: cur\.ch\.no, type: st\.type, text \}/.test(C));
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

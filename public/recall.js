@@ -15,6 +15,71 @@
   const write = a => { try { g.localStorage.setItem(PREFIX + uid(), JSON.stringify(a.slice(-KEEP))); } catch (e) {} };
 
   const st = { key: '', type: 'concept', text: '', busy: false, err: '', res: null, left: null, quotaFor: '' };
+
+  // ---- Voice: the browser turns speech into text and the text lands in the box. Orbit never records, uploads or stores audio. ----
+  // Only the words are used, and the student can read and fix them before Evaluate. Chrome and Edge do this; other browsers just keep typing.
+  const SR = g.SpeechRecognition || g.webkitSpeechRecognition;
+  const MAX_REC = 120;                                    // seconds: a recording stops by itself here
+  const MAX_CHARS = 1500;
+  const rc = { on: false, sec: 0, lang: 'hi-IN', err: '' };
+  let recog = null, tick = null, base = '', fin = '';
+  const fmt = n => Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
+
+  function fillBox(interim) {
+    st.text = (base + fin + (interim || '')).slice(0, MAX_CHARS);
+    const ta = g.document.getElementById('rcText');
+    if (ta && ta.value !== st.text) ta.value = st.text;
+  }
+  function showTimer() {
+    const el = g.document.getElementById('rcTimer');
+    if (el) el.textContent = fmt(rc.sec) + ' / ' + fmt(MAX_REC);
+  }
+  function stopVoice(msg) {
+    const was = rc.on;
+    rc.on = false;
+    if (tick) { clearInterval(tick); tick = null; }
+    if (recog) { const r = recog; recog = null; r.onresult = r.onerror = r.onend = null; try { r.stop(); } catch (e) {} }
+    if (msg !== undefined) rc.err = msg;
+    if (was) redraw();
+  }
+  function startVoice() {
+    if (rc.on || st.busy) return;
+    if (!SR) { rc.err = 'Is browser mein voice nahi chalega. Chrome ya Edge use karo, ya type karo.'; return redraw(); }
+    let r; try { r = new SR(); } catch (e) { rc.err = 'Mic shuru nahi ho paya. Dobara try karo.'; return redraw(); }
+    base = st.text && !/\s$/.test(st.text) ? st.text + ' ' : st.text; fin = '';
+    r.lang = rc.lang; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+    r.onresult = e => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) fin += t.trim() + ' '; else interim += t;
+      }
+      fillBox(interim);
+    };
+    r.onerror = e => {
+      const c = e && e.error;
+      if (c === 'no-speech' || c === 'aborted') return;   // onend decides what happens next
+      stopVoice(c === 'not-allowed' || c === 'service-not-allowed' ? 'Browser ne mic ki ijazat nahi di. Address bar mein mic allow karo.'
+        : c === 'audio-capture' ? 'Mic nahi mila. Mic lagaa hai ya nahi dekho.'
+        : c === 'network' ? 'Internet check karo, phir dobara try karo.' : 'Voice band ho gayi. Dobara try karo.');
+    };
+    // Chrome ends a session after a short silence: while the student is still recording, start it again so the timer and the text carry on.
+    r.onend = () => {
+      if (recog !== r || !rc.on) return;
+      try { r.start(); } catch (e) { stopVoice('Voice band ho gayi. Dobara try karo.'); }
+    };
+    recog = r; rc.on = true; rc.sec = 0; rc.err = '';
+    try { r.start(); } catch (e) { recog = null; rc.on = false; rc.err = 'Mic shuru nahi ho paya. Dobara try karo.'; return redraw(); }
+    tick = setInterval(() => {
+      if (!g.document.getElementById('rcText') || g.document.hidden) return stopVoice('');   // page changed or tab hidden: mic goes off
+      rc.sec++; showTimer();
+      if (rc.sec >= MAX_REC) stopVoice('Time poora hua (' + fmt(MAX_REC) + '). Chahein to likhke aage badhao.');
+    }, 1000);
+    redraw();
+  }
+  g.document.addEventListener('visibilitychange', () => { if (g.document.hidden && rc.on) stopVoice(''); });
+  g.addEventListener('pagehide', () => { if (rc.on) stopVoice(''); });
+
   const hasKey = () => !!(g.PARENT_KEY && g.PARENT_KEY.has && g.PARENT_KEY.has());
 
   const readyCh = ch => !!ch && !ch.locked && Array.isArray(ch.sections) && ch.sections.length > 0;   // locked / empty chapters (Coming soon) cannot be tested
@@ -67,10 +132,17 @@
       <label class="mut" for="rcType" style="display:block;margin-top:10px">Sawaal ka type</label><select id="rcType" style="${field}">${Object.keys(TYPES).map(k => `<option value="${k}" ${k === st.type ? 'selected' : ''}>${TYPES[k]}</option>`).join('')}</select>
       <p class="mut" style="margin:6px 0 0;font-size:12.5px">Marks: ${Object.keys(CRIT).map(k => CRIT[k] + ' ' + w[k]).join(', ')}.</p>
       <label class="mut" for="rcText" style="display:block;margin-top:10px">Aapka explanation</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+        <button class="btn" data-rc="${rc.on ? 'stop' : 'rec'}" style="margin:0" ${st.busy || (!SR && !rc.on) ? 'disabled' : ''} aria-pressed="${rc.on}">${rc.on ? 'Stop' : 'Record Voice'}</button>
+        <select id="rcLang" aria-label="Bolne ki language" style="padding:9px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit" ${rc.on ? 'disabled' : ''}><option value="hi-IN" ${rc.lang === 'hi-IN' ? 'selected' : ''}>Hindi</option><option value="en-IN" ${rc.lang === 'en-IN' ? 'selected' : ''}>English</option></select>
+        <span id="rcTimer" role="timer" aria-live="off" style="font-variant-numeric:tabular-nums;font-weight:600">${rc.on || rc.sec ? fmt(rc.sec) + ' / ' + fmt(MAX_REC) : '0:00 / ' + fmt(MAX_REC)}</span>
+        ${rc.on ? '<span class="mut">Mic chalu hai</span>' : ''}
+      </div>
+      ${rc.err ? `<p class="err" role="status" style="margin:8px 0 0">${esc(rc.err)}</p>` : !SR ? '<p class="mut" style="margin:8px 0 0;font-size:12.5px">Voice ke liye Chrome ya Edge chahiye. Abhi type kar sakte ho.</p>' : ''}
       <textarea id="rcText" rows="6" maxlength="1500" placeholder="Explain everything you remember..." style="${field}">${esc(st.text)}</textarea>
       <button class="btn" data-rc="go" ${st.busy || blocked || !st.key ? 'disabled' : ''}>${st.busy ? 'Evaluate ho raha hai...' : 'Evaluate My Knowledge'}</button>
       ${st.err ? `<p class="err" role="status" style="margin:10px 0 0">${esc(st.err)}</p>` : ''}
-      <p class="mut" style="margin:10px 0 0;font-size:12.5px">Sirf aapka likha text AI ko jata hai. Naam, school ya phone number nahi. Orbit sirf score aapke phone par yaad rakhta hai.</p></div>`;
+      <p class="mut" style="margin:10px 0 0;font-size:12.5px">Orbit awaaz record ya save nahi karta. Browser bole hue ko text mein badalta hai (Chrome ye kaam Google ki service se karta hai). Sirf wahi text AI ko jata hai. Naam, school ya phone number nahi. Orbit sirf score aapke phone par yaad rakhta hai.</p></div>`;
   }
 
   function report() {
@@ -92,6 +164,7 @@
     const cur = current(), text = st.text.trim();
     if (!cur) return say('Pehle chapter chuno.');
     if (text.length < 20) return say('Thoda aur likho. Kam se kam ek do line explain karo.');
+    if (rc.on) stopVoice();
     st.busy = true; st.err = ''; redraw();
     try {
       const j = await g.api('/api/recall/evaluate', { course: cur.c.id, ch: cur.ch.no, type: st.type, text });
@@ -109,13 +182,16 @@
   g.document.addEventListener('change', e => {
     if (e.target.id === 'rcTopic') { st.key = e.target.value; st.res = null; st.err = ''; redraw(); }
     else if (e.target.id === 'rcType') { st.type = e.target.value; redraw(); }
+    else if (e.target.id === 'rcLang') rc.lang = e.target.value;
   });
   g.document.addEventListener('input', e => { if (e.target.id === 'rcText') st.text = e.target.value; });
   g.document.addEventListener('click', e => {
     const b = e.target && e.target.closest ? e.target.closest('[data-rc]') : null;
     if (!b || b.disabled) return;
     if (b.dataset.rc === 'go') evaluate();
-    else if (b.dataset.rc === 'again') { st.res = null; st.text = ''; st.err = ''; redraw(); g.scrollTo(0, 0); }
+    else if (b.dataset.rc === 'rec') startVoice();
+    else if (b.dataset.rc === 'stop') stopVoice('');
+    else if (b.dataset.rc === 'again') { st.res = null; st.text = ''; st.err = ''; rc.sec = 0; rc.err = ''; redraw(); g.scrollTo(0, 0); }
     else if (b.dataset.rc === 'adv' && typeof g.go === 'function') g.go('ai');
   });
 
@@ -124,6 +200,6 @@
       loadQuota();
       return `<h1 style="font-size:26px;margin-top:14px">Recall AI</h1>${quotaCard()}${st.res ? report() : form()}<p class="mut" style="margin-top:20px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
     },
-    _reset() { Object.assign(st, { key: '', type: 'concept', text: '', busy: false, err: '', res: null, left: null, quotaFor: '' }); }
+    _reset() { stopVoice(''); rc.sec = 0; rc.err = ''; Object.assign(st, { key: '', type: 'concept', text: '', busy: false, err: '', res: null, left: null, quotaFor: '' }); }
   };
 })();
