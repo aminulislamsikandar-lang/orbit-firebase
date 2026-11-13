@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const QUIZ = require('./questions');
+const RECALL = require('./recall-core');
 const { securityHeaders, rateKey, createLimiter, cspReport } = require('./security');
 
 const app = express();
@@ -58,6 +59,7 @@ function takeFree(uid) {
   if (n >= FREE_DAILY) return false;
   FREE_USED.set(k, n + 1); return true;
 }
+function refundFree(uid) { const k = uid + '|' + dayKey(), n = FREE_USED.get(k) || 0; if (n > 0) FREE_USED.set(k, n - 1); }
 function freeLeft(uid) { return Math.max(0, FREE_DAILY - (FREE_USED.get(uid + '|' + dayKey()) || 0)); }
 setInterval(() => { const d = dayKey(); for (const k of FREE_USED.keys()) if (!k.endsWith('|' + d)) FREE_USED.delete(k); }, 3600000).unref();
 let keyStart = 0; // round-robin so load is spread across keys
@@ -593,6 +595,28 @@ app.post('/api/byok/test', async (req, res) => {
   res.status(s === 429 ? 429 : 400).json({ code: (s === 400 || s === 401 || s === 403) ? 'invalid' : s === 429 ? 'quota' : 'busy' });
 });
 app.get('/api/recall/quota', (req, res) => res.json({ left: freeLeft(req.user.uid) }));
+
+// ---- Recall AI: the student explains a chapter from memory, Gemini scores it against the textbook text (recall-core.js). ----
+// The client sends only {course, ch, type, text}. Without the parent's key: 1 free evaluation per day. With it: no daily limit, the parent's key pays.
+// Only the typed text goes to Gemini. Nothing about the student (name, school, phone) is sent, and the text itself is not stored here.
+app.post('/api/recall/evaluate', async (req, res) => {
+  const b = req.body || {}, uk = userKeyOf(req);
+  const hit = RECALL.findChapter(QUIZ, String(b.course || ''), b.ch);
+  if (!hit || !RECALL.WEIGHTS[b.type]) return res.status(400).json({ error: 'Topic ya sawaal ka type sahi nahi hai.' });
+  const text = String(b.text || '').trim();
+  if (text.length < RECALL.MIN_CHARS) return res.status(400).json({ error: 'Thoda aur likho. Kam se kam ek do line explain karo.' });
+  if (text.length > RECALL.MAX_CHARS) return res.status(400).json({ error: 'Jawab bahut lamba hai. ' + RECALL.MAX_CHARS + ' akshar tak likho.' });
+  if (!guardAI(req, res)) return;
+  const uid = req.user.uid;
+  if (!uk && !takeFree(uid)) return res.status(429).json({ code: 'daily_limit', left: 0, error: 'Aaj ka free AI check ho chuka hai. Parent se Gemini key lagwayein ya kal aayein.' });
+  const r = await geminiFor(req, RECALL.SYSTEM, RECALL.buildPrompt(hit.course, hit.ch, text), { json: true, temperature: 0.2, maxTokens: 1500 });
+  const out = r.text ? RECALL.parseResult(r.text, b.type) : null;
+  if (!out) {
+    if (!uk) refundFree(uid);   // a failed check must not use up the free one
+    return res.status(502).json({ error: r.text ? 'AI ka jawab samajh nahi aaya. Dobara try karo.' : failMsgFor(req, r.status) });
+  }
+  res.json({ ...out, left: uk ? null : freeLeft(uid) });
+});
 
 // ---- answer ---------------------------------------------------------------
 app.post('/api/answer', async (req, res) => {
