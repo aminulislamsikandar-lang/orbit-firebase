@@ -62,16 +62,48 @@ t('page never stores the typed text', !/localStorage\.setItem\([^)]*text/.test(C
 t('page escapes AI text before showing it', /esc\(x\)/.test(C) && /esc\(r\.revise\)/.test(C));
 t('no emoji in the page', !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(C));
 
-// voice recording with a timer
+// voice: recorded in the browser, sent to the AI, never stored
 t('has a Record Voice button and a visible timer', /Record Voice/.test(C) && /id="rcTimer"/.test(C) && /role="timer"/.test(C));
 t('recording stops by itself at a maximum', /MAX_REC = 120/.test(C) && /rc\.sec >= MAX_REC/.test(C));
-t('voice uses the browser speech recognition, not audio upload', /SpeechRecognition/.test(C) && !/MediaRecorder|getUserMedia|FileReader|new Blob|audio\/webm/.test(C));
-t('mic goes off when the page is hidden or the screen changes', /visibilitychange/.test(C) && /pagehide/.test(C) && /getElementById\('rcText'\) \|\| /.test(C));
-t('mic is stopped before evaluating', /if \(rc\.on\) stopVoice\(\);\s*st\.busy = true/.test(C));
-t('voice text is capped to the server limit', /slice\(0, MAX_CHARS\)/.test(C) && /MAX_CHARS = 1500/.test(C));
-t('unsupported browsers get a clear message and typing still works', /Chrome ya Edge/.test(C) && /!SR && !rc\.on/.test(C));
-t('page says audio is not recorded or stored', /Orbit awaaz record ya save nahi karta/.test(C));
+t('Hindi, English, Assamese and Bengali can be chosen', /hi: 'Hindi', en: 'English', as: 'Assamese', bn: 'Bengali'/.test(C));
+t('audio is recorded with MediaRecorder and sent as base64 inside the evaluate request', /MediaRecorder/.test(C) && /body\.audio = \{ mime/.test(C) && /readAsDataURL/.test(C));
+t('two voice modes: AI recording (default) and browser text', /ST\.rvoice === 'text'\) \? 'text' : 'ai'/.test(C) && /SpeechRecognition/.test(C) && /new SR\(\)/.test(C) && /MediaRecorder/.test(C));
+t('text mode keeps the words in the box and sends text only', /fillBox\(interim\)/.test(C) && /TLANG = \{ hi: 'hi-IN', en: 'en-IN', as: 'as-IN', bn: 'bn-IN' \}/.test(C));
+t('text mode explains an unsupported language and points to the AI mode', /language-not-supported/.test(C) && /AI ko recording bhejo/.test(C));
+t('the permission box is only for the AI recording mode', /mode\(\) === 'ai' && CAN && !voiceOk\(\)/.test(C));
+t('Settings has the Recall voice choice, synced with the other settings, default AI', /setrv/.test(read('public/index.html')) && /rvoice:'ai'/.test(read('public/index.html')) && /Recall AI: bolne ka tareeka/.test(read('public/index.html')) && /RECALL\.voiceChanged\(\)/.test(read('public/index.html')));
+t('the Recall screen links to the setting', /data-rc="settings"/.test(C) && /g\.go\('settings'\)/.test(C));
+t('mic goes off when the page is hidden or the screen changes', /visibilitychange/.test(C) && /pagehide/.test(C) && /getElementById\('rcText'\) \|\|/.test(C));
+t('mic tracks are stopped', /getTracks\(\)\.forEach\(t => t\.stop\(\)\)/.test(C));
+t('the recording is dropped after it is checked and is never written to storage', /rc\.clip = null; rc\.sec = 0;   \/\/ the recording is gone/.test(C) && !/localStorage\.setItem\([^)]*clip/.test(C) && !/localStorage\.setItem\([^)]*blob/.test(C));
+t('a parent permission box must be ticked before the first recording', /rcVoiceOk/.test(C) && /Parent ki ijazat hai/.test(C) && /Pehle parent ki ijazat wala box tick karo/.test(C));
+t('the page says the recording goes to the AI and is not saved', /bolne ki recording AI ko jati hai/.test(C) && /recording save nahi karta/.test(C));
+t('unsupported browsers get a clear message and typing still works', /Chrome ya Edge/.test(C) && /!canRec\(\) && !rc\.on/.test(C));
 t('mic permission error is explained', /Browser ne mic ki ijazat nahi di/.test(C));
-t('the page still sends only text to the server', /\{ course: cur\.c\.id, ch: cur\.ch\.no, type: st\.type, text \}/.test(C));
+t('the report shows what the AI heard', /AI ne ye suna/.test(C));
+t('parent consent text mentions voice and bumped version', /awaaz recording/.test(read('public/parent-key.js')) && /CONSENT_VERSION = 2/.test(read('public/parent-key.js')));
+
+// audio check (server side)
+const b64 = n => Buffer.alloc(n, 7).toString('base64');
+const okA = R.checkAudio({ mime: 'audio/webm;codecs=opus', data: b64(5000) });
+t('a normal clip passes and the codec part is dropped from the mime', okA.ok && okA.mime === 'audio/webm' && okA.bytes === 5000, JSON.stringify(okA).slice(0, 80));
+t('mp4 and ogg clips pass', R.checkAudio({ mime: 'audio/mp4', data: b64(3000) }).ok && R.checkAudio({ mime: 'audio/ogg', data: b64(3000) }).ok);
+t('a clip over the size limit is refused', !R.checkAudio({ mime: 'audio/webm', data: b64(R.MAX_AUDIO_BYTES + 3) }).ok);
+t('a clip at the size limit passes', R.checkAudio({ mime: 'audio/webm', data: b64(R.MAX_AUDIO_BYTES - 3) }).ok);
+t('a tiny clip is refused', !R.checkAudio({ mime: 'audio/webm', data: b64(100) }).ok);
+t('wrong type, wrong shape and bad base64 are refused', [null, 'x', {}, { mime: 'video/mp4', data: b64(3000) }, { mime: 'text/html', data: b64(3000) }, { mime: 'audio/webm', data: 5 }, { mime: 'audio/webm', data: 'not base64!!' }, { mime: 'audio/webm', data: '' }, { mime: 'audio/webm', data: 'abc' }].every(x => !R.checkAudio(x).ok));
+t('prompt names the spoken language and says audio is attached', /Assamese/.test(R.buildPrompt(c0, ch0, '', { lang: 'as', audio: true })) && /audio clip is attached/.test(R.buildPrompt(c0, ch0, '', { lang: 'as', audio: true })));
+t('prompt without audio is unchanged (typed text, no audio line)', !/audio clip/.test(R.buildPrompt(c0, ch0, 'hello')) && /hello/.test(R.buildPrompt(c0, ch0, 'hello')));
+t('system prompt asks for a transcript and ignores accent', /"heard"/.test(R.SYSTEM) && /not accent/.test(R.SYSTEM) && /Assamese/.test(R.SYSTEM));
+t('heard is returned and capped', R.parseResult(JSON.stringify({ scores: { c: 1, f: 1, t: 1, l: 1, m: 1 }, heard: 'namaskar' }), 'concept').heard === 'namaskar' && R.parseResult(JSON.stringify({ scores: { c: 1, f: 1, t: 1, l: 1, m: 1 }, heard: 'x'.repeat(2000) }), 'concept').heard.length === 800);
+t('heard is empty when the model gives none', R.parseResult(good, 'concept').heard === '');
+t('every language has a name', ['hi', 'en', 'as', 'bn'].every(k => R.LANGS[k]));
+const route2 = S.slice(rs, S.indexOf('\n});', rs));
+t('route checks the audio before any AI call and takes a language', route2.indexOf('checkAudio') < route2.indexOf('geminiFor') && /RECALL\.LANGS\[b\.lang\]/.test(route2));
+t('route allows audio without typed text', /!audio && text\.length < RECALL\.MIN_CHARS/.test(route2));
+t('route has a bigger body limit only for this path', /jsonAudio = express\.json\(\{ limit: '1\.5mb' \}\)/.test(S) && /'\/api\/recall\/evaluate' \? jsonAudio/.test(S));
+t('gemini() sends audio as inlineData and skips backup providers for audio', /opts\.audio \? \[\{ inlineData/.test(S) && /\(opts\.userKey \|\| opts\.audio\) \? \[\]/.test(S));
+t('the audio is never logged or stored by the route', !/console\.(log|error)/.test(route2) && !/audio\.data/.test(route2.replace(/audio: audio \? \{ mime: audio\.mime, data: audio\.data \}/, '')));
+
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

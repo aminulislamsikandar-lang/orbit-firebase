@@ -338,7 +338,7 @@ function imgHTML(id){
 
 // Pinned questions and settings also live on this device.
 const PKEY='orbit_pins_v1',STKEY='orbit_settings_v1';
-let PINS={},ST={theme:'auto',dtype:'auto',tstyle:'para',img:'on',tlang:'as'};
+let PINS={},ST={theme:'auto',dtype:'auto',tstyle:'para',img:'on',tlang:'as',rvoice:'ai'};
 try{PINS=JSON.parse(localStorage.getItem(PKEY)||'{}')||{}}catch(e){PINS={}}
 try{ST={...ST,...(JSON.parse(localStorage.getItem(STKEY)||'{}')||{})}}catch(e){}
 const isPinned=id=>!!PINS[id];
@@ -544,7 +544,9 @@ function settingsHTML(){
  <h2 class="sec">Default translation language</h2>${chips(Object.keys(TRL).filter(k=>k!=='en').map(k=>[k,TRL[k].n]),TRL[ST.tlang]&&ST.tlang!=='en'?ST.tlang:'as','setl')}
  <p class="mut" style="margin-top:8px">Translate icon aur "Translate question" pehle isi language mein translate karenge. Baad mein chip se badal sakte ho.</p>
  <h2 class="sec">Answer ke neeche image</h2>${chips([['on','On'],['off','Off']],ST.img==='off'?'off':'on','seti')}
- <p class="mut" style="margin-top:8px">On: Science answer ke neeche internet se related image aati hai (jab mil sake). Off: koi image nahi dikhegi.</p>`;
+ <p class="mut" style="margin-top:8px">On: Science answer ke neeche internet se related image aati hai (jab mil sake). Off: koi image nahi dikhegi.</p>
+ <h2 class="sec">Recall AI: bolne ka tareeka</h2>${chips([['ai','AI ko recording bhejo'],['text','Text mein badlo']],ST.rvoice==='text'?'text':'ai','setrv')}
+ <p class="mut" style="margin-top:8px">AI ko recording bhejo: aapki awaaz AI (Gemini) ko jati hai, Hindi, English, Assamese aur Bengali mein achha chalta hai. Text mein badlo: browser bole hue ko box mein text likhta hai, aap use theek karke bhejte ho, sirf text AI ko jata hai (Chrome ya Edge).</p>`;
 }
 // ---- Google login + cloud sync (Firebase). cloud.js sets window.CLOUD; if it fails to load (offline) the app still works. ----
 let USER=null,LOGINERR='',SYNCT=null,AUTH_READY=false,CLOUDFAIL='';   // AUTH_READY: Firebase has told us if someone is logged in
@@ -1016,6 +1018,7 @@ document.addEventListener('click',e=>{
  else if(act==='lock'){LOCKED=+b.dataset.ch;draw()}
  else if(act==='setd'){ST.dtype=b.dataset.v;stSave();draw()}
  else if(act==='sett'){ST.theme=b.dataset.v;applyTheme();stSave();draw()}
+ else if(act==='setrv'){ST.rvoice=b.dataset.v==='text'?'text':'ai';if(window.RECALL)RECALL.voiceChanged();stSave();draw()}
  else if(act==='seti'){ST.img=b.dataset.v==='off'?'off':'on';stSave();draw();if(ST.img==='on')for(const k in OPEN)if(OPEN[k]&&ANS[k]&&ANS[k].text)ensureImg(k)}
  else if(act==='ask')ask(id,false);
  else if(act==='re')ask(id,true);

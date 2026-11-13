@@ -10,8 +10,9 @@ app.disable('x-powered-by');
 app.use(securityHeaders);
 const jsonSmall = express.json({ limit: '10kb' });
 const jsonNarration = express.json({ limit: '128kb' });      // Assamese/Hindi text is 3 bytes per character, so narration text needs more room
+const jsonAudio = express.json({ limit: '1.5mb' });             // Recall AI voice answer: a short audio clip as base64 (checked again in recall-core.js)
 const jsonPlan = express.json({ limit: '128kb' });             // a video plan with Hindi text is bigger than 10 kb
-app.use((req, res, next) => (req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : jsonSmall)(req, res, next));
+app.use((req, res, next) => (req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : req.path === '/api/recall/evaluate' ? jsonAudio : jsonSmall)(req, res, next));
 
 // The browser reports Content-Security-Policy violations here (the policy is set in firebase.json, in Report-Only mode first). No login, tiny body.
 app.post('/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '8kb' }), cspReport());
@@ -488,7 +489,7 @@ async function gemini(system, prompt, opts = {}) {
   const t0 = Date.now();
   const keyLabel = k => (opts.userKey && k === opts.userKey ? 'own-key' : 'key#' + (KEYS.indexOf(k) + 1));   // logs never contain a key, not even a student's own
   const BUDGET = opts.budgetMs || 55000;
-  const fbIds = opts.userKey ? [] : (opts.fallback || ['groq', 'openrouter']).filter(id => FALLBACK[id] && FALLBACK[id].key());
+  const fbIds = (opts.userKey || opts.audio) ? [] : (opts.fallback || ['groq', 'openrouter']).filter(id => FALLBACK[id] && FALLBACK[id].key());
   const reserve = fbIds.length ? Math.min(opts.fbMs || 15000, Math.floor(BUDGET / 2)) : 0;   // time kept back for the backup providers
   const DEADLINE = t0 + BUDGET - reserve;
   let lastStatus = 0;
@@ -513,7 +514,7 @@ async function gemini(system, prompt, opts = {}) {
               signal: AbortSignal.timeout(Math.min(opts.reqMs || 15000, left)),   // per-request limit; long outputs (maths videos) pass a bigger reqMs
               body: JSON.stringify({
                 systemInstruction: { parts: [{ text: system }] },
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                contents: [{ role: 'user', parts: opts.audio ? [{ inlineData: { mimeType: opts.audio.mime, data: opts.audio.data } }, { text: prompt }] : [{ text: prompt }] }],
                 generationConfig: { temperature: opts.temperature ?? 0.3, maxOutputTokens: opts.maxTokens || 4096, ...(useJson ? { responseMimeType: 'application/json' } : {}) }
               })
             }
@@ -604,13 +605,15 @@ app.post('/api/recall/evaluate', async (req, res) => {
   const hit = RECALL.findChapter(QUIZ, String(b.course || ''), b.ch);
   if (!hit || !RECALL.WEIGHTS[b.type]) return res.status(400).json({ error: 'Topic ya sawaal ka type sahi nahi hai.' });
   if (!RECALL.isReady(hit.ch)) return res.status(400).json({ error: 'Ye chapter abhi available nahi hai (coming soon). Koi aur chapter chuno.' });
-  const text = String(b.text || '').trim();
-  if (text.length < RECALL.MIN_CHARS) return res.status(400).json({ error: 'Thoda aur likho. Kam se kam ek do line explain karo.' });
+  let audio = null;
+  if (b.audio != null) { const a = RECALL.checkAudio(b.audio); if (!a.ok) return res.status(400).json({ error: a.error }); audio = a; }
+  const text = String(b.text || '').trim(), lang = RECALL.LANGS[b.lang] ? b.lang : 'en';
+  if (!audio && text.length < RECALL.MIN_CHARS) return res.status(400).json({ error: 'Thoda aur likho ya bolo. Kam se kam ek do line explain karo.' });
   if (text.length > RECALL.MAX_CHARS) return res.status(400).json({ error: 'Jawab bahut lamba hai. ' + RECALL.MAX_CHARS + ' akshar tak likho.' });
   if (!guardAI(req, res)) return;
   const uid = req.user.uid;
   if (!uk && !takeFree(uid)) return res.status(429).json({ code: 'daily_limit', left: 0, error: 'Aaj ka free AI check ho chuka hai. Parent se Gemini key lagwayein ya kal aayein.' });
-  const r = await geminiFor(req, RECALL.SYSTEM, RECALL.buildPrompt(hit.course, hit.ch, text), { json: true, temperature: 0.2, maxTokens: 1500 });
+  const r = await geminiFor(req, RECALL.SYSTEM, RECALL.buildPrompt(hit.course, hit.ch, text, { lang, audio: !!audio }), { json: true, temperature: 0.2, maxTokens: 1800, reqMs: audio ? 30000 : undefined, audio: audio ? { mime: audio.mime, data: audio.data } : undefined });
   const out = r.text ? RECALL.parseResult(r.text, b.type) : null;
   if (!out) {
     if (!uk) refundFree(uid);   // a failed check must not use up the free one

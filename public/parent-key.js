@@ -10,7 +10,7 @@
   const LEGACY = ['orbit.userKey', 'orbit.userKey.on'];      // the first version used ONE slot for everybody: removed, never reused
   const KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{19,299}$/;
   const GOOGLE_LINK = 'https://aistudio.google.com/apikey';
-  const CONSENT_VERSION = 1;
+  const CONSENT_VERSION = 2;
   const get = k => { try { return g.localStorage.getItem(k) || ''; } catch (e) { return ''; } };
   const set = (k, v) => { try { v ? g.localStorage.setItem(k, v) : g.localStorage.removeItem(k); } catch (e) {} };
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -42,7 +42,7 @@
     uid: '',
     _session: '',                                           // key of a student who did not tick "remember": memory only, gone when the tab closes
     st: { lang: 'hi', consent: false, remember: true, key: '', show: false, busy: false, msg: '', err: false, edit: false },
-    CONSENT_TEXT: 'Main (parent) samajhta/samajhti hoon: bacche ke jawab ka text Google ko bheja jayega taaki AI use check kare. Awaaz save nahi hoti. Orbit sirf text aur score save karta hai. Google ki free key par bheja gaya text Google apne product behtar banane ke liye use kar sakta hai. Isliye bacche ka naam, school ya phone number kabhi nahi bheja jata.',
+    CONSENT_TEXT: 'Main (parent) samajhta/samajhti hoon: bacche ka jawab (likha hua text, ya bolne par uski chhoti awaaz recording) Google ko bheja jayega taaki AI use check kare. Orbit awaaz save nahi karta, sirf text aur score save karta hai. Google ki free key par bheja gaya text ya awaaz Google apne product behtar banane ke liye use kar sakta hai. Isliye bacche ka naam, school ya phone number kabhi nahi bheja jata.',
     CONSENT_VERSION,
     STEPS, WARN, ERR,
 

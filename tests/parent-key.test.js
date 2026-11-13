@@ -68,16 +68,16 @@ const tick = () => new Promise(r => setTimeout(r, 0));
 
   // ---------- consent + connect flow ----------
   m = make(); PK = m.PK; PK.setUser('u1'); await PK.saveConsent();
-  t('consent: saved with version and the exact text the parent saw', m.w.lastConsent.version === 1 && m.w.lastConsent.text === PK.CONSENT_TEXT && PK.CONSENT_TEXT.length > 100);
+  t('consent: saved with version and the exact text the parent saw', m.w.lastConsent.version === 2 && m.w.lastConsent.text === PK.CONSENT_TEXT && PK.CONSENT_TEXT.length > 100);
   m = make({ noConsentFn: true }); m.PK.setUser('u1'); t('consent: missing cloud function is an error (never silently skipped)', await m.PK.saveConsent().then(() => false, () => true));
 
   const connectWith = async (over, mut) => { const k = make(over); k.PK.setUser('u1'); Object.assign(k.PK.st, { key: KEY, consent: true, remember: true }, mut || {}); k.w.draws = 0; k.PK.act('go'); for (let i = 0; i < 6; i++) await tick(); return k; };
   let c = await connectWith();
-  t('connect: key saved, parent consent recorded BEFORE the key was written', c.store['orbit.pk.u1'] === KEY && c.log.indexOf('consent 1') >= 0 && c.log.indexOf('consent 1') < c.log.indexOf('ls.set orbit.pk.u1'));
+  t('connect: key saved, parent consent recorded BEFORE the key was written', c.store['orbit.pk.u1'] === KEY && c.log.indexOf('consent 2') >= 0 && c.log.indexOf('consent 2') < c.log.indexOf('ls.set orbit.pk.u1'));
   t('connect: typed key is wiped from the page state, success message shown', c.PK.st.key === '' && /connect ho gaya/.test(c.PK.st.msg) && !c.PK.st.err && !c.PK.st.busy && c.w.draws > 0);
   c = await connectWith({}, { consent: false }); t('connect: refused without the parent tick (nothing sent, nothing saved)', c.w.lastFetch === undefined && !c.PK.has() && c.PK.st.err);
   c = await connectWith({ consent: 'fail' }); t('connect: if the consent cannot be saved, the key is NOT saved', !c.PK.has() && c.PK.st.err && c.PK.st.msg === c.PK.ERR.consent);
-  c = await connectWith({ fetchRes: { ok: false, json: { code: 'invalid' } } }); t('connect: key Google rejects is not saved and consent is not recorded', !c.PK.has() && !c.log.includes('consent 1') && c.PK.st.msg === c.PK.ERR.invalid);
+  c = await connectWith({ fetchRes: { ok: false, json: { code: 'invalid' } } }); t('connect: key Google rejects is not saved and consent is not recorded', !c.PK.has() && !c.log.includes('consent 2') && c.PK.st.msg === c.PK.ERR.invalid);
   c = await connectWith({}, { key: 'short' }); t('connect: wrong shape stops before any network call', c.w.lastFetch === undefined && c.PK.st.msg === c.PK.ERR.bad_format);
   c = await connectWith({}, { remember: false }); t('connect with "remember" off keeps the key out of storage', c.PK.has() && !c.log.some(l => /^ls\.set/.test(l)));
   c = await connectWith({ fetchRes: { ok: false, json: { code: 'quota' } } }); c.PK.st.key = KEY; c.w.lastFetch = undefined; c.PK.act('test'); for (let i = 0; i < 5; i++) await tick();
