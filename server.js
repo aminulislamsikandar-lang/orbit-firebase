@@ -48,7 +48,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // GEMINI_API_KEY (single) still works. When one key hits its free limit, the next key is used automatically.
 const KEYS = [...new Set([...(process.env.GEMINI_API_KEYS || '').split(','), process.env.GEMINI_API_KEY || ''].map(k => k.trim()).filter(Boolean))];
 const KEY = KEYS[0];
-const USER_KEY_RE = /^AIza[0-9A-Za-z_-]{35}$/;
+const USER_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{19,299}$/;
 const userKeyOf = req => { const k = String(req.headers['x-user-key'] || '').trim(); return USER_KEY_RE.test(k) ? k : ''; };
 // Free daily limit for people without their own key. In memory: resets if Render restarts.
 const FREE_DAILY = 1, FREE_USED = new Map();

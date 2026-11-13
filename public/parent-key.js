@@ -8,7 +8,7 @@
   const g = window;
   const PREFIX = 'orbit.pk.';                                // one slot per account: orbit.pk.<uid>
   const LEGACY = ['orbit.userKey', 'orbit.userKey.on'];      // the first version used ONE slot for everybody: removed, never reused
-  const KEY_RE = /^AIza[0-9A-Za-z_-]{35}$/;
+  const KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{19,299}$/;
   const GOOGLE_LINK = 'https://aistudio.google.com/apikey';
   const CONSENT_VERSION = 1;
   const get = k => { try { return g.localStorage.getItem(k) || ''; } catch (e) { return ''; } };
@@ -17,7 +17,7 @@
   const redraw = () => { if (typeof g.draw === 'function') g.draw(); };
 
   const ERR = {
-    bad_format: 'Ye key sahi nahi lag rahi. Key "AIza" se shuru hoti hai aur 39 akshar ki hoti hai. Dobara copy karke paste karein.',
+    bad_format: 'Ye key sahi nahi lag rahi. Poori key copy karke paste karein (beech mein space nahi hona chahiye).',
     invalid: 'Google ne ye key accept nahi ki. Naya key banakar try karein.',
     quota: 'Is key ki aaj ki free limit khatam ho gayi hai. Kal dobara chalega.',
     busy: 'Google abhi busy hai. 1-2 minute baad "Test key" dobara dabayein.',
@@ -28,7 +28,7 @@
   const STEPS = [
     'Neeche ka button dabakar Google ka page kholein. Apne (parent ke) Gmail se login karein.',
     '"Create API key" dabayein. Naya project banane ko kahe to bana lein.',
-    'Jo lamba code aaye (AIza se shuru), "Copy" dabayein.',
+    'Jo lamba code aaye, "Copy" dabayein.',
     'Bacche ke phone par Orbit kholein: Menu > Advanced AI Features. Wahan key paste karein.'
   ];
   const WARN = [

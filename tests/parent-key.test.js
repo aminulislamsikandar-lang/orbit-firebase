@@ -49,7 +49,8 @@ const tick = () => new Promise(r => setTimeout(r, 0));
 
   // format + legacy slot
   m = make(); PK = m.PK; PK.setUser('u1');
-  t('bad format refused with a clear message', ['', 'abc', 'AIza' + 'x'.repeat(10), KEY + 'zz', 'BIza' + 'a'.repeat(35)].every(k => { try { PK.save(k, true); return false; } catch (e) { return /AIza/.test(e.message); } }));
+  t('bad format refused with a clear message', ['', 'abc', 'AIza' + 'x'.repeat(10), 'AIza' + '!'.repeat(30), KEY + '$$'].every(k => { try { PK.save(k, true); return false; } catch (e) { return /key sahi nahi/.test(e.message); } }));
+  t('newer Google key shape (AQ.…) is accepted', (() => { try { PK.save('AQ.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', true); return true; } catch (e) { return false; } })());
   m = make(); m.store['orbit.userKey'] = KEY; m.store['orbit.userKey.on'] = '1'; PK = m.PK; PK.setUser('u1');
   t('old shared slot (first version) is removed and never used by any account', !('orbit.userKey' in m.store) && !('orbit.userKey.on' in m.store) && !PK.has() && (PK.setUser('u2'), !PK.has()));
 
