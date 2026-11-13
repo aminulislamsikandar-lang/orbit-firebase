@@ -98,3 +98,11 @@ Sidebar > **Bolo**. Bachha mic dabake A se Z, 2 se 10 tak ke table ya poem bolta
 - Awaaz ya bola hua text kabhi save/upload nahi hota. Sirf sahi/dobara ke nishaan, roz ka time aur parent settings (limit 5-30 min, mic allow, optional 4 number PIN as hash) is device par `localStorage` (`orbit.bolo.<uid>`) mein rehte hain.
 - Mic sirf Chrome/Edge jaise browsers mein chalta hai (internet chahiye). Baaki browsers mein "Maine bol diya" wale buttons aate hain.
 - Naya poem jodna ho to `POEMS` mein ek object add karo (`bolo-core.js`). Tests: `tests/bolo.test.js`, `tests/bolo-dom.test.js` (jsdom).
+
+## Add custom course (student ka apna course)
+Menu > **My Courses** ya Home par **Add custom course**. Student apna School/Board, Medium, Class, Subject banata hai, phir chapters jodta hai. Chapter ke questions ki photo lo: AI (Gemini vision) questions padhta hai, student check karke Save karta hai. Photo save nahi hoti, sirf padhi jaati hai.
+- Course app ki normal list me judta hai (Home > My courses > Class/Medium > Subject > Chapter), isliye AI Answer, translate, diagram, Save, Pin sab chalte hain. Custom question ka text har AI request ke saath jaata hai; server use saaf karke (`custom-core.js`) content se id banata hai, isliye same question ka answer shared course me cache hota hai.
+- Data: Firestore `customCourses/<id>` (ek subject = ek document, max ~800 KB). Rules `firestore.rules` me: owner padh/likh sakta hai; doosra student sirf tab `get` kar sakta hai jab owner ne sharing on ki ho. Share link `?cc=<id>` hai (id lambi random hai, guess nahi hoti). Receiver **Save** karta hai (`users/<uid>/savedCourses/<id>`, sirf dekh sakta hai) ya **Meri copy banao** (apna editable document). Courses device par bhi rakhe jaate hain, offline khulte hain.
+- Limits (free student, parent ki Gemini key lagi ho to koi limit nahi): `CUSTOM_DAILY_AI` (default 40 AI calls/din, custom questions par) aur `CUSTOM_DAILY_PHOTOS` (default 8 photos/din). Render env vars me badal sakte ho. Har student ke max 15 courses, 40 chapters, har chapter me 80 questions.
+- Deploy: `firebase deploy --only hosting,firestore:rules` (rules zaroori hain) aur Render par server redeploy (git push se hota hai).
+- Tests: `node tests/custom.test.js`.

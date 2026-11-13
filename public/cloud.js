@@ -91,6 +91,29 @@ window.CLOUD = {
     async getCode(id) { const s = await getDoc(doc(db, 'videoCode', id)); return s.exists() ? s.data() : null; },
     delCode(id) { return deleteDoc(doc(db, 'videoCode', id)); }
   },
+  // Add custom course (collection customCourses, one document per subject; see firestore.rules). The owner reads/writes; other signed-in students
+  // can only get() a document by its id while the owner has sharing on. A student keeps shared courses as users/<uid>/savedCourses/<id>.
+  custom: {
+    newId() { return doc(collection(db, 'customCourses')).id; },
+    async listOwn() {
+      const u = auth.currentUser; if (!u) return [];
+      const s = await getDocs(query(collection(db, 'customCourses'), where('ownerId', '==', u.uid)));
+      const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a;
+    },
+    async get(id) {   // null when it does not exist or is not shared (rules answer "permission denied" for both)
+      try { const s = await getDoc(doc(db, 'customCourses', id)); return s.exists() ? { id: s.id, ...s.data() } : null; }
+      catch (e) { return null; }
+    },
+    set(id, data) { return setDoc(doc(db, 'customCourses', id), JSON.parse(JSON.stringify(data))); },
+    del(id) { return deleteDoc(doc(db, 'customCourses', id)); },
+    async savedIds() {
+      const u = auth.currentUser; if (!u) return [];
+      const s = await getDocs(collection(db, 'users', u.uid, 'savedCourses'));
+      const a = []; s.forEach(d => a.push(d.id)); return a;
+    },
+    saveRef(id) { const u = auth.currentUser; if (!u) return Promise.reject(new Error('login')); return setDoc(doc(db, 'users', u.uid, 'savedCourses', id), { at: Date.now() }); },
+    unsaveRef(id) { const u = auth.currentUser; if (!u) return Promise.reject(new Error('login')); return deleteDoc(doc(db, 'users', u.uid, 'savedCourses', id)); }
+  },
   // Faculty / Developer people. Writes only work for the admin Google account (see firestore.rules).
   savePerson(p) { return setDoc(doc(db, 'people', p.id), JSON.parse(JSON.stringify(p))); },
   deletePerson(id, tombstone) { return tombstone ? setDoc(doc(db, 'people', id), tombstone) : deleteDoc(doc(db, 'people', id)); },

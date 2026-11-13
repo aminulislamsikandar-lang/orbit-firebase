@@ -158,6 +158,8 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 <div id="inst" class="inst" hidden></div>
 <div id="app"><h1 style="font-size:26px;margin-top:14px">Orbit Tutorial</h1><p class="mut">Free AI study helper for school students in Assam: textbook-style answers, diagrams and translations for Class 7, Class 8 and Class 10 (English, Mathematics, Science). Log in with Google to start.</p><p class="mut">Loading…</p></div>
 <script src="/config.js"></script>
+<script src="/custom-course.js"></script>
+<script src="/warp-loader.js"></script>
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -165,6 +167,7 @@ const LOGO='<svg viewBox="0 0 48 48" style="width:1.1em;height:1.1em;flex:none" 
 const ic=p=>`<svg viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
 const HEART='<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/>';
 const I={
+ plus:ic('<path d="M12 5v14"/><path d="M5 12h14"/>'),
  ai:ic('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>'),
  recall:ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
  mic:ic('<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'),
@@ -219,7 +222,8 @@ const norm=d=>{
  return null;
 };
 let IDX={};   // question id -> {course,ch,q}
-const courseOf=(cls,sub,med)=>DATA.courses.find(c=>c.class===cls&&c.subject===sub&&(!med||(c.medium||'English')===med));
+const isCustomOrg=o=>/^u-/.test(o||'');   // schools/boards made by students (Add custom course) have ids starting u-
+const courseOf=(cls,sub,med)=>DATA.courses.find(c=>c.class===cls&&c.subject===sub&&(!med||(c.medium||'English')===med)&&!!c.custom===isCustomOrg(NAV.org)&&(!c.custom||c.orgId===NAV.org));
 const isLocked=ch=>!!ch.locked||!(ch.sections&&ch.sections.length);
 const cLabel=c=>`Class ${c.class} ${c.subject}`;
 const chOf=id=>(IDX[id]||{}).ch||{title:''};
@@ -255,6 +259,7 @@ function navSave(){try{localStorage.setItem(NKEY,JSON.stringify(NAV))}catch(e){}
 function setData(d){
  DATA=d;IDX={};
  d.courses.forEach(c=>c.chapters.forEach(ch=>(ch.sections||[]).forEach(s=>s.questions.forEach(q=>{IDX[q.id]={course:c,ch,q}}))));
+ if(window.CUSTOM)CUSTOM.apply();
  fixNav();
 }
 function fixNav(){
@@ -319,7 +324,7 @@ function imgPersist(){try{localStorage.setItem(IKEY,JSON.stringify(IMC))}catch(e
 const okImg=u=>/^https:\/\/(upload\.wikimedia\.org|images\.pexels\.com)\//.test(u||''),okPage=u=>/^https:\/\/(commons\.wikimedia\.org|www\.pexels\.com)\//.test(u||'');
 async function ensureImg(id){
  if(ST.img==='off')return;
- const c=(IDX[id]||{}).course;if(!c||c.subject!=='Science')return;
+ const c=(IDX[id]||{}).course;if(!c||c.custom||c.subject!=='Science')return;
  const s=IMG[id];
  if(s&&(s.loading||s.url||(s.none&&Date.now()-(s.at||0)<3*864e5)))return;
  IMG[id]={loading:true};
@@ -382,10 +387,10 @@ function xBlock(q,k){
   <button class="ic ${(MR[xk]||{}).loading?'spin':''}" data-act="xre" data-id="${id}" data-k="${k}" title="Dobara banao" aria-label="Dobara banao">${I.re}</button>
  </div>
  ${x.menu?`<div class="chips" role="group" aria-label="Translate language"><button class="chip" data-act="trset" data-id="${xk}" data-to="" aria-pressed="${!x.tr}">${origName(courseOfId(id))}</button>${trKeys(courseOfId(id)).map(l=>`<button class="chip" data-act="trset" data-id="${xk}" data-to="${l}" aria-pressed="${x.tr===l}">${TRL[l].n}</button>`).join('')}</div>`:''}
- ${t&&t.loading?`<div class="mut" style="margin-top:8px">Anuvaad ho raha hai…</div>`:''}
+ ${t&&t.loading?WARP.block('Anuvaad ho raha hai…',32):''}
  ${t&&t.err?`<div class="err" role="alert">${esc(t.err)}</div>`:''}
  ${t&&t.text&&x.tr&&sy==='words'?`<div class="ans"><b>Kathin words</b><br>${fmt(t.text)}</div>`:''}
- ${x.vis?`<div class="vis">${v.svg?`<img alt="Diagram" style="${v.loading?'opacity:.45':''}" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(v.svg)}">`:v.loading?'<p class="mut" style="padding:14px;margin:0">Diagram ban raha hai…</p>':''}</div>
+ ${x.vis?`<div class="vis">${v.svg?`<img alt="Diagram" style="${v.loading?'opacity:.45':''}" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(v.svg)}">`:v.loading?WARP.block('Diagram ban raha hai…',32):''}</div>
   <div class="tb"><button class="ic ${v.loading?'spin':''}" data-act="visre" data-id="${xk}" ${v.loading?'disabled':''} title="Naya diagram banao" aria-label="Naya diagram banao">${I.re}</button></div>`:''}
  ${x.vis&&v.err?`<div class="err" role="alert">${esc(v.err)}</div>`:''}
  ${x.msg?`<div class="mut" style="margin-top:8px" role="status">${esc(x.msg)}</div>`:''}`}
@@ -421,15 +426,15 @@ function toolbar(q){
  ${u.menu?`<div class="chips" role="group" aria-label="Translate language">
    <button class="chip" data-act="trset" data-id="${id}" data-to="" aria-pressed="${!u.tr}">${origName(courseOfId(id))}</button>
    ${trKeys(courseOfId(id)).map(k=>`<button class="chip" data-act="trset" data-id="${id}" data-to="${k}" aria-pressed="${u.tr===k}">${TRL[k].n}</button>`).join('')}</div>`:''}
- ${tr&&tr.loading?`<div class="mut" style="margin-top:8px">Anuvaad ho raha hai…</div>`:''}
+ ${tr&&tr.loading?WARP.block('Anuvaad ho raha hai…',32):''}
  ${tr&&tr.err?`<div class="err" role="alert">${esc(tr.err)}</div>`:''}
  ${u.more?`<div class="chips" role="group" aria-label="Aur options">${MORE.map(([k,n])=>`<button class="chip" data-act="mk" data-id="${id}" data-k="${k}" aria-pressed="${u.mk===k}">${n}</button>`).join('')}</div>`:''}
  ${u.more?extraRow(q,u):''}
  ${tr&&tr.text&&u.tr&&effSty(u)==='words'?`<div class="ans"><b>Kathin words</b><br>${fmt(tr.text)}</div>`:''}
- ${mr&&mr.loading?`<div class="mut" style="margin-top:8px">Ban raha hai…</div>`:''}
+ ${mr&&mr.loading?WARP.block('Ban raha hai…',32):''}
  ${mr&&mr.err?`<div class="err" role="alert">${esc(mr.err)}</div>`:''}
  ${mr&&mr.text?xBlock(q,u.mk):''}
- ${u.vis?`<div class="vis">${v.svg?`<img alt="Diagram" style="${v.loading?'opacity:.45':''}" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(v.svg)}">`:v.loading?'<p class="mut" style="padding:14px;margin:0">Diagram ban raha hai…</p>':''}</div>
+ ${u.vis?`<div class="vis">${v.svg?`<img alt="Diagram" style="${v.loading?'opacity:.45':''}" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(v.svg)}">`:v.loading?WARP.block('Diagram ban raha hai…',32):''}</div>
   <div class="tb"><button class="ic ${v.loading?'spin':''}" data-act="visre" data-id="${id}" ${v.loading?'disabled':''} title="Naya diagram banao" aria-label="Naya diagram banao">${I.re}</button></div>`:''}
  ${u.vis&&v.err?`<div class="err" role="alert">${esc(v.err)}</div>`:''}
  ${u.msg?`<div class="mut" style="margin-top:8px" role="status">${esc(u.msg)}</div>`:''}`}
@@ -448,7 +453,7 @@ function qHTML(q){
  ${qvHTML(q)}
  ${has?(open?`<div class="ans">${fmt(txt)}</div>${trBlock(q.id)}${imgHTML(q.id)}${isSaved(q.id)?`<div class="saved-note">Saved · ${dateFmt(SAVED[q.id].at)}</div>`:''}${toolbar(q)}`
   :'')
-  :`<button class="btn" data-act="ask" data-id="${q.id}" ${a.loading?'disabled':''}>${a.loading?'Soch raha hoon…':'AI Answer'}</button>`}
+  :`${a.loading?WARP.block('Soch raha hoon…',48):`<button class="btn" data-act="ask" data-id="${q.id}">AI Answer</button>`}`}
  ${a.err?`<div class="err" role="alert">${esc(a.err)}</div>`:''}</div>`}
 
 // Lesson reader and AI rules: translate the chapter text paragraph by paragraph, word meanings, grammar/writing rules.
@@ -510,7 +515,7 @@ function navHTML(){
  const d=DATA;
  if(NAV.page==='home'){
   const ini=n=>esc(n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase());
-  return head1('Apna board ya school chuno')+CATALOG.groups.map(g=>`<h2 class="sec">${g.t}</h2><div class="rows">${g.items.map(o=>rowHTML('org',`data-org="${o.id}"`,ini(o.name),o.name,o.sub||'',I.next)).join('')}</div>`).join('');
+  return head1('Apna board ya school chuno')+CATALOG.groups.map(g=>`<h2 class="sec">${g.t}</h2><div class="rows">${g.items.map(o=>rowHTML('org',`data-org="${o.id}"`,ini(o.name),o.name,o.sub||'',I.next)).join('')}</div>`).join('')+(window.CUSTOM?CUSTOM.homeHTML():'');
  }
  if(NAV.page==='pick'){
   const o=orgOf(NAV.org),chips=(list,cur,act,lab)=>`<div class="chips" role="group">${list.map(v=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${cur===v}">${lab(v)}</button>`).join('')}</div>`;
@@ -525,7 +530,7 @@ function navHTML(){
  }
  const c=courseOf(NAV.cls,NAV.sub,NAV.med);
  if(NAV.page==='index'){
-  return backHTML('Subjects')+head1(cTitle(c))+`<div class="mut">Class ${c.class} · Chapters</div><div class="rows">${c.chapters.map(ch=>{
+  return backHTML('Subjects')+head1(cTitle(c))+`<div class="mut">Class ${c.class} · Chapters</div>${window.CUSTOM?CUSTOM.courseBar(c):''}<div class="rows">${c.chapters.map(ch=>{
    const sub=[ch.kind,ch.author].filter(Boolean).join(' · ');
    const lock=isLocked(ch);
    return rowHTML(lock?'lock':'pg',lock?`data-ch="${ch.no}"`:`data-p="chapter" data-ch="${ch.no}"`,ch.no,ch.title,sub,lock?I.lock:I.next)
@@ -561,7 +566,7 @@ function syncSoon(){
  SYNCT=setTimeout(()=>window.CLOUD.push({saved:SAVED,pins:PINS,settings:ST}).catch(e=>console.warn('sync failed',e)),1500);
 }
 window.onCloudFail=e=>{CLOUDFAIL=String((e&&e.message)||e||'unknown');console.error('cloud.js failed',e);if(navigator.onLine&&!USER)draw()};
-window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR=''}else{openSide(false,true)}if(DATA||!u)draw()};
+window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u)}if(DATA||!u)draw()};
 // First login on a device: merge this device's data with the cloud. After that the cloud copy wins.
 window.onCloudData=cd=>{
  let uid=USER&&USER.uid,first=true;
@@ -691,6 +696,7 @@ function gateHTML(){
 function screenInfo(){
  if(VIEW!=='home')return{name:VIEW};
  const n=NAV||{},o={name:'nav-'+(n.page||'home')};
+ if(isCustomOrg(n.org)){o.name+='-custom';if(n.cls)o.cls=n.cls;return o}   // names typed by a student stay out of analytics
  if(n.org)o.org=n.org;if(n.cls)o.cls=n.cls;if(n.sub)o.sub=n.sub;if(n.med)o.med=n.med;if(n.ch)o.ch=n.ch;
  return o}
 function draw(){
@@ -709,6 +715,7 @@ function draw(){
  else if(VIEW==='ai')body=window.PARENT_KEY?PARENT_KEY.viewHTML():'';
  else if(VIEW==='recall')body=window.RECALL?RECALL.viewHTML():'';
  else if(VIEW==='bolo')body=window.BOLO?BOLO.viewHTML():'';
+ else if(VIEW==='custom')body=window.CUSTOM?CUSTOM.viewHTML():'';
  else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
@@ -720,7 +727,7 @@ function draw(){
 function drawSide(){
  const item=(v,ico,label,badge)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo')}${item('ai','ai','Advanced AI Features')}
+ ${item('home','home','Home')}${item('custom','plus','My Courses')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo')}${item('ai','ai','Advanced AI Features')}
  <div class="sline"></div>
  ${item('pyq','pyq','PYQ')}${item('pass','pass','Pass mark')}${item('topper','topper','Topper')}${item('faculty','fac','Faculty')}${item('dev','dev','Developer')}
  <div class="sgap"></div><div class="sline"></div>
@@ -794,7 +801,10 @@ function wake(){
  if(!awakeP)awakeP=fetch((window.ORBIT_API||'')+'/api/ping',{signal:AbortSignal.timeout(70000)}).then(r=>{if(r.ok)awakeAt=Date.now()}).catch(()=>{}).finally(()=>{awakeP=null});
  return awakeP}
 wake();
+// A custom-course question (Add custom course) is sent with its text; the server cleans, limits and caches it by content.
+const cqOf=b=>{const x=b&&b.id&&IDX[rid(b.id)],c=x&&x.course;if(!(c&&c.custom))return null;const q=x.q;return{text:q.text,label:q.label,parts:q.parts,options:q.options,cls:c.class,subject:c.subject,medium:c.medium,lang:c.lang||'English',chapter:x.ch.title}};
 async function api(path,body){
+ const cq=cqOf(body);if(cq)body={...body,cq};
  const tok=window.CLOUD?await window.CLOUD.token():null;
  if(!tok)throw new Error('Pehle Google se log in karo (menu → Log in).');
  await wake();

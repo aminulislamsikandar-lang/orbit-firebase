@@ -339,7 +339,7 @@ async function hiddenIdTests() {
   t('rules: approved library keys unchanged (text, plan only)', /match \/mathVideoAsked\/\{key\}[\s\S]*?hasOnly\(\['text', 'plan'\]\)/.test(rules));
   const cloud = fs.readFileSync(path.join(ROOT, 'public/cloud.js'), 'utf8');
   t('cloud.js: qid is added to the request only when present', /pendingAdd\(key, text, plan, qid\)/.test(cloud) && /if \(qid\) d\.qid = qid/.test(cloud));
-  t('sw.js: SHELL version is v27', /const SHELL = 'orbit-shell-v27'/.test(fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8')));
+  t('sw.js: SHELL version is v29', /const SHELL = 'orbit-shell-v29'/.test(fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8')));
   const rsci = rules.slice(rules.indexOf('match /scienceVideoAsked/'), rules.indexOf('match /subscriptions/'));
   t('rules: science library is admin-write, signed-in read, type science, text <= 700', /scienceVideoAsked\/\{key\}[\s\S]*?allow read: if request\.auth != null;[\s\S]*?allow create, update: if isAdmin\(\)[\s\S]*?hasOnly\(\['text', 'plan'\]\)[\s\S]*?plan\.type == 'science'[\s\S]*?size\(\) <= 700/.test(rsci));
   t('rules: science pending = students add only, admin reads / deletes, own uid, key = 40 hex', /match \/sciencePending\/\{key\}[\s\S]*?hasOnly\(\['text', 'plan', 'uid', 'ts'\]\)[\s\S]*?uid == request\.auth\.uid[\s\S]*?plan\.type == 'science'[\s\S]*?allow read, delete: if isAdmin\(\)/.test(rsci) && /\[0-9a-f\]\{40\}/.test(rsci));

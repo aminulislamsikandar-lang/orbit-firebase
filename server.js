@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const QUIZ = require('./questions');
 const RECALL = require('./recall-core');
+const CUSTOM = require('./custom-core');
 const { securityHeaders, rateKey, createLimiter, cspReport } = require('./security');
 
 const app = express();
@@ -12,7 +13,8 @@ const jsonSmall = express.json({ limit: '10kb' });
 const jsonNarration = express.json({ limit: '128kb' });      // Assamese/Hindi text is 3 bytes per character, so narration text needs more room
 const jsonAudio = express.json({ limit: '1.5mb' });             // Recall AI voice answer: a short audio clip as base64 (checked again in recall-core.js)
 const jsonPlan = express.json({ limit: '128kb' });             // a video plan with Hindi text is bigger than 10 kb
-app.use((req, res, next) => (req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : req.path === '/api/recall/evaluate' ? jsonAudio : jsonSmall)(req, res, next));
+const jsonImage = express.json({ limit: '4mb' });              // one textbook photo (shrunk by the app to about 0.4 MB) for Add custom course
+app.use((req, res, next) => (req.path === '/api/custom/extract' ? jsonImage : req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : req.path === '/api/recall/evaluate' ? jsonAudio : jsonSmall)(req, res, next));
 
 // The browser reports Content-Security-Policy violations here (the policy is set in firebase.json, in Report-Only mode first). No login, tiny body.
 app.post('/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '8kb' }), cspReport());
@@ -383,7 +385,8 @@ Rules: plain text only, you may use **bold** for key words; no headings, no tabl
   return { answer, tr, vis, more, kinds };
 }
 const isEnglish = course => /^English/.test(course.subject);
-const profileFor = course => course.subject === 'Assamese' ? assameseProfile(course.class)
+const profileFor = course => course.custom ? CUSTOM.customProfile(course.class, course.subject, course.sourceLang || 'English')
+  : course.subject === 'Assamese' ? assameseProfile(course.class)
   : isEnglish(course) ? englishProfile(course.class)
   : course.subject === 'Hindi' ? hindiProfile(course.class)
   : course.subject === 'Arabic' ? arabicProfile(course.class)
@@ -397,8 +400,8 @@ const clientText = t => (typeof t === 'string' && t.length > 0 && t.length <= MA
 function buildPrompt(q, course, ch) {
   const parts = [];
   if (course && (isEnglish(course) || ['Hindi', 'Arabic', 'Assamese'].includes(course.subject)) && ch) parts.push(`Lesson: ${ch.title}${ch.author ? ' by ' + ch.author : ''}`);
-  if (course && (course.subject === 'Mathematics' || course.subject === 'Social Science' || (course.subject === 'Science' && course.class !== 10)) && ch) parts.push(`Chapter: ${ch.title}`);
-  parts.push(`Question ${q.label || q.no}: ${q.text}`);
+  if (course && (course.custom || course.subject === 'Mathematics' || course.subject === 'Social Science' || (course.subject === 'Science' && course.class !== 10)) && ch && ch.title) parts.push(`Chapter: ${ch.title}`);
+  parts.push((q.label || q.no) ? `Question ${q.label || q.no}: ${q.text}` : `Question: ${q.text}`);
   if (q.table) {
     parts.push('Table:');
     parts.push(q.table.head.join(' | '));
@@ -408,7 +411,8 @@ function buildPrompt(q, course, ch) {
   (q.options || []).forEach(o => parts.push(o));
   if (ch && ch.context) parts.push('\n(Textbook text and notes for this lesson, do not repeat them: ' + ch.context + ')');
   if (q.context) parts.push('\n(Textbook context, do not repeat it: ' + q.context + ')');
-  const lang = course && course.subject === 'Hindi' ? 'Reply in simple Hindi (Devanagari).'
+  const lang = course && course.custom ? (course.sourceLang === 'Hindi' ? 'Reply in simple Hindi (Devanagari).' : course.sourceLang === 'Assamese' ? 'Reply in simple Assamese (Assamese script).' : 'Reply in simple English.')
+    : course && course.subject === 'Hindi' ? 'Reply in simple Hindi (Devanagari).'
     : course && course.subject === 'Assamese' ? 'Reply in simple Assamese (Assamese script).' : 'Reply in simple English.';
   return `${lang}\n\n${parts.join('\n')}`;
 }
@@ -419,6 +423,10 @@ const CACHE = new Map();   // "id|en", "id|hi", "id|tr|hi", "id|vis"
 // behind Render's proxy, and a school WiFi is one IP anyway.
 const aiLimiter = createLimiter(20, 60000);
 const limited = key => aiLimiter.hit(key);
+// Add custom course: free students get a daily number of AI calls on their own questions and of photo reads (env CUSTOM_DAILY_AI, CUSTOM_DAILY_PHOTOS). With the parent's Gemini key there is no limit.
+const CUSTOM_DAILY_AI = Math.max(1, parseInt(process.env.CUSTOM_DAILY_AI || '40', 10) || 40), CUSTOM_DAILY_PHOTOS = Math.max(1, parseInt(process.env.CUSTOM_DAILY_PHOTOS || '8', 10) || 8);
+const CUSTOM_AI_QUOTA = CUSTOM.createDailyQuota(CUSTOM_DAILY_AI), CUSTOM_PHOTO_QUOTA = CUSTOM.createDailyQuota(CUSTOM_DAILY_PHOTOS);
+setInterval(() => { CUSTOM_AI_QUOTA.prune(); CUSTOM_PHOTO_QUOTA.prune(); }, 3600000).unref();
 
 // ---- one place that talks to Gemini -------------------------------------
 // Tries each model in order. If Google says "busy" (503/429/500) or is slow,
@@ -514,7 +522,7 @@ async function gemini(system, prompt, opts = {}) {
               signal: AbortSignal.timeout(Math.min(opts.reqMs || 15000, left)),   // per-request limit; long outputs (maths videos) pass a bigger reqMs
               body: JSON.stringify({
                 systemInstruction: { parts: [{ text: system }] },
-                contents: [{ role: 'user', parts: opts.audio ? [{ inlineData: { mimeType: opts.audio.mime, data: opts.audio.data } }, { text: prompt }] : [{ text: prompt }] }],
+                contents: [{ role: 'user', parts: [...(opts.audio ? [{ inlineData: { mimeType: opts.audio.mime, data: opts.audio.data } }] : []), ...(opts.images || []).map(im => ({ inlineData: { mimeType: im.mime, data: im.data } })), { text: prompt }] }],
                 generationConfig: { temperature: opts.temperature ?? 0.3, maxOutputTokens: opts.maxTokens || 4096, ...(useJson ? { responseMimeType: 'application/json' } : {}) }
               })
             }
@@ -572,13 +580,25 @@ function failMsgFor(req, status) {
 
 // Common checks for every AI route. Returns {q, course, ch}, or null after replying.
 function guard(req, res) {
-  const hit = BY_ID.get((req.body || {}).id);
+  const b = req.body || {};
+  if (b.cq) {   // a student's own question (Add custom course): cleaned, size-limited, and given an id made from its content
+    const c = CUSTOM.sanitizeCq(b.cq);
+    if (!c) { res.status(400).json({ error: 'Is question ka text sahi nahi hai.' }); return null; }
+    req.body.id = c.id; req.customHit = true;
+    return { q: c.q, course: c.course, ch: c.ch };
+  }
+  const hit = BY_ID.get(b.id);
   if (!hit) { res.status(400).json({ error: 'Unknown question.' }); return null; }
   return hit;
 }
 function guardAI(req, res) {
   if (!KEYS.length && !userKeyOf(req)) { res.status(500).json({ error: 'Server mein GEMINI_API_KEY set nahi hai.' }); return false; }
   if (limited(rateKey(req))) { res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' }); return false; }
+  if (req.customHit && !userKeyOf(req)) {   // own questions: daily limit; a failed AI call gives the use back
+    const uid = req.user.uid;
+    if (!CUSTOM_AI_QUOTA.take(uid)) { res.status(429).json({ error: 'Aaj ki custom course AI limit (' + CUSTOM_DAILY_AI + ') poori ho gayi. Kal dobara try karo, ya Advanced AI Features me parent ki Gemini key lagwao.' }); return false; }
+    res.on('finish', () => { if (res.statusCode >= 400) CUSTOM_AI_QUOTA.refund(uid); });
+  }
   return true;
 }
 
@@ -620,6 +640,22 @@ app.post('/api/recall/evaluate', async (req, res) => {
     return res.status(502).json({ error: r.text ? 'AI ka jawab samajh nahi aaya. Dobara try karo.' : failMsgFor(req, r.status) });
   }
   res.json({ ...out, left: uk ? null : freeLeft(uid) });
+});
+
+// ---- Add custom course: read the questions from a photo of a textbook page ----
+// The browser sends one shrunk photo + class/subject/chapter. The photo is only read, never stored. Free students: CUSTOM_DAILY_PHOTOS a day.
+app.post('/api/custom/extract', async (req, res) => {
+  const b = req.body || {}, ctx = CUSTOM.sanitizeCtx(b), img = CUSTOM.validImage(b.image, b.mime);
+  if (!ctx || !img) return res.status(400).json({ error: 'Photo ya course ki detail sahi nahi hai. Saaf photo (jpg ya png) lo.' });
+  if (!guardAI(req, res)) return;
+  const uid = req.user.uid, uk = userKeyOf(req);
+  if (!uk && !CUSTOM_PHOTO_QUOTA.take(uid)) return res.status(429).json({ code: 'daily_limit', error: 'Aaj ki photo limit (' + CUSTOM_DAILY_PHOTOS + ') poori ho gayi. Kal dobara try karo, ya Advanced AI Features me parent ki Gemini key lagwao.' });
+  const back = () => { if (!uk) CUSTOM_PHOTO_QUOTA.refund(uid); };
+  const r = await geminiFor(req, CUSTOM.EXTRACT_SYSTEM, CUSTOM.buildExtractPrompt(ctx), { json: true, temperature: 0.1, maxTokens: 6000, images: [img], fallback: [], reqMs: 40000, budgetMs: 58000 });
+  if (!r.text) { back(); return res.status(502).json({ error: failMsgFor(req, r.status) }); }
+  const questions = CUSTOM.parseExtract(r.text);
+  if (!questions) { back(); return res.status(502).json({ error: 'Photo se questions samajh nahi aaye. Saaf, seedhi photo lekar dobara try karo.' }); }
+  res.json({ questions, left: uk ? null : CUSTOM_PHOTO_QUOTA.left(uid) });
 });
 
 // ---- answer ---------------------------------------------------------------
@@ -986,7 +1022,7 @@ async function findImage(hit, id) {
 app.post('/api/image', async (req, res) => {
   const hit = guard(req, res); if (!hit) return;
   const id = req.body.id;
-  if (hit.course.subject !== 'Science') return res.json({});
+  if (hit.course.custom || hit.course.subject !== 'Science') return res.json({});
   if (IMG_CACHE.has(id)) return res.json(IMG_CACHE.get(id) || {});
   if (imgLimiter.hit(rateKey(req))) return res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' });
   try {

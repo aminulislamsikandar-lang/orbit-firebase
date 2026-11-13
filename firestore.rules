@@ -131,6 +131,30 @@ service cloud.firestore {
         && request.resource.data.tracks.keys().hasOnly(['en', 'hi', 'as', 'bn', 'hg']);
       allow delete: if isAdmin();
     }
+    // Add custom course: a student's own school/board > medium > class > subject > chapters > questions, kept in ONE document (about 1 MB max).
+    // The document id is a long random id, so the share link ?cc=<id> can not be guessed. The owner reads and changes it; anybody signed in can
+    // read it (get by id, never list) only while the owner has switched sharing on (shared == true). Receivers can not change it.
+    // A receiver "saves" a course as users/<uid>/savedCourses/<id> (covered by the users rule above) or copies it into a new document of their own.
+    function validCustomCourse(d) {
+      return d.keys().hasOnly(['ownerId', 'org', 'medium', 'class', 'subject', 'lang', 'chapters', 'shared', 'updatedAt'])
+        && d.ownerId is string
+        && d.org is string && d.org.size() >= 2 && d.org.size() <= 60
+        && d.medium in ['English', 'Assamese']
+        && d['class'] is int && d['class'] >= 1 && d['class'] <= 12
+        && d.subject is string && d.subject.size() >= 2 && d.subject.size() <= 40
+        && d.lang in ['English', 'Hindi', 'Assamese']
+        && d.chapters is list && d.chapters.size() <= 60
+        && d.shared is bool
+        && d.updatedAt is number;
+    }
+    match /customCourses/{id} {
+      allow get: if request.auth != null && (resource.data.ownerId == request.auth.uid || resource.data.shared == true);
+      allow list: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid && validCustomCourse(request.resource.data);
+      allow update: if request.auth != null && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == request.auth.uid && validCustomCourse(request.resource.data);
+      allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+    }
     // Subscriptions are readable by their owner but written only by you (Firebase console / admin), never by the app.
     match /subscriptions/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
