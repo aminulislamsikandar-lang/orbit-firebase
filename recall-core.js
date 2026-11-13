@@ -62,4 +62,9 @@ function findChapter(quiz, courseId, no) {
   return ch ? { course, ch } : null;
 }
 
-module.exports = { WEIGHTS, CRITERIA, MIN_CHARS, MAX_CHARS, SYSTEM, buildPrompt, parseResult, findChapter, reference };
+// A chapter can be tested only when it has questions: the same rule as the app's lock icon (a `locked` chapter or one with no sections is "coming soon").
+function isReady(ch) {
+  return !!ch && !ch.locked && Array.isArray(ch.sections) && ch.sections.some(s => (s.questions || []).length > 0);
+}
+
+module.exports = { WEIGHTS, CRITERIA, MIN_CHARS, MAX_CHARS, SYSTEM, buildPrompt, parseResult, findChapter, reference, isReady };

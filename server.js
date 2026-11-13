@@ -603,6 +603,7 @@ app.post('/api/recall/evaluate', async (req, res) => {
   const b = req.body || {}, uk = userKeyOf(req);
   const hit = RECALL.findChapter(QUIZ, String(b.course || ''), b.ch);
   if (!hit || !RECALL.WEIGHTS[b.type]) return res.status(400).json({ error: 'Topic ya sawaal ka type sahi nahi hai.' });
+  if (!RECALL.isReady(hit.ch)) return res.status(400).json({ error: 'Ye chapter abhi available nahi hai (coming soon). Koi aur chapter chuno.' });
   const text = String(b.text || '').trim();
   if (text.length < RECALL.MIN_CHARS) return res.status(400).json({ error: 'Thoda aur likho. Kam se kam ek do line explain karo.' });
   if (text.length > RECALL.MAX_CHARS) return res.status(400).json({ error: 'Jawab bahut lamba hai. ' + RECALL.MAX_CHARS + ' akshar tak likho.' });
