@@ -2,7 +2,7 @@
 // Run: node tests/security.test.js
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const ROOT = path.join(__dirname, '..');
-const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^\uFEFF/, '');
+const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');   // a Windows checkout has CRLF line endings: tests must not depend on them
 const SEC = require(path.join(ROOT, 'security.js'));
 let pass = 0, fail = 0;
 const t = (name, ok, extra) => { if (ok) pass++; else { fail++; console.log('FAIL  ' + name + (extra ? '  ' + extra : '')); } };
