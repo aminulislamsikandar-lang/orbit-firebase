@@ -127,10 +127,13 @@
   const hasKey = () => !!(g.PARENT_KEY && g.PARENT_KEY.has && g.PARENT_KEY.has());
 
   const readyCh = ch => !!ch && !ch.locked && Array.isArray(ch.sections) && ch.sections.length > 0;   // locked / empty chapters (Coming soon) cannot be tested
-  function chapters() {
+  // Only the built-in textbooks. A student's own course (Add custom course, c.custom) is not known to the server, so Recall cannot score it yet.
+  function allCourses() {
     const d = typeof DATA !== 'undefined' ? DATA : null;
     return d && Array.isArray(d.courses) ? d.courses : [];
   }
+  function chapters() { return allCourses().filter(c => !c.custom); }
+  const hasCustom = () => allCourses().some(c => c.custom);
   function current() {
     for (const c of chapters()) for (const ch of (c.chapters || [])) if (c.id + '|' + ch.no === st.key) return { c, ch };
     return null;
@@ -172,6 +175,7 @@
     const w = W[st.type], field = 'width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit';
     return `<div class="card"><h2 class="sec" style="margin-top:0">Test your knowledge</h2>
       <p class="mut" style="margin:0 0 10px">Book band karo. Jo yaad hai, apne words mein explain karo.</p>
+      ${hasCustom() ? '<p class="mut" style="margin:0 0 10px;font-size:12.5px">Aapke apne (custom) courses abhi Recall AI mein nahi chalte. Unke sawaalon ke liye "AI Answer" use karo.</p>' : ''}
       <label class="mut" for="rcTopic">Topic</label><select id="rcTopic" style="${field}"><option value="">Chapter chuno</option>${opts}</select>
       <label class="mut" for="rcType" style="display:block;margin-top:10px">Sawaal ka type</label><select id="rcType" style="${field}">${Object.keys(TYPES).map(k => `<option value="${k}" ${k === st.type ? 'selected' : ''}>${TYPES[k]}</option>`).join('')}</select>
       <p class="mut" style="margin:6px 0 0;font-size:12.5px">Marks: ${Object.keys(CRIT).map(k => CRIT[k] + ' ' + w[k]).join(', ')}.</p>

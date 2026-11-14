@@ -105,5 +105,7 @@ t('route has a bigger body limit only for this path', /jsonAudio = express\.json
 t('gemini() sends audio as inlineData and skips backup providers for audio', /opts\.audio \? \[\{ inlineData/.test(S) && /\(opts\.userKey \|\| opts\.audio\) \? \[\]/.test(S));
 t('the audio is never logged or stored by the route', !/console\.(log|error)/.test(route2) && !/audio\.data/.test(route2.replace(/audio: audio \? \{ mime: audio\.mime, data: audio\.data \}/, '')));
 
+t('Recall lists only built-in courses (custom ones are filtered out)', /function chapters\(\) \{ return allCourses\(\)\.filter\(c => !c\.custom\); \}/.test(C));
+t('the server still refuses an unknown course id', /findChapter\(QUIZ, String\(b\.course/.test(S) && /Topic ya sawaal ka type sahi nahi hai/.test(S));
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

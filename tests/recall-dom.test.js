@@ -29,7 +29,8 @@ function boot(opts) {
     Object.defineProperty(w.navigator, 'mediaDevices', { value: { getUserMedia: async () => { if (st.denied) { const e = new Error('no'); e.name = 'NotAllowedError'; throw e; } return { getTracks: () => [{ stop() { st.tracksStopped++; } }] }; } }, configurable: true });
   }
   w.api = async (p, body) => { calls.push({ p, body }); if (st.fail) throw new Error(st.fail); return st.reply || { total: 72, scores: { c: 70, f: 80, t: 60, l: 70, m: 80 }, weights: { c: 30, f: 25, t: 20, l: 15, m: 10 }, got: ['a'], miss: ['b'], wrong: [], revise: 'Revise b.', heard: 'photosynthesis mein plants', left: 0 }; };
-  w.eval('var ST={rvoice:"' + (opts.mode || 'ai') + '"};var USER={uid:"u1"};var DATA={courses:[{id:"c7-science",class:7,subject:"Science",chapters:[{no:1,title:"Nutrition in Plants",sections:[{title:"S",questions:[{id:"q1",no:1,text:"Q"}]}]}]}]};function draw(){document.getElementById("app").innerHTML=RECALL.viewHTML()}');
+  const custom = opts.custom ? ',{id:"cc-abc",custom:true,orgId:"u-1",class:9,subject:"Geography",chapters:[{no:1,title:"My chapter",sections:[{title:"S",questions:[{id:"cq1",no:1,text:"Q"}]}]}]}' : '';
+  w.eval('var ST={rvoice:"' + (opts.mode || 'ai') + '"};var USER={uid:"u1"};var DATA={courses:[{id:"c7-science",class:7,subject:"Science",chapters:[{no:1,title:"Nutrition in Plants",sections:[{title:"S",questions:[{id:"q1",no:1,text:"Q"}]}]}]}' + custom + ']};function draw(){document.getElementById("app").innerHTML=RECALL.viewHTML()}');
   if (opts.allowed !== false) w.localStorage.setItem('orbit.recall.voiceok.u1', '1');
   w.eval(src); w.eval('draw()');
   const d = w.document;
@@ -144,6 +145,18 @@ function boot(opts) {
   t('AI mode shows its own mode line', /recording AI ko jati hai/.test(b.app()));
   await b.record(2000); b.tick(); b.w.RECALL.voiceChanged();
   t('changing the voice mode in Settings stops the mic and clears the old recording', b.st.tracksStopped === 1 && b.mrs[0].state === 'inactive');
+
+  // ---- a student's own (custom) course: the server cannot score it, so Recall must not offer it ----
+  b = boot({ custom: true });
+  const optVals = [...b.d.getElementById('rcTopic').options].map(o => o.value);
+  t('custom course chapters are not in the Recall topic list', !optVals.some(v => /^cc-/.test(v)) && optVals.includes('c7-science|1'), optVals.join());
+  t('built-in chapters are still offered', optVals.includes('c7-science|1'));
+  t('a short note explains that own courses are not in Recall yet', /custom\) courses abhi Recall AI mein nahi chalte/.test(b.app()) && /AI Answer/.test(b.app()));
+  b.change('rcTopic', 'cc-abc|1'); b.d.getElementById('rcText').value = 'photosynthesis mein plants sunlight se khana banate hain'; b.d.getElementById('rcText').dispatchEvent(new b.w.Event('input', { bubbles: true }));
+  b.click('[data-rc=go]'); await wait();
+  t('a custom chapter can never be sent to the server from Recall', b.calls.length === 0);
+  b = boot();
+  t('no note when there is no custom course', !/custom\) courses/.test(b.app()));
 
   console.log(pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
