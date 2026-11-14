@@ -239,7 +239,7 @@ const CATALOG={
  ],
  classes:{seba:[9,10],cbse:[9,10],nashib:[2,6,7,8,9,10],popular:[6,7,8,9,10],halimon:[6,7,8,9,10]},
  content:{
-  seba:{10:[['c10-science','General Science']]},
+  seba:{10:[['c10-science','General Science'],['c10-maths','Mathematics'],['c10-social','Social Science'],['c10-science-as','General Science']]},
   nashib:{2:[['c2-assamese','Assamese']],6:[['c6-english','English'],['c6-grammar','English Grammar'],['c6-social','Social Science'],['c6-science','General Science'],['c6-hindi','Hindi'],['c6-assamese','Assamese'],['c6-arabic','Arabic'],['c6-maths']],7:[['c7-english'],['c7-maths'],['c7-science']]},
   popular:{7:[['c7-english'],['c7-maths'],['c7-science']]},
   halimon:{7:[['c7-english'],['c7-maths'],['c7-science']],8:[['c8-english']]}
@@ -400,7 +400,7 @@ function vidReqLink(q){
  const x=IDX[q.id]||{},c=x.course,ch=x.ch,L=['Orbit Tutorial: video request'];
  if(USER&&USER.name)L.push('Student: '+USER.name);
  if(c)L.push(cLabel(c));
- if(ch)L.push('Chapter '+ch.no+': '+ch.title);
+ if(ch)L.push(ch.no===0?'Section: '+ch.title:'Chapter '+ch.no+': '+ch.title);
  const qt=[q.text].concat(q.parts||[]).filter(Boolean).join(' ').slice(0,500);
  L.push('Question '+(q.label||('Q'+q.no+'.'))+(qt?' '+qt:''));
  L.push('','Is question ka video chahiye.');
@@ -505,7 +505,7 @@ async function rulesGo(c,ch,si){
 }
 
 function listHTML(fn,empty,entries,full){
- const secs=entries.flatMap(({c,ch})=>(ch.sections||[]).map((x,si)=>({t:(full?`${cLabel(c)} · Ch ${ch.no} · `:'')+x.title,qs:x.questions.filter(fn),rl:(!full&&x.rules)?rulesHTML(c,ch,si):''}))).filter(x=>x.qs.length);
+ const secs=entries.flatMap(({c,ch})=>(ch.sections||[]).map((x,si)=>({t:(full?`${cLabel(c)} · ${ch.no===0?'Revision':'Ch '+ch.no} · `:'')+x.title,qs:x.questions.filter(fn),rl:(!full&&x.rules)?rulesHTML(c,ch,si):''}))).filter(x=>x.qs.length);
  return secs.length?secs.map(x=>`<h2 class="sec">${esc(x.t)}</h2>${x.rl}${x.qs.map(qHTML).join('')}`).join(''):`<p class="mut" style="margin-top:24px">${empty}</p>`;
 }
 const rowHTML=(act,attrs,badge,title,sub,icon)=>`<button class="row" data-act="${act}" ${attrs}><span class="rbadge">${badge}</span><span class="rmain"><div class="rtitle">${esc(title)}</div>${sub?`<div class="rsub">${esc(sub)}</div>`:''}</span><span class="rgo" aria-hidden="true">${icon}</span></button>`;
@@ -533,12 +533,12 @@ function navHTML(){
   return backHTML('Subjects')+head1(cTitle(c))+`<div class="mut">Class ${c.class} · Chapters</div>${window.CUSTOM?CUSTOM.courseBar(c):''}<div class="rows">${c.chapters.map(ch=>{
    const sub=[ch.kind,ch.author].filter(Boolean).join(' · ');
    const lock=isLocked(ch);
-   return rowHTML(lock?'lock':'pg',lock?`data-ch="${ch.no}"`:`data-p="chapter" data-ch="${ch.no}"`,ch.no,ch.title,sub,lock?I.lock:I.next)
+   return rowHTML(lock?'lock':'pg',lock?`data-ch="${ch.no}"`:`data-p="chapter" data-ch="${ch.no}"`,(ch.no===0?'R':ch.no),ch.title,sub,lock?I.lock:I.next)
     +(LOCKED===ch.no?`<div class="rnote" role="status">Coming soon: ye chapter jaldi aa raha hai.</div>`:'');
   }).join('')}</div>`;
  }
  const ch=c.chapters.find(x=>x.no===NAV.ch);
- return backHTML('Chapters')+head1(`Chapter ${ch.no}: ${ch.title}`)+`<div class="mut">Class ${c.class} · ${esc(cTitle(c))}</div>`+lessonHTML(c,ch)+videosHTML(c,ch)+listHTML(()=>true,'',[{c,ch}],false)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
+ return backHTML('Chapters')+head1(ch.no===0?ch.title:`Chapter ${ch.no}: ${ch.title}`)+`<div class="mut">Class ${c.class} · ${esc(cTitle(c))}</div>`+lessonHTML(c,ch)+videosHTML(c,ch)+listHTML(()=>true,'',[{c,ch}],false)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
 }
 function settingsHTML(){
  const chips=(list,cur,act)=>`<div class="chips" role="group">${list.map(([k,n])=>`<button class="chip" data-act="${act}" data-v="${k}" aria-pressed="${cur===k}">${n}</button>`).join('')}</div>`;
