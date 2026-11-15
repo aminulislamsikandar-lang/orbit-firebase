@@ -9,7 +9,7 @@
   ];
   var PEOPLE = null;
   try { PEOPLE = JSON.parse(localStorage.getItem(CACHE_KEY)); } catch (e) {}
-  var mvMode = false, vidMode = false, fails = 0, lockedUntil = 0, editing = null, formMsg = '', pendingPhoto = null;
+  var mvMode = false, vidMode = false, repMode = false, fails = 0, lockedUntil = 0, editing = null, formMsg = '', pendingPhoto = null;
 
   var css = document.createElement('style');
   css.textContent =
@@ -123,11 +123,24 @@
       img.src = url;
     });
   }
-  function closeAdmin() { mvMode = false; vidMode = false; var o = document.getElementById('tm-ov'); if (o) o.remove(); editing = null; formMsg = ''; pendingPhoto = null; }
-  function openAdmin() { mvMode = false; vidMode = false; editing = null; formMsg = ''; pendingPhoto = null; paint(); }
+  function closeAdmin() { mvMode = false; vidMode = false; repMode = false; var o = document.getElementById('tm-ov'); if (o) o.remove(); editing = null; formMsg = ''; pendingPhoto = null; }
+  function openAdmin() { mvMode = false; vidMode = false; repMode = false; editing = null; formMsg = ''; pendingPhoto = null; paint(); }
   function paint() {
     var o = document.getElementById('tm-ov');
     if (!o) { o = document.createElement('div'); o.id = 'tm-ov'; o.className = 'tm-ov'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); document.body.appendChild(o); }
+    if (repMode) {   // built with DOM calls (no innerHTML): the security test keeps the innerHTML count in this file from growing
+      o.textContent = '';
+      var rin = document.createElement('div'); rin.className = 'tm-in';
+      var rtop = document.createElement('div'); rtop.style.cssText = 'display:flex;justify-content:space-between;align-items:center';
+      var rh = document.createElement('h2'); rh.textContent = 'Reports';
+      var rb = document.createElement('button'); rb.className = 'tm-b2'; rb.setAttribute('data-tact', 'repback'); rb.textContent = 'Back';
+      rtop.appendChild(rh); rtop.appendChild(rb);
+      var rbox = document.createElement('div'); rbox.id = 'tm-rep';
+      rin.appendChild(rtop); rin.appendChild(rbox); o.appendChild(rin);
+      if (window.REPORT && window.CLOUD && window.CLOUD.reports) window.REPORT.mountAdmin(rbox, window.CLOUD.reports);
+      else rbox.textContent = 'Cloud load nahi hua. Page refresh karo.';
+      return;
+    }
     if (vidMode) {
       o.innerHTML = '<div class="tm-in"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Videos</h2><button class="tm-b2" data-tact="vidback">Back</button></div><div id="tm-vid"></div></div>';
       var vbox = document.getElementById('tm-vid');
@@ -158,7 +171,7 @@
       var qvOn = !!(window.QVideo && window.QVideo.active());
       h += '<div style="margin:0 0 14px"><button class="btn" data-tact="qvmode" style="margin:0">' + (qvOn ? 'Admin mode OFF karo' : 'Admin mode ON karo') + '</button>' +
         '<div style="font-size:13px;color:var(--mut);margin-top:6px">' + (qvOn ? 'Abhi ON hai: question ke 3 dots me Add video dikhta hai.' : 'ON karke app normal user jaise use karo; question ke 3 dots me Add video milega.') + '</div></div>';
-      h += '<button class="btn" data-tact="add" style="margin:0 0 8px">+ Add person</button> <button class="tm-b2" data-tact="mv">Math Video</button> <button class="tm-b2" data-tact="vid">Videos</button>';
+      h += '<button class="btn" data-tact="add" style="margin:0 0 8px">+ Add person</button> <button class="tm-b2" data-tact="mv">Math Video</button> <button class="tm-b2" data-tact="vid">Videos</button> <button class="tm-b2" data-tact="rep">Reports</button>';
       all().sort(function (a, b) { return String(a.group).localeCompare(String(b.group)) || (a.order || 0) - (b.order || 0); }).forEach(function (p) {
         h += '<div class="tm-row">' + av(p) + '<div class="tm-t"><b>' + esc(p.name) + '</b><span>' + (p.group === 'faculty' ? 'Faculty' : 'Developer') + ' · ' + esc(p.role) + '</span></div>' +
           '<button class="tm-b2" data-tact="edit" data-id="' + esc(p.id) + '">Edit</button> <button class="tm-b2" data-tact="del" data-id="' + esc(p.id) + '">Delete</button></div>';
@@ -188,6 +201,8 @@
     else if (a === 'mvback') { mvMode = false; paint(); }
     else if (a === 'vid') { vidMode = true; paint(); }
     else if (a === 'vidback') { vidMode = false; paint(); }
+    else if (a === 'rep') { repMode = true; paint(); }
+    else if (a === 'repback') { repMode = false; paint(); }
     else if (a === 'qvmode') {
       var Q = window.QVideo;
       if (!Q) { formMsg = 'Admin mode load nahi hua. Page refresh karo.'; paint(); }

@@ -1,5 +1,6 @@
 // public/recall.js - Recall AI screen: the student explains a chapter from memory, the server scores it (POST /api/recall/evaluate).
-// index.html calls RECALL.viewHTML() for the "Recall AI" page. Scores are kept on THIS device only (per account), never the typed text.
+// index.html calls RECALL.viewHTML() for the "Recall AI" page. Scores (never the typed text) are kept on this device AND in the student's account
+// (Firestore users/<uid>/recall/tracker, Task 15), so the tracker also shows on another phone after login.
 (function () {
   'use strict';
   const g = window;
@@ -14,7 +15,45 @@
   const read = () => { try { const a = JSON.parse(g.localStorage.getItem(PREFIX + uid()) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
   const write = a => { try { g.localStorage.setItem(PREFIX + uid(), JSON.stringify(a.slice(-KEEP))); } catch (e) {} };
 
-  const st = { key: '', type: 'concept', text: '', busy: false, err: '', res: null, left: null, quotaFor: '' };
+  // ---- Tracker in the student's account (Task 15). This phone and the account are merged, never one replacing the other. ----
+  // Union of two attempt lists: the same attempt (chapter + time) is kept once, the entry from `b` wins, oldest first, newest KEEP kept.
+  // Other fields on an attempt (later: nextReview, stage, ...) travel with it untouched.
+  const valid = x => !!x && typeof x === 'object' && typeof x.k === 'string' && Number.isFinite(x.t) && Number.isFinite(x.at);
+  function merge(a, b) {
+    const m = new Map();
+    [].concat(Array.isArray(a) ? a : [], Array.isArray(b) ? b : []).forEach(x => { if (valid(x)) m.set(x.k + '|' + x.at, x); });
+    return [...m.values()].sort((p, q) => p.at - q.at).slice(-KEEP);
+  }
+  // Phase 6: per-topic revision records { 'course|ch|tN': { stage, hist, r, w, last, at, next } } (revision-core.js), kept like the attempts above.
+  const TKEY = 'orbit.recall.topics.';
+  const readT = () => { try { const m = JSON.parse(g.localStorage.getItem(TKEY + uid()) || '{}'); return m && typeof m === 'object' && !Array.isArray(m) ? m : {}; } catch (e) { return {}; } };
+  const writeT = m => { try { g.localStorage.setItem(TKEY + uid(), JSON.stringify(m)); } catch (e) {} };
+  const canon = o => JSON.stringify(o, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v).sort().reduce((a, x) => { a[x] = v[x]; return a; }, {}) : v));
+  let running = null, again = false;
+  async function syncOnce() {
+    const u = uid();
+    if (!u || !g.CLOUD || !g.CLOUD.recall) return;
+    try {
+      const cloud = await g.CLOUD.recall.get();   // null when the account has no tracker yet, else { items, topics }
+      if (uid() !== u) return;                    // another student logged in while we waited
+      const cItems = cloud && cloud.items, cTopics = cloud && cloud.topics;
+      const local = read(), merged = merge(cItems, local);
+      const localT = readT(), mergedT = g.REVISION.mergeTopics(cTopics, localT);
+      let changed = false;
+      if (JSON.stringify(merged) !== JSON.stringify(local)) { write(merged); changed = true; }
+      if (canon(mergedT) !== canon(localT)) { writeT(mergedT); changed = true; }
+      if (changed) redraw();
+      if (JSON.stringify(merged) !== JSON.stringify(merge(cItems, [])) || canon(mergedT) !== canon(g.REVISION.mergeTopics(cTopics, {}))) await g.CLOUD.recall.set({ items: merged, topics: mergedT });
+    } catch (e) { /* offline or no permission: the phone copy stays and the next sync sends it */ }
+  }
+  // One sync at a time; a request that comes in while one is running (a new attempt) runs again right after it.
+  function sync() {
+    if (running) { again = true; return running; }
+    running = syncOnce().finally(() => { running = null; if (again) { again = false; sync(); } });
+    return running;
+  }
+
+  const st = { key: '', type: 'concept', text: '', busy: false, err: '', res: null, left: null, quotaFor: '', syncFor: '', topic: '', genBusy: false, genErr: '', queue: [], genMsg: '' };
 
   // ---- Voice: the student's answer is recorded in the browser and sent to the AI (Gemini) with the request. Orbit does not save it. ----
   // The clip lives in memory only until Evaluate is done (or the student removes it). Hindi, English, Assamese and Bengali can be spoken.
@@ -23,7 +62,8 @@
   const MAX_BYTES = 900000;                               // safety stop if a browser ignores the low bitrate (server limit is 1,000,000)
   const MAX_CHARS = 1500;
   const LANGS = { hi: 'Hindi', en: 'English', as: 'Assamese', bn: 'Bengali' };
-  const rc = { on: false, sec: 0, lang: 'hi', err: '', clip: null };
+  const NEED_KEY = 'Voice ke liye parent ki key chahiye. Abhi likh kar jawab do.';
+  const rc = { on: false, sec: 0, lang: 'hi', err: '', clip: null, photo: null, photoBusy: false };   // photo: {mime, image} of the handwritten answer, in memory until it is checked
   let mr = null, stream = null, tick = null, chunks = [], bytes = 0, discard = false;
 
   // Two ways to speak (the student picks in Settings > Recall AI voice, saved as ST.rvoice):
@@ -94,12 +134,13 @@
       if (recog !== r || !rc.on) return;
       try { r.start(); } catch (e) { stopVoice('Voice band ho gayi. Dobara try karo.'); }
     };
-    recog = r; rc.on = true; rc.sec = 0; rc.clip = null;
+    recog = r; rc.on = true; rc.sec = 0; rc.clip = null; rc.photo = null;
     try { r.start(); } catch (e) { recog = null; rc.on = false; rc.err = 'Mic shuru nahi ho paya. Dobara try karo.'; return redraw(); }
     startTick(); redraw();
   }
   async function startVoice() {
     if (rc.on || st.busy) return;
+    if (!hasKey()) { rc.err = NEED_KEY; return redraw(); }   // voice (both ways) only with a parent's key
     if (mode() === 'text') return startText();
     if (!CAN) { rc.err = 'Is browser mein recording nahi chalegi. Chrome ya Edge use karo, ya type karo.'; return redraw(); }
     if (!voiceOk()) { rc.err = 'Pehle parent ki ijazat wala box tick karo.'; return redraw(); }
@@ -109,7 +150,7 @@
     let r; const mime = pickMime();
     try { r = new g.MediaRecorder(stream, Object.assign({ audioBitsPerSecond: 24000 }, mime ? { mimeType: mime } : {})); }
     catch (e) { micOff(); rc.err = 'Mic shuru nahi ho paya. Dobara try karo.'; return redraw(); }
-    chunks = []; bytes = 0; discard = false; rc.clip = null;
+    chunks = []; bytes = 0; discard = false; rc.clip = null; rc.photo = null;
     r.ondataavailable = e => { if (e.data && e.data.size) { chunks.push(e.data); bytes += e.data.size; if (bytes > MAX_BYTES && rc.on) stopVoice('Recording bahut badi ho gayi, isliye ruk gayi. Chhota bol ke dobara try karo.'); } };
     r.onerror = () => stopVoice('Recording mein gadbad hui. Dobara try karo.');
     r.onstop = () => {
@@ -126,14 +167,16 @@
 
   const hasKey = () => !!(g.PARENT_KEY && g.PARENT_KEY.has && g.PARENT_KEY.has());
 
-  const readyCh = ch => !!ch && !ch.locked && Array.isArray(ch.sections) && ch.sections.length > 0;   // locked / empty chapters (Coming soon) cannot be tested
-  // Only the built-in textbooks. A student's own course (Add custom course, c.custom) is not known to the server, so Recall cannot score it yet.
+  const hasNotes = ch => String((ch && ch.notes) || '').trim().length >= ((g.CUSTOM && g.CUSTOM.MIN_NOTES_RECALL) || 200);
+  // Built-in textbooks: locked / empty chapters (Coming soon) cannot be tested. A student's own chapter (Add custom course) can be tested only when it has
+  // notes, because the score is judged against the textbook text and without it the AI would be guessing.
+  const readyCh = (ch, c) => c && c.custom ? hasNotes(ch) : (!!ch && !ch.locked && Array.isArray(ch.sections) && ch.sections.length > 0);
   function allCourses() {
     const d = typeof DATA !== 'undefined' ? DATA : null;
     return d && Array.isArray(d.courses) ? d.courses : [];
   }
-  function chapters() { return allCourses().filter(c => !c.custom); }
-  const hasCustom = () => allCourses().some(c => c.custom);
+  function chapters() { return allCourses(); }
+  const customWithoutNotes = () => allCourses().some(c => c.custom && (c.chapters || []).some(ch => !hasNotes(ch)));
   function current() {
     for (const c of chapters()) for (const ch of (c.chapters || [])) if (c.id + '|' + ch.no === st.key) return { c, ch };
     return null;
@@ -169,31 +212,108 @@
       ${!k && st.left === 0 ? '<button class="btn" data-rc="adv">Advanced AI Features kholein</button>' : ''}</div>`;
   }
 
+  // ---- Task 20: chapter-wise haal. Strength of a chapter = average of its last 5 Recall scores (real answers of this student). ----
+  function chMark(key) {
+    const avg = g.REVISION.chapterStrength(read(), key), b = g.REVISION.band(avg);
+    return b === 'new' ? '' : ' · ' + BAND[b].label + ' ' + avg + '%';
+  }
+  function chapterList() {
+    const items = read(), seen = [];
+    chapters().forEach(c => (c.chapters || []).forEach(ch => { const k = c.id + '|' + ch.no, avg = g.REVISION.chapterStrength(items, k); if (avg !== null) seen.push({ k, title: 'Ch ' + ch.no + ': ' + ch.title, avg }); }));
+    if (!seen.length) return '';
+    seen.sort((a, b) => a.avg - b.avg);
+    const bar = { good: '#2e7d32', ok: '#b7791f', weak: '#c0392b' };
+    return `<div class="card"><h2 class="sec" style="margin-top:0">Chapter-wise haal</h2>${seen.slice(0, 12).map(x => { const b = g.REVISION.band(x.avg); return `<div class="rc-chrow" data-band="${b}" style="margin:8px 0"><div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>${esc(x.title)}</span><b>${BAND[b].label} ${x.avg}%</b></div><div style="height:8px;border-radius:4px;background:var(--ln);margin-top:4px"><div style="height:8px;border-radius:4px;width:${x.avg}%;background:${bar[b]}"></div></div></div>`; }).join('')}<p class="mut" style="margin:8px 0 0;font-size:12.5px">Sabse kamzor chapter pehle. Pichhle 5 Recall ka average.</p></div>`;
+  }
+
+  // ---- Phase 6: chapter topics + the concept map (Tasks 31-34) ----
+  const TD = {};   // chapterTopics doc id -> undefined (not asked) | 'loading' | null (none / error) | doc
+  const tdId = () => { const p = st.key.split('|'); return p.length === 2 ? p[0].replace(/[^A-Za-z0-9-]/g, '') + '_' + Number(p[1]) : ''; };
+  function loadTopics() {
+    const id = tdId();
+    if (!id || TD[id] !== undefined || !g.CLOUD || !g.CLOUD.topics) return;
+    TD[id] = 'loading';
+    const p = st.key.split('|');
+    g.CLOUD.topics.get(p[0], p[1]).then(d => { TD[id] = d && Array.isArray(d.topics) && d.topics.length ? d : null; }, () => { TD[id] = null; }).then(redraw);
+  }
+  const topicDoc = () => { const d = TD[tdId()]; return d && d !== 'loading' ? d : null; };
+  const isAdmin = () => !!(g.QVideo && g.QVideo.isAdmin && g.QVideo.isAdmin());
+  const tLang = () => { const l = typeof ST !== 'undefined' && ST ? ST.tlang : ''; return l === 'hing' ? 'hi' : (l === 'as' || l === 'bn' || l === 'en' ? l : 'hi'); };
+  const tName = t => t[tLang()] || t.en;
+  const BAND = {
+    good: { label: 'Pakka', css: 'background:#e6f4ea;border-color:#2e7d32;color:#14532d' },
+    ok: { label: 'Theek-thaak', css: 'background:#fff4d6;border-color:#b7791f;color:#5c3d00' },
+    weak: { label: 'Kamzor', css: 'background:#fde8e8;border-color:#c0392b;color:#7a1f1f' },
+    new: { label: 'Abhi nahi dekha', css: 'background:var(--bg);border-color:var(--ln);color:var(--tx)' }
+  };
+  // Task 33: every topic of the chosen chapter as a coloured tile. Task 34: weak / ok tiles have a "Revise karo" button.
+  function mapCard() {
+    if (!st.key) return '';
+    loadTopics();
+    const id = tdId(), d = TD[id];
+    if (d === undefined || d === 'loading') return '<div class="card"><h2 class="sec" style="margin-top:0">Topic map</h2><p class="mut" style="margin:0">Topics load ho rahe hain...</p></div>';
+    if (!d) return `<div class="card"><h2 class="sec" style="margin-top:0">Topic map</h2><p class="mut" style="margin:0">Is chapter ke topics abhi nahi bane.</p>${isAdmin() ? `<button class="btn" data-rc="gen" ${st.genBusy ? 'disabled' : ''}>${st.genBusy ? 'Topics ban rahe hain...' : 'Topics banao (admin)'}</button>` : ''}${st.genErr ? `<p style="color:var(--bad,#c0392b);margin:8px 0 0">${esc(st.genErr)}</p>` : ''}</div>`;
+    const T = readT(), R = g.REVISION;
+    const tiles = d.topics.map(t => {
+      const avg = R.strength(T[st.key + '|' + t.id]), b = R.band(avg), B = BAND[b];
+      return `<div class="rc-tile" data-band="${b}" style="border:2px solid;border-radius:12px;padding:10px;${B.css};${st.topic === t.id ? 'outline:3px solid var(--ac,#2b6cb0);' : ''}">
+        <div style="font-weight:600;line-height:1.3">${esc(tName(t))}</div>
+        <div style="font-size:13px;margin-top:4px">${B.label}${avg === null ? '' : ' · ' + avg + '%'}</div>
+        ${b === 'weak' || b === 'ok' ? `<button class="chip" style="margin-top:8px" data-rc="rev" data-t="${esc(t.id)}">Revise karo</button>` : ''}</div>`;
+    }).join('');
+    return `<div class="card"><h2 class="sec" style="margin-top:0">Topic map</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">${tiles}</div>
+      <p class="mut" style="margin:10px 0 0;font-size:12.5px">Pakka 80% se upar, Theek-thaak 50 se 79%, Kamzor 50% se neeche (pichhle 5 jawabon ka average). Poore chapter ka Recall karne par har topic ka rang badalta hai.</p></div>`;
+  }
+  // The "only this topic" box on the form (Task 34): its name and its questions as prompts.
+  function focusBox() {
+    const d = topicDoc(), t = d && st.topic ? d.topics.find(x => x.id === st.topic) : null, cur = current();
+    if (!t || !cur) return '';
+    const qs = [];
+    (cur.ch.sections || []).forEach(s => (s.questions || []).forEach(q => { if (d.map && d.map[q.id] === t.id) qs.push(q.text); }));
+    return `<div style="margin-top:10px;padding:10px;border:2px solid var(--ac,#2b6cb0);border-radius:12px"><div style="font-weight:600">Sirf is topic ka revision: ${esc(tName(t))}</div>
+      ${qs.length ? `<ul style="margin:6px 0 0;padding-left:18px;font-size:13.5px">${qs.slice(0, 6).map(q => `<li>${esc(String(q).slice(0, 140))}</li>`).join('')}</ul>` : ''}
+      <button class="chip" style="margin-top:8px" data-rc="alltopics">Poore chapter par jao</button></div>`;
+  }
+
   function form() {
     const cs = chapters(), blocked = !hasKey() && st.left === 0;
-    const opts = cs.map(c => `<optgroup label="${esc('Class ' + c.class + ' ' + c.subject)}">${(c.chapters || []).filter(readyCh).map(ch => { const v = c.id + '|' + ch.no; return `<option value="${esc(v)}" ${v === st.key ? 'selected' : ''}>${esc('Ch ' + ch.no + ': ' + ch.title)}</option>`; }).join('')}</optgroup>`).join('').replace(/<optgroup[^>]*><\/optgroup>/g, '');
+    const opts = cs.map(c => `<optgroup label="${esc('Class ' + c.class + ' ' + c.subject)}">${(c.chapters || []).filter(ch => readyCh(ch, c)).map(ch => { const v = c.id + '|' + ch.no; return `<option value="${esc(v)}" ${v === st.key ? 'selected' : ''}>${esc('Ch ' + ch.no + ': ' + ch.title + chMark(v))}</option>`; }).join('')}</optgroup>`).join('').replace(/<optgroup[^>]*><\/optgroup>/g, '');
     const w = W[st.type], field = 'width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit';
     return `<div class="card"><h2 class="sec" style="margin-top:0">Test your knowledge</h2>
       <p class="mut" style="margin:0 0 10px">Book band karo. Jo yaad hai, apne words mein explain karo.</p>
-      ${hasCustom() ? '<p class="mut" style="margin:0 0 10px;font-size:12.5px">Aapke apne (custom) courses abhi Recall AI mein nahi chalte. Unke sawaalon ke liye "AI Answer" use karo.</p>' : ''}
+      ${customWithoutNotes() ? '<p class="mut" style="margin:0 0 10px;font-size:12.5px">Aapke apne (custom) chapter yahan tabhi dikhte hain jab unme kitab ke notes ho. Notes jodne ke liye My Courses mein chapter kholo.</p>' : ''}
       <label class="mut" for="rcTopic">Topic</label><select id="rcTopic" style="${field}"><option value="">Chapter chuno</option>${opts}</select>
+      ${focusBox()}
       <label class="mut" for="rcType" style="display:block;margin-top:10px">Sawaal ka type</label><select id="rcType" style="${field}">${Object.keys(TYPES).map(k => `<option value="${k}" ${k === st.type ? 'selected' : ''}>${TYPES[k]}</option>`).join('')}</select>
       <p class="mut" style="margin:6px 0 0;font-size:12.5px">Marks: ${Object.keys(CRIT).map(k => CRIT[k] + ' ' + w[k]).join(', ')}.</p>
       <label class="mut" style="display:block;margin-top:10px">Aapka jawab: bolo ya likho</label>
-      ${mode() === 'ai' && CAN && !voiceOk() ? `<label style="display:flex;gap:10px;align-items:flex-start;margin-top:8px;font-size:13.5px"><input type="checkbox" id="rcVoiceOk" style="margin-top:3px"><span>Parent ki ijazat hai: meri awaaz ki chhoti recording AI (Google Gemini) ko bheji jayegi. Orbit ise save nahi karta.</span></label>` : ''}
+      ${hasKey() && mode() === 'ai' && CAN && !voiceOk() ? `<label style="display:flex;gap:10px;align-items:flex-start;margin-top:8px;font-size:13.5px"><input type="checkbox" id="rcVoiceOk" style="margin-top:3px"><span>Parent ki ijazat hai: meri awaaz ki chhoti recording AI (Google Gemini) ko bheji jayegi. Orbit ise save nahi karta.</span></label>` : ''}
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
         <button class="btn" data-rc="${rc.on ? 'stop' : 'rec'}" style="margin:0" ${st.busy || (!canRec() && !rc.on) ? 'disabled' : ''} aria-pressed="${rc.on}">${rc.on ? 'Stop' : rc.clip ? 'Dobara record' : 'Record Voice'}</button>
         <select id="rcLang" aria-label="Bolne ki language" style="padding:9px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit" ${rc.on ? 'disabled' : ''}>${Object.keys(LANGS).map(k => `<option value="${k}" ${rc.lang === k ? 'selected' : ''}>${LANGS[k]}</option>`).join('')}</select>
         <span id="rcTimer" role="timer" aria-live="off" style="font-variant-numeric:tabular-nums;font-weight:600">${rc.on || rc.sec ? fmt(rc.sec) + ' / ' + fmt(MAX_REC) : '0:00 / ' + fmt(MAX_REC)}</span>
         ${rc.on ? '<span class="mut">Mic chalu hai</span>' : ''}
       </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+        <button class="btn" data-rc="photo" style="margin:0" ${st.busy || rc.on || rc.photoBusy ? 'disabled' : ''}>${rc.photoBusy ? 'Photo taiyaar ho rahi hai...' : rc.photo ? 'Doosri photo' : 'Photo se answer'}</button>
+        <input type="file" id="rcPhotoFile" accept="image/*" style="display:none" aria-label="Haath se likhe answer ki photo">
+        <span class="mut" style="font-size:12.5px">Copy mein likha answer (maths ho ya theory) ki photo lo.</span>
+      </div>
+      ${rc.photo ? `<p style="margin:8px 0 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><img alt="Aapke answer ki photo" src="data:${rc.photo.mime};base64,${rc.photo.image}" style="height:72px;border-radius:8px"><span>Photo ready hai. Evaluate dabane par AI ise padhega. Photo save nahi hoti.</span> <button class="chip" data-rc="photodel" style="cursor:pointer">Hatao</button></p>` : ''}
       ${rc.clip && !rc.on ? `<p style="margin:8px 0 0">Recording ready (${fmt(rc.clip.sec)}). Evaluate dabane par AI ise sunega. <button class="chip" data-rc="clipdel" style="cursor:pointer">Hatao</button></p>` : ''}
-      ${rc.err ? `<p class="err" role="status" style="margin:8px 0 0">${esc(rc.err)}</p>` : !canRec() ? '<p class="mut" style="margin:8px 0 0;font-size:12.5px">Voice ke liye Chrome ya Edge chahiye. Abhi type kar sakte ho.</p>' : ''}
+      ${!hasKey() ? `<p class="mut" style="margin:8px 0 0;font-size:12.5px">${NEED_KEY} <button class="chip" data-rc="adv" style="cursor:pointer">Advanced AI Features kholein</button></p>` : rc.err ? `<p class="err" role="status" style="margin:8px 0 0">${esc(rc.err)}</p>` : !canRec() ? '<p class="mut" style="margin:8px 0 0;font-size:12.5px">Voice ke liye Chrome ya Edge chahiye. Abhi type kar sakte ho.</p>' : ''}
       <p class="mut" style="margin:8px 0 0;font-size:12.5px">${mode() === 'text' ? 'Voice: bole hue ko text mein badla jata hai, aap use theek kar sakte ho.' : 'Voice: recording AI ko jati hai.'} <button class="chip" data-rc="settings" style="cursor:pointer">Settings mein badlo</button></p>
       <textarea id="rcText" rows="6" maxlength="1500" placeholder="Ya yahan likho: explain everything you remember..." style="${field}">${esc(st.text)}</textarea>
       <button class="btn" data-rc="go" ${st.busy || blocked || !st.key ? 'disabled' : ''}>${st.busy ? 'Evaluate ho raha hai...' : 'Evaluate My Knowledge'}</button>
       ${st.err ? `<p class="err" role="status" style="margin:10px 0 0">${esc(st.err)}</p>` : ''}
-      <p class="mut" style="margin:10px 0 0;font-size:12.5px">${mode() === 'text' ? 'Browser bole hue ko text mein badalta hai (Chrome ye kaam Google ki service se karta hai). Sirf wahi text AI ko jata hai. Orbit awaaz save nahi karta, sirf score is phone par yaad rakhta hai.' : 'Aapka likha text ya bolne ki recording AI ko jati hai taaki wo check kare. Orbit recording save nahi karta, sirf score is phone par yaad rakhta hai.'} Naam, school ya phone number nahi bheje jate.</p></div>`;
+      <p class="mut" style="margin:10px 0 0;font-size:12.5px">${mode() === 'text' ? 'Browser bole hue ko text mein badalta hai (Chrome ye kaam Google ki service se karta hai). Sirf wahi text AI ko jata hai. Orbit awaaz save nahi karta, sirf score aapke account mein yaad rakhta hai.' : 'Aapka likha text ya bolne ki recording AI ko jati hai taaki wo check kare. Orbit recording save nahi karta, sirf score aapke account mein yaad rakhta hai.'} Naam, school ya phone number nahi bheje jate.</p></div>`;
+  }
+
+  function trackerCard(hist) {
+    return `<div class="card"><h2 class="sec" style="margin-top:0">Knowledge Retention Tracker</h2>${spark(hist)}
+      <table class="qt" style="width:100%;margin-top:8px"><tr><th>Attempt</th><th style="text-align:right">Score</th></tr>${hist.slice(-8).reverse().map(a => `<tr><td>${dayStr(a.at)}</td><td style="text-align:right">${a.t}%</td></tr>`).join('')}</table>
+      <p class="mut" style="margin:8px 0 0;font-size:12.5px">Har attempt ka score aapke account mein save hota hai, to doosre phone par login karne par bhi dikhega. Isse dikhta hai ki concept kitne din baad bhi yaad hai.</p></div>`;
   }
 
   function report() {
@@ -203,41 +323,111 @@
     return `<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><h2 class="sec" style="margin:0">Your knowledge report</h2><span class="chip">${esc(cur.ch.title)}</span></div>
       <p style="font-size:42px;font-weight:700;margin:10px 0 0">${r.total}<span class="mut" style="font-size:18px">/100</span></p><p style="margin:0 0 10px"><b>${label(r.total)}</b></p>
       ${Object.keys(CRIT).map(k => `<div style="margin:8px 0"><div style="display:flex;justify-content:space-between;font-size:14px"><span>${CRIT[k]} <span class="mut">(${r.weights[k]})</span></span><span>${r.scores[k]}%</span></div>${bar(r.scores[k])}</div>`).join('')}
-      ${r.heard ? `<p class="mut" style="margin:10px 0 0"><b>AI ne ye suna:</b> ${esc(r.heard)}</p>` : ''}
+      ${r.heard ? `<p class="mut" style="margin:10px 0 0"><b>${r.src === 'photo' ? 'AI ne ye padha' : 'AI ne ye suna'}:</b> ${esc(r.heard)}</p>` : ''}
       ${list('Aapne sahi samjha', r.got, 'Abhi koi poora point nahi mila.')}${r.wrong.length ? list('Galat baat', r.wrong, '') : ''}${list('Jo chhoot gaya', r.miss, 'Kuch nahi chhoota.')}
       ${r.revise ? `<p style="margin:14px 0 0;padding:10px 12px;border-radius:10px;background:var(--ans)"><b>Recommended revision</b><br>${esc(r.revise)}</p>` : ''}
+      ${st.queue.length ? `<button class="btn" data-rc="nextdue">Agla revision (${st.queue.length} baaki)</button>` : ''}
       <button class="btn" data-rc="again">Dobara try karein</button></div>
-      <div class="card"><h2 class="sec" style="margin-top:0">Knowledge Retention Tracker</h2>${spark(hist)}
-      <table class="qt" style="width:100%;margin-top:8px"><tr><th>Attempt</th><th style="text-align:right">Score</th></tr>${hist.slice(-8).reverse().map(a => `<tr><td>${dayStr(a.at)}</td><td style="text-align:right">${a.t}%</td></tr>`).join('')}</table>
-      <p class="mut" style="margin:8px 0 0;font-size:12.5px">Har attempt ka score is phone par save hota hai, taaki dikhe ki concept kitne din baad bhi yaad hai.</p></div>`;
+      ${trackerCard(hist)}`;
   }
 
   async function evaluate() {
     const cur = current(), text = st.text.trim();
     if (!cur) return say('Pehle chapter chuno.');
     if (rc.on) return say('Pehle Stop dabao.');
-    if (!rc.clip && text.length < 20) return say('Thoda aur likho ya bolo. Kam se kam ek do line explain karo.');
+    if (rc.clip && !hasKey()) { rc.clip = null; rc.sec = 0; }   // the parent's key was removed after recording: the clip is not sent
+    if (!rc.clip && !rc.photo && text.length < 20) return say('Thoda aur likho ya bolo. Kam se kam ek do line explain karo.');
     st.busy = true; st.err = ''; redraw();
     try {
-      const body = { course: cur.c.id, ch: cur.ch.no, type: st.type, lang: rc.lang, text };
+      const body = cur.c.custom
+        ? { custom: { cls: cur.c.class, subject: cur.c.subject, chapter: cur.ch.title, notes: g.CUSTOM && g.CUSTOM.pickNotes ? g.CUSTOM.pickNotes(cur.ch.notes, cur.ch.title, 14000) : String(cur.ch.notes || '').slice(0, 14000) }, type: st.type, lang: rc.lang, text }
+        : { course: cur.c.id, ch: cur.ch.no, type: st.type, lang: rc.lang, text };
+      if (!cur.c.custom && st.topic && topicDoc()) body.topic = st.topic;
+      if (rc.photo) body.photo = { mime: rc.photo.mime, data: rc.photo.image };
       if (rc.clip) body.audio = { mime: rc.clip.blob.type || 'audio/webm', data: await toBase64(rc.clip.blob) };
       const j = await g.api('/api/recall/evaluate', body);
       st.res = j; if (typeof j.left === 'number') st.left = j.left;
-      rc.clip = null; rc.sec = 0;   // the recording is gone once it has been checked
+      rc.clip = null; rc.sec = 0; rc.photo = null;   // the recording and the photo are gone once they have been checked
       write(read().concat([{ k: st.key, t: j.total, at: Date.now() }]));
+      if (j.topics && typeof j.topics === 'object') {   // Tasks 16/17/19/32: every scored topic gets its record updated (schedule + last 5 scores)
+        const T = readT(), now = Date.now();
+        Object.keys(j.topics).forEach(id => { const k = st.key + '|' + id; T[k] = g.REVISION.update(T[k], j.topics[id], now); });
+        writeT(T);
+      }
+      sync();   // also saves it in the account (Task 15)
+      try { const p = st.key.split('|'); if (g.WEEKLY) g.WEEKLY.mark(); if (g.CLASSROOM && g.CLASSROOM.score) g.CLASSROOM.score(p[0], +p[1], j.total); } catch (e) {}   // weekly report day + the class's weak-topic view (Phase 9)
     } catch (e) {
       st.err = e && e.message ? e.message : 'Kuch gadbad hui. Dobara try karo.';
-      if (/free AI check ho chuka/.test(st.err)) st.left = 0;
+      if ((e && e.code === 'limit_reached') || /free AI check ho chuka/.test(st.err)) st.left = 0;
     }
     st.busy = false; redraw();
     if (st.res) g.scrollTo(0, 0);
   }
   function say(m) { st.err = m; redraw(); }
+  async function takePhoto(file) {   // handwritten answer: shrink to about 0.4 MB in the browser (same shrinker as Add custom course)
+    const sh = g.CUSTOM && g.CUSTOM.shrink;
+    if (!sh) { st.err = 'Photo abhi nahi chal rahi. Page dobara kholo ya type karo.'; return redraw(); }   // st.err (under Evaluate) shows for every account; rc.err is hidden when there is no parent key
+    rc.photoBusy = true; st.err = ''; redraw();
+    try { const p = await sh(file); rc.photo = { mime: p.mime, image: p.image }; rc.clip = null; rc.sec = 0; }
+    catch (e) { st.err = e && e.message ? e.message : 'Photo khul nahi paayi. Dobara try karo.'; }
+    rc.photoBusy = false; redraw();
+  }
+
+  // Admin only: ask the server to split this chapter into topics once (it saves them in Firestore).
+  async function genTopics() {
+    const cur = current(); if (!cur || st.genBusy) return;
+    st.genBusy = true; st.genErr = ''; redraw();
+    try { await g.api('/api/topics/generate', { course: cur.c.id, ch: cur.ch.no }); delete TD[tdId()]; }
+    catch (e) { st.genErr = e && e.message ? e.message : 'Topics nahi bane.'; }
+    st.genBusy = false; redraw();
+  }
+  // Admin: make topics for EVERY ready chapter of the chosen course, one after another. Chapters that already have topics cost no AI call (the server returns them).
+  async function genCourse() {
+    const cur = current(); if (!cur || st.genBusy) return;
+    const list = (cur.c.chapters || []).filter(ch => readyCh(ch, cur.c));
+    let made = 0, had = 0, bad = 0, row = 0;
+    st.genBusy = true; st.genErr = '';
+    for (let i = 0; i < list.length; i++) {
+      st.genMsg = 'Topics ban rahe hain: ' + (i + 1) + '/' + list.length + ' (Ch ' + list[i].no + ')'; redraw();
+      try { const j = await g.api('/api/topics/generate', { course: cur.c.id, ch: list[i].no }); if (j.existing) had++; else made++; row = 0; }
+      catch (e) { bad++; row++; st.genErr = e && e.message ? e.message : 'Topics nahi bane.'; if (row >= 3) break; }   // 3 failures in a row = stop (AI limit or no service account)
+    }
+    st.genMsg = 'Ho gaya: ' + made + ' naye, ' + had + ' pehle se the, ' + bad + ' nahi bane.';
+    st.genBusy = false; Object.keys(TD).forEach(k => delete TD[k]); redraw();
+  }
+  function adminBox() {
+    if (!isAdmin() || !st.key) return '';
+    return `<div class="card"><h2 class="sec" style="margin-top:0">Admin: topics</h2><button class="btn" data-rc="genall" ${st.genBusy ? 'disabled' : ''} style="margin:0">Is course ke sabhi chapters ke topics banao</button>${st.genMsg ? `<p class="mut" style="margin:8px 0 0">${esc(st.genMsg)}</p>` : ''}${st.genErr ? `<p style="color:var(--bad,#c0392b);margin:8px 0 0">${esc(st.genErr)}</p>` : ''}<p class="mut" style="margin:8px 0 0;font-size:12.5px">Har naye chapter par 1 AI call. Jin chapters ke topics bane hain unpar AI nahi chalta.</p></div>`;
+  }
+  // Task 18 (basic): the home card opens Recall on the most overdue topic.
+  function startDue() {
+    const due = g.REVISION.dueList(readT(), Date.now());
+    if (!due.length) return;
+    st.queue = due.slice(1).map(x => x.key);   // the rest of today's topics: "Agla revision" walks through them (only due ones, nothing else)
+    openDue(due[0].key);
+    if (typeof g.go === 'function') g.go('recall');
+  }
+  function openDue(k) { const p = k.split('|'); st.key = p[0] + '|' + p[1]; st.topic = p[2] || ''; st.res = null; st.text = ''; st.err = ''; rc.clip = null; rc.sec = 0; }
+  function nextDue() {
+    const stillDue = new Set(g.REVISION.dueList(readT(), Date.now()).map(x => x.key));
+    st.queue = st.queue.filter(k => stillDue.has(k));   // one just revised well is no longer due
+    if (!st.queue.length) { st.res = null; redraw(); return; }
+    openDue(st.queue.shift()); redraw(); g.scrollTo(0, 0);
+  }
+  function homeHTML() {
+    if (!uid()) return '';
+    const T = readT(); if (!Object.keys(T).length) return '';
+    const due = g.REVISION.dueList(T, Date.now());
+    if (!due.length) return '<div class="card"><h2 class="sec" style="margin-top:0">Aaj ka revision</h2><p class="mut" style="margin:0">Aaj ka revision poora. Shabaash!</p></div>';
+    const p = due[0].key.split('|'), c = chapters().find(x => x.id === p[0]), ch = c && (c.chapters || []).find(x => String(x.no) === p[1]);
+    return `<div class="card"><h2 class="sec" style="margin-top:0">Aaj ka revision</h2><p style="margin:0 0 8px"><b>${due.length}</b> topic revise karne hain${ch ? '. Pehla: ' + esc(ch.title) : ''}.</p><button class="btn" data-rc="due" style="margin:0">Revise shuru karo</button></div>`;
+  }
 
   g.document.addEventListener('change', e => {
-    if (e.target.id === 'rcTopic') { st.key = e.target.value; st.res = null; st.err = ''; redraw(); }
+    if (e.target.id === 'rcTopic') { st.key = e.target.value; st.topic = ''; st.queue = []; st.genErr = ''; st.res = null; st.err = ''; redraw(); }
     else if (e.target.id === 'rcType') { st.type = e.target.value; redraw(); }
     else if (e.target.id === 'rcLang') rc.lang = e.target.value;
+    else if (e.target.id === 'rcPhotoFile') { const f = e.target.files && e.target.files[0]; if (f) takePhoto(f); }
     else if (e.target.id === 'rcVoiceOk') { setVoiceOk(e.target.checked); rc.err = ''; redraw(); }
   });
   g.document.addEventListener('input', e => { if (e.target.id === 'rcText') st.text = e.target.value; });
@@ -248,17 +438,31 @@
     else if (b.dataset.rc === 'rec') startVoice();
     else if (b.dataset.rc === 'stop') stopVoice('');
     else if (b.dataset.rc === 'settings') { if (typeof g.go === 'function') g.go('settings'); }
+    else if (b.dataset.rc === 'photo') { const i = g.document.getElementById('rcPhotoFile'); if (i) { i.value = ''; i.click(); } }
+    else if (b.dataset.rc === 'photodel') { rc.photo = null; redraw(); }
     else if (b.dataset.rc === 'clipdel') { rc.clip = null; rc.sec = 0; redraw(); }
-    else if (b.dataset.rc === 'again') { st.res = null; st.text = ''; st.err = ''; rc.sec = 0; rc.err = ''; rc.clip = null; redraw(); g.scrollTo(0, 0); }
+    else if (b.dataset.rc === 'again') { st.res = null; st.text = ''; st.err = ''; rc.sec = 0; rc.err = ''; rc.clip = null; rc.photo = null; redraw(); g.scrollTo(0, 0); }
     else if (b.dataset.rc === 'adv' && typeof g.go === 'function') g.go('ai');
+    else if (b.dataset.rc === 'rev') { st.topic = b.dataset.t || ''; st.res = null; st.text = ''; st.err = ''; redraw(); g.scrollTo(0, 0); }   // Task 34
+    else if (b.dataset.rc === 'alltopics') { st.topic = ''; redraw(); }
+    else if (b.dataset.rc === 'gen') genTopics();
+    else if (b.dataset.rc === 'due') startDue();
+    else if (b.dataset.rc === 'nextdue') nextDue();
+    else if (b.dataset.rc === 'genall') genCourse();
   });
 
   g.RECALL = {
+    history: () => read().slice(),   // [{k:'course|chapter', t:score, at:ms}] for the weekly report
+    mastery(k) { const a = read().filter(x => x.k === k).slice(-3); return a.length ? Math.round(a.reduce((q, x) => q + x.t, 0) / a.length) : null; },   // average of the last 3 scores of a chapter (null = never tried); the chapter quiz starts at the level it suggests
     viewHTML() {
       loadQuota();
-      return `<h1 style="font-size:26px;margin-top:14px">Recall AI</h1>${quotaCard()}${st.res ? report() : form()}<p class="mut" style="margin-top:20px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
+      if (uid() && st.syncFor !== uid()) { st.syncFor = uid(); sync(); }
+      const hist = st.key ? read().filter(a => a.k === st.key) : [];
+      return `<h1 style="font-size:26px;margin-top:14px">Recall AI</h1>${quotaCard()}${st.res ? report() : form() + (hist.length ? trackerCard(hist) : '')}${mapCard()}${st.res ? '' : chapterList()}${adminBox()}<p class="mut" style="margin-top:20px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
     },
+    homeHTML, readTopics: readT,
+    sync, merge,   // sync(): this phone <-> the account. merge(a, b): the union rule, for tests
     voiceChanged() { stopVoice('', false); rc.sec = 0; rc.err = ''; rc.clip = null; },   // Settings changed the voice mode: nothing from the old mode stays
-    _reset() { stopVoice('', false); rc.sec = 0; rc.err = ''; rc.clip = null; Object.assign(st, { key: '', type: 'concept', text: '', busy: false, err: '', res: null, left: null, quotaFor: '' }); }
+    _reset() { stopVoice('', false); rc.sec = 0; rc.err = ''; rc.clip = null; rc.photo = null; rc.photoBusy = false; Object.assign(st, { key: '', type: 'concept', text: '', busy: false, err: '', res: null, left: null, quotaFor: '', syncFor: '', topic: '', genBusy: false, genErr: '', queue: [], genMsg: '' }); Object.keys(TD).forEach(k => delete TD[k]); running = null; again = false; }
   };
 })();

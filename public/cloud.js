@@ -3,7 +3,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithPopup, signInWithRedirect, GoogleAuthProvider, signOut }
   from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, documentId, serverTimestamp }
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, documentId, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -46,6 +46,22 @@ window.CLOUD = {
     async get(id) { const s = await getDoc(doc(db, 'narration', id)); return s.exists() ? s.data() : null; },
     set(id, data) { const d = JSON.parse(JSON.stringify(data)); d.updatedAt = serverTimestamp(); return setDoc(doc(db, 'narration', id), d); },
     del(id) { return deleteDoc(doc(db, 'narration', id)); }
+  },
+  // Report button (collection reports). Students add (max 5 a day, see firestore.rules); only the admin lists, marks and deletes.
+  reports: {
+    async add(d) {
+      const u = auth.currentUser; if (!u) throw Object.assign(new Error('login'), { code: 'login' });
+      const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const body = { ...d, uid: u.uid, at: serverTimestamp(), status: 'new' };
+      for (let n = 1; n <= 5; n++) {   // a taken slot is refused by the rules (students can not update), so move on to the next one
+        try { await setDoc(doc(db, 'reports', u.uid + '_' + day + '_' + n), body); return n; }
+        catch (e) { if (!e || e.code !== 'permission-denied') throw e; }
+      }
+      throw Object.assign(new Error('limit'), { code: 'limit' });
+    },
+    async list() { const s = await getDocs(collection(db, 'reports')); const a = []; s.forEach(x => { const v = x.data(); a.push({ id: x.id, ...v, ts: v.at && v.at.toMillis ? v.at.toMillis() : 0 }); }); a.sort((x, y) => (y.ts || 0) - (x.ts || 0)); return a; },
+    setStatus(id, status) { return updateDoc(doc(db, 'reports', id), { status }); },
+    del(id) { return deleteDoc(doc(db, 'reports', id)); }
   },
   // Maths video plans (collection mathVideos, doc id = question code). Read: signed-in. Write: admin only (firestore.rules).
   mathVideo: {
@@ -114,6 +130,87 @@ window.CLOUD = {
     saveRef(id) { const u = auth.currentUser; if (!u) return Promise.reject(new Error('login')); return setDoc(doc(db, 'users', u.uid, 'savedCourses', id), { at: Date.now() }); },
     unsaveRef(id) { const u = auth.currentUser; if (!u) return Promise.reject(new Error('login')); return deleteDoc(doc(db, 'users', u.uid, 'savedCourses', id)); }
   },
+  // Recall retention tracker (Task 15): users/<uid>/recall/tracker = { items: [{k, t, at}], updatedAt }. Covered by the per-user rule in firestore.rules.
+  recall: {
+    async get() {
+      const u = auth.currentUser; if (!u) return null;
+      const s = await getDoc(doc(db, 'users', u.uid, 'recall', 'tracker'));
+      if (!s.exists()) return null;
+      const d = s.data();
+      return { items: Array.isArray(d.items) ? d.items : [], topics: d.topics && typeof d.topics === 'object' && !Array.isArray(d.topics) ? d.topics : {} };
+    },
+    // data = { items: [attempts], topics: { 'course|ch|tN': record } } (Phase 6: per-topic revision records live in the same document)
+    set(data) {
+      const u = auth.currentUser; if (!u) return Promise.reject(new Error('login'));
+      return setDoc(doc(db, 'users', u.uid, 'recall', 'tracker'), { items: JSON.parse(JSON.stringify(data.items || [])), topics: JSON.parse(JSON.stringify(data.topics || {})), updatedAt: serverTimestamp() });
+    }
+  },
+  // Chapter topics (Task 31): chapterTopics/<course>_<chapter>, written by the server only, readable by every signed-in student.
+  topics: {
+    async get(course, chNo) {
+      const id = String(course).replace(/[^A-Za-z0-9-]/g, '') + '_' + Number(chNo);
+      const s = await getDoc(doc(db, 'chapterTopics', id));
+      return s.exists() ? s.data() : null;
+    }
+  },
+  // Task 48: classes + homework (collection classes, doc id = 6-character class code; see firestore.rules). Teacher creates a class and homework;
+  // a student joins with the code (members/<uid>) and marks homework done (done/<hw>_<uid>). Only a name and done flags are kept.
+  classes: {
+    async create(school, cls) {
+      const u = auth.currentUser; if (!u) throw new Error('login');
+      const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no I, O, 0, 1: easy to read aloud and copy
+      for (let i = 0; i < 6; i++) {
+        let code = ''; crypto.getRandomValues(new Uint8Array(6)).forEach(b => { code += A[b % A.length]; });
+        let taken = false; try { taken = (await getDoc(doc(db, 'classes', code))).exists(); } catch (e) {}
+        if (taken) continue;
+        const d = { code, school, class: cls, teacherId: u.uid, createdAt: Date.now() };
+        await setDoc(doc(db, 'classes', code), d); return d;
+      }
+      throw new Error('code');
+    },
+    async listOwn() {
+      const u = auth.currentUser; if (!u) return [];
+      const s = await getDocs(query(collection(db, 'classes'), where('teacherId', '==', u.uid)));
+      const a = []; s.forEach(d => a.push(d.data())); return a;
+    },
+    async get(code) { try { const s = await getDoc(doc(db, 'classes', code)); return s.exists() ? s.data() : null; } catch (e) { return null; } },
+    async myCodes() {
+      const u = auth.currentUser; if (!u) return [];
+      const s = await getDocs(collection(db, 'users', u.uid, 'classes')); const a = []; s.forEach(d => a.push(d.id)); return a;
+    },
+    async join(code, name) {
+      const u = auth.currentUser; if (!u) throw new Error('login');
+      await setDoc(doc(db, 'classes', code, 'members', u.uid), { uid: u.uid, name: String(name || 'Student').slice(0, 40), joinedAt: Date.now() });
+      await setDoc(doc(db, 'users', u.uid, 'classes', code), { at: Date.now() });
+    },
+    async leave(code) {
+      const u = auth.currentUser; if (!u) throw new Error('login');
+      for (const sub of ['done', 'scores']) { try { const s = await getDocs(query(collection(db, 'classes', code, sub), where('uid', '==', u.uid))); await Promise.all(s.docs.map(d => deleteDoc(d.ref))); } catch (e) {} }
+      try { await deleteDoc(doc(db, 'classes', code, 'members', u.uid)); } catch (e) {}
+      await deleteDoc(doc(db, 'users', u.uid, 'classes', code));
+    },
+    async forget(code) { const u = auth.currentUser; if (u) await deleteDoc(doc(db, 'users', u.uid, 'classes', code)); },   // the class no longer exists: drop only the shortcut
+    async members(code) { const s = await getDocs(collection(db, 'classes', code, 'members')); const a = []; s.forEach(d => a.push(d.data())); return a; },
+    async hwList(code) { const s = await getDocs(collection(db, 'classes', code, 'homework')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a; },
+    async hwAdd(code, hw) { const id = doc(collection(db, 'classes', code, 'homework')).id; await setDoc(doc(db, 'classes', code, 'homework', id), JSON.parse(JSON.stringify(hw))); return id; },
+    async hwDel(code, id) {
+      try { const s = await getDocs(query(collection(db, 'classes', code, 'done'), where('hw', '==', id))); await Promise.all(s.docs.map(d => deleteDoc(d.ref))); } catch (e) {}
+      await deleteDoc(doc(db, 'classes', code, 'homework', id));
+    },
+    scoreSet(code, ch, score) { const u = auth.currentUser; if (!u) return Promise.reject(new Error('login')); return setDoc(doc(db, 'classes', code, 'scores', ch + '_' + u.uid), { ch, uid: u.uid, score: Math.max(0, Math.min(100, Math.round(score))), at: Date.now() }); },
+    async scoreList(code) { const s = await getDocs(collection(db, 'classes', code, 'scores')); const a = []; s.forEach(d => a.push(d.data())); return a; },   // teacher only (rules)
+    async doneList(code, mineOnly) {   // teacher: everybody's; student: only their own
+      const u = auth.currentUser; if (!u) return [];
+      const c = collection(db, 'classes', code, 'done');
+      const s = await getDocs(mineOnly ? query(c, where('uid', '==', u.uid)) : c); const a = []; s.forEach(d => a.push(d.data())); return a;
+    },
+    doneSet(code, hw) { const u = auth.currentUser; if (!u) return Promise.reject(new Error('login')); return setDoc(doc(db, 'classes', code, 'done', hw + '_' + u.uid), { hw, uid: u.uid, at: Date.now() }); },
+    doneDel(code, hw) { const u = auth.currentUser; if (!u) return Promise.reject(new Error('login')); return deleteDoc(doc(db, 'classes', code, 'done', hw + '_' + u.uid)); },
+    async removeClass(code) {   // teacher: removes the class with every member, homework and done record
+      for (const sub of ['scores', 'done', 'homework', 'members']) { const s = await getDocs(collection(db, 'classes', code, sub)); await Promise.all(s.docs.map(d => deleteDoc(d.ref))); }
+      await deleteDoc(doc(db, 'classes', code));
+    }
+  },
   // Faculty / Developer people. Writes only work for the admin Google account (see firestore.rules).
   savePerson(p) { return setDoc(doc(db, 'people', p.id), JSON.parse(JSON.stringify(p))); },
   deletePerson(id, tombstone) { return tombstone ? setDoc(doc(db, 'people', id), tombstone) : deleteDoc(doc(db, 'people', id)); },
@@ -126,6 +223,26 @@ window.CLOUD = {
     }
   },
   logout() { return signOut(auth); },
+  // Admin-approved AI Kahani / Example (collection aicontent, doc id = question id + '__' + kind). Students can read only approved ones (firestore.rules).
+  aicontent: {
+    async get(id) { const s = await getDoc(doc(db, 'aicontent', id)); return s.exists() ? s.data() : null; },
+    set(d) { return setDoc(doc(db, 'aicontent', d.qid + '__' + d.kind), JSON.parse(JSON.stringify(d))); },
+    del(id) { return deleteDoc(doc(db, 'aicontent', id)); }
+  },
+  // Chapter quizzes (collection quizzes, doc id = course__chapter__level). Students get only approved ones (firestore.rules); the admin reads and writes all.
+  quiz: {
+    id(course, ch, level) { return course + '__' + ch + '__' + level; },
+    async approved(course, ch) {
+      const s = await getDocs(query(collection(db, 'quizzes'), where('course', '==', course), where('ch', '==', ch), where('status', '==', 'approved')));
+      const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a;
+    },
+    async forChapter(course, ch) {   // admin: every status
+      const s = await getDocs(query(collection(db, 'quizzes'), where('course', '==', course), where('ch', '==', ch)));
+      const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a;
+    },
+    set(d) { return setDoc(doc(db, 'quizzes', d.course + '__' + d.ch + '__' + d.level), JSON.parse(JSON.stringify(d))); },
+    del(id) { return deleteDoc(doc(db, 'quizzes', id)); }
+  },
   // Parent consent for BYOK: users/{uid}/consent/byok (covered by the existing users/{uid}/** rule).
   async consentSet(d) { if (!auth.currentUser) throw new Error('login'); return setDoc(doc(db, 'users', auth.currentUser.uid, 'consent', 'byok'), { ...d, at: serverTimestamp() }); },
   async token() { return auth.currentUser ? auth.currentUser.getIdToken() : null; },

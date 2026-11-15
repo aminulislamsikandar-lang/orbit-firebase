@@ -158,6 +158,8 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 <div id="inst" class="inst" hidden></div>
 <div id="app"><h1 style="font-size:26px;margin-top:14px">Orbit Tutorial</h1><p class="mut">Free AI study helper for school students in Assam: textbook-style answers, diagrams and translations for Class 7, Class 8 and Class 10 (English, Mathematics, Science). Log in with Google to start.</p><p class="mut">Loading…</p></div>
 <script src="/config.js"></script>
+<script src="/limit-msg.js"></script>
+<script src="/revision-core.js"></script>
 <script src="/custom-course.js"></script>
 <script src="/warp-loader.js"></script>
 <script>
@@ -170,6 +172,8 @@ const I={
  plus:ic('<path d="M12 5v14"/><path d="M5 12h14"/>'),
  ai:ic('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>'),
  recall:ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+ report:ic('<path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/>'),
+ class:ic('<path d="M3 9l9-5 9 5-9 5z"/><path d="M7 11.5V16c0 1.4 2.2 3 5 3s5-1.6 5-3v-4.5"/>'),
  mic:ic('<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'),
  heart:ic(HEART),
  re:ic('<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>'),
@@ -189,6 +193,9 @@ const I={
  pass:ic('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>'),
  topper:ic('<path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3"/><path d="M7 5H4v2a3 3 0 0 0 3 3"/>'),
  fac:ic('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.7a3.5 3.5 0 0 1 0 6.6"/><path d="M18 14a6.5 6.5 0 0 1 3.5 6"/>'),
+ flag:ic('<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>'),
+ cube:ic('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5"/><path d="M12 12v9"/>'),
+ lab:ic('<path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>'),
  dev:ic('<path d="M8 8l-5 4 5 4"/><path d="M16 8l5 4-5 4"/><path d="M14 5l-4 14"/>'),
  set:ic('<path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h2"/><path d="M10 17h10"/><circle cx="8" cy="17" r="2"/>'),
   more:ic('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'),
@@ -312,7 +319,7 @@ for(const id in MRC){
  for(const k in MRC[id]){const t=MRC[id][k];if(t&&t.text&&t.base===base)MR[id+'|'+k]={text:t.text};else delete MRC[id][k]}
  if(!Object.keys(MRC[id]).length)delete MRC[id];
 }
-const MORE=[['mnemonic','Mnemonic'],['analogy','Analogy'],['kid','Explain like a kid'],['full','Full marks answer'],['points','Key points'],['mistakes','Common mistakes'],['mcq','Practice MCQ']];
+const MORE=[['mnemonic','Mnemonic'],['analogy','Analogy'],['kid','Explain like a kid'],['story','Kahani (story)'],['example','Example'],['full','Full marks answer'],['points','Key points'],['mistakes','Common mistakes'],['mcq','Practice MCQ']];
 const OPEN={};   // id -> answer is visible (hidden by default)
 // A free picture (Wikipedia/Commons, or Pexels if the server has a key) under the default answer (Science only). The server finds it; the link is kept on this device.
 const IKEY='orbit_img_v2';
@@ -323,7 +330,7 @@ for(const id in IMC)IMG[id]=IMC[id];
 function imgPersist(){try{localStorage.setItem(IKEY,JSON.stringify(IMC))}catch(e){}}
 const okImg=u=>/^https:\/\/(upload\.wikimedia\.org|images\.pexels\.com)\//.test(u||''),okPage=u=>/^https:\/\/(commons\.wikimedia\.org|www\.pexels\.com)\//.test(u||'');
 async function ensureImg(id){
- if(ST.img==='off')return;
+ if(ST.img==='off'||lowData())return;
  const c=(IDX[id]||{}).course;if(!c||c.custom||c.subject!=='Science')return;
  const s=IMG[id];
  if(s&&(s.loading||s.url||(s.none&&Date.now()-(s.at||0)<3*864e5)))return;
@@ -336,14 +343,20 @@ async function ensureImg(id){
 }
 function imgBad(id){IMG[id]={none:true,at:Date.now()};IMC[id]=IMG[id];imgPersist();draw()}
 function imgHTML(id){
- if(ST.img==='off')return'';
+ if(ST.img==='off'||lowData())return'';
  const s=IMG[id];if(!s||!s.url||!okImg(s.url)||!okPage(s.page))return'';
  return `<figure class="wimg"><img src="${esc(s.url)}" alt="${esc(s.title||'Related image')}" loading="lazy" referrerpolicy="no-referrer" onerror="imgBad('${esc(id)}')"><figcaption>Source: <a href="${esc(s.page)}" target="_blank" rel="noopener noreferrer">${/pexels\.com/.test(s.page)?'Pexels':'Wikimedia Commons'}</a>${s.by?' · '+esc(s.by):''}${s.lic?' · '+(/^https:\/\//.test(s.licUrl)?`<a href="${esc(s.licUrl)}" target="_blank" rel="noopener noreferrer">${esc(s.lic)}</a>`:esc(s.lic)):''}</figcaption></figure>`;
 }
 
 // Pinned questions and settings also live on this device.
 const PKEY='orbit_pins_v1',STKEY='orbit_settings_v1';
-let PINS={},ST={theme:'auto',dtype:'auto',tstyle:'para',img:'on',tlang:'as',rvoice:'ai'};
+let PINS={},ST={theme:'auto',dtype:'auto',tstyle:'para',img:'on',tlang:'as',rvoice:'ai',low:'auto'};
+// Kam data mode: 'on' = images and videos off; 'auto' follows the phone's Data Saver; 'off' = normal.
+const lowData=()=>ST.low==='on'||(ST.low!=='off'&&!!(navigator.connection&&navigator.connection.saveData));
+// Short child-friendly messages in the child's chosen language (hing = Hinglish, the app's default tone).
+const L4=o=>o[ST.tlang]||o.hing;
+const M_NEEDNET={hing:'Is kaam ke liye internet chahiye. Purane answers offline dekh sakte ho.',en:'This needs the internet. You can still read saved answers offline.',as:'এইটোৰ বাবে ইণ্টাৰনেট লাগিব। সংৰক্ষিত উত্তৰবোৰ অফলাইনত পঢ়িব পাৰিবা।',bn:'এর জন্য ইন্টারনেট লাগবে। সংরক্ষিত উত্তর অফলাইনে পড়তে পারবে।'};
+const M_LOWDATA={hing:'Kam data mode on hai, isliye video aur image band hain. Settings mein badal sakte ho.',en:'Low data mode is on, so videos and images are off. You can change this in Settings.',as:'কম ডাটা মোড অন আছে, গতিকে ভিডিঅ\' আৰু ছবি বন্ধ আছে। ছেটিংছত সলনি কৰিব পাৰিবা।',bn:'কম ডেটা মোড চালু আছে, তাই ভিডিও ও ছবি বন্ধ। সেটিংসে বদলাতে পারবে।'};
 try{PINS=JSON.parse(localStorage.getItem(PKEY)||'{}')||{}}catch(e){PINS={}}
 try{ST={...ST,...(JSON.parse(localStorage.getItem(STKEY)||'{}')||{})}}catch(e){}
 const isPinned=id=>!!PINS[id];
@@ -377,7 +390,7 @@ function ytLink(q){const c=(IDX[q.id]||{}).course;const s=`${c?cLabel(c):'Class 
 
 function xBlock(q,k){
  const id=q.id,xk=id+'|'+k,x=ui(xk),sy=effSty(x),t=x.tr?TR[trKey(xk,x.tr,sy)]:null,v=VIS[xk]||{},name=(MORE.find(m=>m[0]===k)||[])[1]||'';
- return `<div class="ans"><b>${esc(name)}</b><br>${fmt(srcText(xk))}</div>${trBlock(xk)}
+ return `<div class="ans"><b>${esc(name)}</b><br>${fmt(srcText(xk))}</div>${gatedK(id,k)?AIREVIEW.adminBar(id,k,srcText(xk)):''}${trBlock(xk)}
  <div class="tb" role="toolbar" aria-label="${esc(name)} tools">
   <button class="ic" data-act="cp" data-id="${xk}" title="Copy" aria-label="Copy karo">${x.copied?I.ok:I.cp}</button>
   <button class="ic ${t&&t.loading?'spin':''}" data-act="tr" data-id="${xk}" title="Translate" aria-label="Translate" aria-pressed="${!!(x.menu||x.tr)}">${I.tr}</button>
@@ -445,12 +458,13 @@ function tblHTML(q){
 }
 function qHTML(q){
  const a=ANS[q.id]||{},txt=srcText(q.id),has=!!a.text,open=has&&!!OPEN[q.id],qm=!!ui(q.id).qm;
- return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic qdots ${has?'':'nochev'}" data-act="qm" data-id="${q.id}" aria-haspopup="menu" aria-expanded="${!!qm}" title="Aur options" aria-label="Question options">${I.more}</button>${qm?`<div class="qmenu" role="menu"><button class="qmi" role="menuitem" data-act="pin" data-id="${q.id}">${I.pin}<span>${isPinned(q.id)?'Pin hatao':'Pin karo'}</span></button><button class="qmi" role="menuitem" data-act="qtr" data-id="${q.id}">${I.tr}<span>${ui(q.id).qt?'Translation chhupao':'Translate question'}</span></button><button class="qmi" role="menuitem" data-act="qcp" data-id="${q.id}">${ui(q.id).qcp==='ok'?I.ok:I.cp}<span>${ui(q.id).qcp==='ok'?'Copy ho gaya':ui(q.id).qcp==='err'?'Copy nahi hua':'Copy question'}</span></button>${qvMenuVideos(q.id)}${qvMenuItem(q.id)}</div>`:''}<div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}${isPinned(q.id)?`<span class="pmark" title="Pinned" role="img" aria-label="Pinned">${I.pin}</span>`:''}</div>${q.text?`<p dir="auto">${esc(q.text)}</p>`:''}
+ return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic qdots ${has?'':'nochev'}" data-act="qm" data-id="${q.id}" aria-haspopup="menu" aria-expanded="${!!qm}" title="Aur options" aria-label="Question options">${I.more}</button>${qm?`<div class="qmenu" role="menu"><button class="qmi" role="menuitem" data-act="pin" data-id="${q.id}">${I.pin}<span>${isPinned(q.id)?'Pin hatao':'Pin karo'}</span></button><button class="qmi" role="menuitem" data-act="qtr" data-id="${q.id}">${I.tr}<span>${ui(q.id).qt?'Translation chhupao':'Translate question'}</span></button><button class="qmi" role="menuitem" data-act="qcp" data-id="${q.id}">${ui(q.id).qcp==='ok'?I.ok:I.cp}<span>${ui(q.id).qcp==='ok'?'Copy ho gaya':ui(q.id).qcp==='err'?'Copy nahi hua':'Copy question'}</span></button>${qvMenuVideos(q.id)}${qvMenuItem(q.id)}<button class="qmi" role="menuitem" data-act="qrep" data-id="${q.id}">${I.flag}<span>${esc(L4({hing:'Galti report karo',en:'Report a mistake',as:'ভুল জনাওক',bn:'ভুল জানাও'}))}</span></button></div>`:''}<div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}${isPinned(q.id)?`<span class="pmark" title="Pinned" role="img" aria-label="Pinned">${I.pin}</span>`:''}</div>${q.text?`<p dir="auto">${esc(q.text)}</p>`:''}
  ${tblHTML(q)}
  ${(q.parts||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}
  ${(q.options||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}</div>${has?`<span class="chev ${open?'open':''}">${I.chev}</span>`:''}</div>
  ${qtrHTML(q)}
  ${qvHTML(q)}
+ ${window.ACHECK?ACHECK.html(q):''}
  ${has?(open?`<div class="ans">${fmt(txt)}</div>${trBlock(q.id)}${imgHTML(q.id)}${isSaved(q.id)?`<div class="saved-note">Saved · ${dateFmt(SAVED[q.id].at)}</div>`:''}${toolbar(q)}`
   :'')
   :`${a.loading?WARP.block('Soch raha hoon…',48):`<button class="btn" data-act="ask" data-id="${q.id}">AI Answer</button>`}`}
@@ -515,7 +529,7 @@ function navHTML(){
  const d=DATA;
  if(NAV.page==='home'){
   const ini=n=>esc(n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase());
-  return head1('Apna board ya school chuno')+CATALOG.groups.map(g=>`<h2 class="sec">${g.t}</h2><div class="rows">${g.items.map(o=>rowHTML('org',`data-org="${o.id}"`,ini(o.name),o.name,o.sub||'',I.next)).join('')}</div>`).join('')+(window.CUSTOM?CUSTOM.homeHTML():'');
+  return (window.CLASSROOM?CLASSROOM.homeHTML():'')+head1('Apna board ya school chuno')+(window.RECALL&&RECALL.homeHTML?RECALL.homeHTML():'')+CATALOG.groups.map(g=>`<h2 class="sec">${g.t}</h2><div class="rows">${g.items.map(o=>rowHTML('org',`data-org="${o.id}"`,ini(o.name),o.name,o.sub||'',I.next)).join('')}</div>`).join('')+(window.CUSTOM?CUSTOM.homeHTML():'');
  }
  if(NAV.page==='pick'){
   const o=orgOf(NAV.org),chips=(list,cur,act,lab)=>`<div class="chips" role="group">${list.map(v=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${cur===v}">${lab(v)}</button>`).join('')}</div>`;
@@ -538,7 +552,7 @@ function navHTML(){
   }).join('')}</div>`;
  }
  const ch=c.chapters.find(x=>x.no===NAV.ch);
- return backHTML('Chapters')+head1(ch.no===0?ch.title:`Chapter ${ch.no}: ${ch.title}`)+`<div class="mut">Class ${c.class} · ${esc(cTitle(c))}</div>`+lessonHTML(c,ch)+videosHTML(c,ch)+listHTML(()=>true,'',[{c,ch}],false)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
+ return backHTML('Chapters')+head1(ch.no===0?ch.title:`Chapter ${ch.no}: ${ch.title}`)+`<div class="mut">Class ${c.class} · ${esc(cTitle(c))}</div>`+lessonHTML(c,ch)+videosHTML(c,ch)+(window.QUIZ?QUIZ.chapterHTML(c,ch):'')+listHTML(()=>true,'',[{c,ch}],false)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
 }
 function settingsHTML(){
  const chips=(list,cur,act)=>`<div class="chips" role="group">${list.map(([k,n])=>`<button class="chip" data-act="${act}" data-v="${k}" aria-pressed="${cur===k}">${n}</button>`).join('')}</div>`;
@@ -550,8 +564,12 @@ function settingsHTML(){
  <p class="mut" style="margin-top:8px">Translate icon aur "Translate question" pehle isi language mein translate karenge. Baad mein chip se badal sakte ho.</p>
  <h2 class="sec">Answer ke neeche image</h2>${chips([['on','On'],['off','Off']],ST.img==='off'?'off':'on','seti')}
  <p class="mut" style="margin-top:8px">On: Science answer ke neeche internet se related image aati hai (jab mil sake). Off: koi image nahi dikhegi.</p>
+ <h2 class="sec">Kam data mode</h2>${chips([['auto','Auto'],['on','On'],['off','Off']],ST.low==='on'||ST.low==='off'?ST.low:'auto','setlow')}
+ <p class="mut" style="margin-top:8px">On: video aur image band, sirf text, kam internet kharch hoga. Auto: phone ka Data Saver on ho to apne aap on. Off: sab normal.</p>
  <h2 class="sec">Recall AI: bolne ka tareeka</h2>${chips([['ai','AI ko recording bhejo'],['text','Text mein badlo']],ST.rvoice==='text'?'text':'ai','setrv')}
- <p class="mut" style="margin-top:8px">AI ko recording bhejo: aapki awaaz AI (Gemini) ko jati hai, Hindi, English, Assamese aur Bengali mein achha chalta hai. Text mein badlo: browser bole hue ko box mein text likhta hai, aap use theek karke bhejte ho, sirf text AI ko jata hai (Chrome ya Edge).</p>`;
+ <p class="mut" style="margin-top:8px">AI ko recording bhejo: aapki awaaz AI (Gemini) ko jati hai, Hindi, English, Assamese aur Bengali mein achha chalta hai. Text mein badlo: browser bole hue ko box mein text likhta hai, aap use theek karke bhejte ho, sirf text AI ko jata hai (Chrome ya Edge).</p>
+ <h2 class="sec">"Suno" button: awaaz</h2>${chips([['auto','Phone ki awaaz, na ho to AI'],['ai','Hamesha AI awaaz'],['browser','Sirf phone ki awaaz']],ST.tts==='ai'||ST.tts==='browser'?ST.tts:'auto','settts')}
+ <p class="mut" style="margin-top:8px">AI awaaz sirf tab chalti hai jab parent ki Gemini key lagi ho (Advanced AI Features), uska kharcha parent ki key se hota hai. Assamese ke liye aksar phone mein awaaz nahi hoti, isliye wahan AI awaaz kaam aati hai.</p>`;
 }
 // ---- Google login + cloud sync (Firebase). cloud.js sets window.CLOUD; if it fails to load (offline) the app still works. ----
 let USER=null,LOGINERR='',SYNCT=null,AUTH_READY=false,CLOUDFAIL='';   // AUTH_READY: Firebase has told us if someone is logged in
@@ -566,9 +584,10 @@ function syncSoon(){
  SYNCT=setTimeout(()=>window.CLOUD.push({saved:SAVED,pins:PINS,settings:ST}).catch(e=>console.warn('sync failed',e)),1500);
 }
 window.onCloudFail=e=>{CLOUDFAIL=String((e&&e.message)||e||'unknown');console.error('cloud.js failed',e);if(navigator.onLine&&!USER)draw()};
-window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u)}if(DATA||!u)draw()};
+window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u)}if(DATA||!u)draw()};
 // First login on a device: merge this device's data with the cloud. After that the cloud copy wins.
 window.onCloudData=cd=>{
+ if(window.RECALL&&RECALL.sync)RECALL.sync();   // Recall tracker + topic records: phone <-> account
  let uid=USER&&USER.uid,first=true;
  try{first=localStorage.getItem('orbit_sync_uid')!==uid}catch(e){}
  if(first){
@@ -601,21 +620,24 @@ function mergeV(){   // videos.js (deployed with the site) + videos added from t
 window.onCloudVideos=list=>{CLOUD_V=Array.isArray(list)?list:[];mergeV()};
 function videosHTML(c,ch){
  const vs=VIDEOS.filter(v=>!v.qid&&(v.course||'c10-science')===c.id&&v.chapter===ch.no);if(!vs.length)return'';
+ if(lowData())return`<div class="vid"><p class="mut">${esc(L4(M_LOWDATA))}</p></div>`;
  return `<div class="vid"><h2 class="sec">Video lessons</h2>${vs.map(v=>{const s=VID[v.id]||{};
   return `<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button>${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}</div>`}).join('')}</div>`;
 }
 // ---- videos tied to ONE question: the admin adds them with 3-dot menu > Add video (public/qvideo.js, Admin mode) ----
 const qVids=qid=>VIDEOS.filter(v=>v.qid===qid);
 function qvHTML(q){
- const vs=qVids(q.id);if(!vs.length)return'';
+ const vs=qVids(q.id);if(!vs.length||lowData())return'';
  const adm=!!(window.QVideo&&window.QVideo.active());
  return `<div class="vid qv">${vs.map(v=>{const s=VID[v.id]||{};
   const row=adm?`<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button><button class="qvd" data-act="qvdel" data-id="${esc(v.id)}" aria-label="Ye video hatao">Hatao</button></div>`:'';
   return `${row}${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}`}).join('')}</div>`;
 }
-const qvMenuVideos=id=>{const vs=qVids(id);return vs.map((v,i)=>`<button class="qmi" role="menuitem" data-act="qvopen" data-id="${esc(v.id)}">${I.vid}<span>Video${vs.length>1?` (${i+1})`:''}</span></button>`).join('')};
+const qvMenuVideos=id=>{const vs=lowData()?[]:qVids(id);return vs.map((v,i)=>`<button class="qmi" role="menuitem" data-act="qvopen" data-id="${esc(v.id)}">${I.vid}<span>Video${vs.length>1?` (${i+1})`:''}</span></button>`).join('')};
 const qvMenuItem=id=>window.QVideo&&window.QVideo.active()?`<button class="qmi" role="menuitem" data-act="qvadd" data-id="${id}">${I.vid}<span>Add video</span></button>`:'';
 window.orbitUser=()=>USER;
+window.orbitLang=()=>ST.tlang;
+window.orbitLow=()=>lowData();
 window.orbitRedraw=()=>{if(DATA)draw()};
 window.orbitQ=id=>{const x=IDX[id];if(!x)return null;const q=x.q;return{id,courseId:x.course.id,chapter:x.ch.no,label:q.label||('Q'+q.no+'.'),text:[q.text].concat(q.parts||[]).filter(Boolean).join(' ').slice(0,160),count:qVids(id).length}};
 window.qvAdded=rec=>{CLOUD_V=CLOUD_V.filter(v=>v.id!==rec.id).concat([rec]);mergeV()};
@@ -653,6 +675,7 @@ async function openCodeVideo(rec){
 }
 async function openVideo(id){
  const rec=VIDEOS.find(v=>v.id===id);
+ if(lowData()){const s0=VID[id]=VID[id]||{};s0.err=L4(M_LOWDATA);draw();return}
  if(rec&&rec.kind&&rec.kind!=='mp4')return openCodeVideo(rec);
  const s=VID[id]=VID[id]||{};
  if(s.url){delete s.url;draw();return}
@@ -667,12 +690,13 @@ fetch('/publicvideos.json').then(r=>r.ok?r.json():[]).then(v=>{PVS=Array.isArray
 function pvHTML(){
  const by={};PVS.forEach(v=>{(by[v.cls]=by[v.cls]||[]).push(v)});
  const cl=Object.keys(by).map(Number).sort((a,b)=>a-b);
+ if(lowData())return head1('Public Videos')+`<p class="mut">${esc(L4(M_LOWDATA))}</p>`;
  return head1('Public Videos')+`<div class="mut">Sabke liye free videos. Play dabao, video poori screen par khulega.</div>`+
   (cl.length?cl.map(c=>`<h2 class="sec" style="margin-top:22px">Class ${c}</h2><div class="rows">${by[c].map(v=>`<button class="row" data-act="pvopen" data-id="${esc(v.id)}"><span class="pvi">${I.vid}</span><span><span class="pvt">${esc(v.title)}</span><br><span class="pvd">${esc(v.desc||'')}</span></span></button>`).join('')}</div>`).join(''):'<p class="mut" style="margin-top:20px">Abhi koi video nahi hai.</p>');
 }
 function closePV(){const o=document.getElementById('pvo');if(o)o.remove();try{if(window.speechSynthesis)speechSynthesis.cancel()}catch(e){}}
 function openPV(id){
- const v=PVS.find(x=>x.id===id);if(!v)return;
+ const v=PVS.find(x=>x.id===id);if(!v||lowData())return;
  closePV();stopSay();
  const o=document.createElement('div');o.className='pvo';o.id='pvo';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');
  o.innerHTML=`<div class="pvb"><button class="btn" data-act="pvclose">Close</button><b>${esc(v.title)}</b></div><iframe src="/public-videos/${encodeURIComponent(v.file)}" title="${esc(v.title)}" sandbox="allow-scripts" allow="autoplay; fullscreen"></iframe>`;
@@ -712,22 +736,30 @@ function draw(){
   body=head1(TITLES[VIEW])+listHTML(fn,empty,entries,true)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
  }else if(VIEW==='getvideo')body=gvHTML();
  else if(VIEW==='pubvideo')body=pvHTML();
+ else if(VIEW==='vlab')body=window.VLAB?VLAB.viewHTML():'';
+ else if(VIEW==='models3d')body=window.M3D?M3D.viewHTML():'';
  else if(VIEW==='ai')body=window.PARENT_KEY?PARENT_KEY.viewHTML():'';
  else if(VIEW==='recall')body=window.RECALL?RECALL.viewHTML():'';
+ else if(VIEW==='class')body=window.CLASSROOM?CLASSROOM.viewHTML():'';
+ else if(VIEW==='report')body=window.WEEKLY?WEEKLY.viewHTML():'';
  else if(VIEW==='bolo')body=window.BOLO?BOLO.viewHTML():'';
+ else if(VIEW==='read'||VIEW==='talk')body=window.VOICE?VOICE.viewHTML(VIEW):'';
  else if(VIEW==='custom')body=window.CUSTOM?CUSTOM.viewHTML():'';
  else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
  $('#app').innerHTML=`<div class="top"><button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button><div class="logo">${LOGO}Orbit Tutorial</div></div>${body}`;
  drawSide();
+ if(VIEW==='vlab'&&window.VLAB)VLAB.mount($('#app'));
+ if(VIEW==='models3d'&&window.M3D)M3D.mount($('#app'));
+ if(window.AVATAR)AVATAR.set(anySay());
  if(window.Analytics)window.Analytics.screen(screenInfo());
  window.scrollTo(0,y);
 }
 function drawSide(){
  const item=(v,ico,label,badge)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${item('custom','plus','My Courses')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo')}${item('ai','ai','Advanced AI Features')}
+ ${item('home','home','Home')}${item('custom','plus','My Courses')}${item('class','class','My Class')}${item('report','report','Weekly Report')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}${item('vlab','lab','Virtual Lab')}${item('models3d','cube','3D Models')}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo')}${item('read','mic','Padhne ki jaanch')}${item('talk','mic','Baat-cheet')}${item('ai','ai','Advanced AI Features')}
  <div class="sline"></div>
  ${item('pyq','pyq','PYQ')}${item('pass','pass','Pass mark')}${item('topper','topper','Topper')}${item('faculty','fac','Faculty')}${item('dev','dev','Developer')}
  <div class="sgap"></div><div class="sline"></div>
@@ -742,13 +774,15 @@ function openSide(on,noFocus){
  const m=document.querySelector('[data-act=menu]');if(m)m.setAttribute('aria-expanded',String(on));
 }
 function stopSay(){
+ if(window.VOICE)VOICE.stop();
  if(window.speechSynthesis&&speechSynthesis.speaking)speechSynthesis.cancel();
  for(const id in UI)UI[id].say=false;
 }
 function navTo(n,push=true){
  stopSay();
- NAV=n;LOCKED=null;VIEW='home';navSave();
+ NAV=n;LOCKED=null;VIEW='home';navSave();if(n.page==='chapter'&&window.WEEKLY)WEEKLY.mark();
  if(window.BOLO)BOLO.leave();   // the mic must never stay on after the student leaves the Bolo screen
+ if(window.VOICE)VOICE.leave();
  draw();window.scrollTo(0,0);
  if(push){try{history.pushState({nav:n},'')}catch(e){}}
 }
@@ -760,12 +794,12 @@ function goBack(){
 function go(v){
  if(v==='home'){openSide(false,true);navTo({page:'home'});return}
  stopSay();
- VIEW=v;if(window.BOLO&&v!=='bolo')BOLO.leave();
+ VIEW=v;if(window.BOLO&&v!=='bolo')BOLO.leave();if(v==='class'&&window.CLASSROOM)CLASSROOM.refresh();if(window.VOICE&&v!=='read'&&v!=='talk')VOICE.leave();if(window.VLAB&&v!=='vlab')VLAB.leave();if(window.M3D&&v!=='models3d')M3D.leave();
  draw();openSide(false,true);window.scrollTo(0,0);
 }
 window.addEventListener('popstate',e=>{
  if(!(e.state&&e.state.nav)||!DATA)return;
- if(window.BOLO)BOLO.leave();NAV=e.state.nav;LOCKED=null;VIEW='home';fixNav();navSave();draw();window.scrollTo(0,0);
+ if(window.BOLO)BOLO.leave();if(window.VOICE)VOICE.leave();NAV=e.state.nav;LOCKED=null;VIEW='home';fixNav();navSave();draw();window.scrollTo(0,0);
 });
 try{history.replaceState({nav:NAV},'')}catch(e){}
 function pin(id){if(PINS[id])delete PINS[id];else PINS[id]=Date.now();pinPersist();draw()}
@@ -802,17 +836,23 @@ function wake(){
  return awakeP}
 wake();
 // A custom-course question (Add custom course) is sent with its text; the server cleans, limits and caches it by content.
-const cqOf=b=>{const x=b&&b.id&&IDX[rid(b.id)],c=x&&x.course;if(!(c&&c.custom))return null;const q=x.q;return{text:q.text,label:q.label,parts:q.parts,options:q.options,cls:c.class,subject:c.subject,medium:c.medium,lang:c.lang||'English',chapter:x.ch.title}};
+const cqOf=b=>{const x=b&&b.id&&IDX[rid(b.id)],c=x&&x.course;if(!(c&&c.custom))return null;const q=x.q;return{text:q.text,label:q.label,parts:q.parts,options:q.options,cls:c.class,subject:c.subject,medium:c.medium,lang:c.lang||'English',chapter:x.ch.title,notes:typeof CUSTOM!=='undefined'&&CUSTOM.notesFor?CUSTOM.notesFor(x.ch.notes,q.text+' '+(q.parts||[]).join(' ')):''}};
 async function api(path,body){
+if(!navigator.onLine)throw new Error(L4(M_NEEDNET));
  const cq=cqOf(body);if(cq)body={...body,cq};
  const tok=window.CLOUD?await window.CLOUD.token():null;
  if(!tok)throw new Error('Pehle Google se log in karo (menu → Log in).');
  await wake();
  const r=await fetch((window.ORBIT_API||'')+path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok,...(window.PARENT_KEY?PARENT_KEY.headers():{})},body:JSON.stringify(body),signal:AbortSignal.timeout(90000)});
  const j=await r.json().catch(()=>({}));
- if(!r.ok)throw new Error(j.error||'Kuch gadbad hui. Dobara try karo.');
+ if(!r.ok){
+  // A used-up daily limit comes as code 'limit_reached': show the friendly message in the student's language (Settings > default translation language).
+  const lim=j.code==='limit_reached';
+  const err=new Error(lim&&window.LIMITMSG?LIMITMSG.limitMessage(ST.tlang,j.kind):(j.error||'Kuch gadbad hui. Dobara try karo.'));
+  if(j.code)err.code=j.code;if(j.kind)err.kind=j.kind;
+  throw err}
  return j}
-const errMsg=e=>!navigator.onLine?'Internet nahi hai. Naya answer ke liye online aao. Purane answers offline dekh sakte ho.':(e.name==='TimeoutError'||e.name==='AbortError')?'Server ne jawab nahi diya. Thodi der baad dobara try karo.':(e.name==='TypeError')?'Server tak pahunch nahi paya. Internet check karke dobara try karo.':e.message;
+const errMsg=e=>!navigator.onLine?L4(M_NEEDNET):(e.name==='TimeoutError'||e.name==='AbortError')?'Server ne jawab nahi diya. Thodi der baad dobara try karo.':(e.name==='TypeError')?'Server tak pahunch nahi paya. Internet check karke dobara try karo.':e.message;
 
 async function ask(id,fresh){
  const prev=ANS[id]&&ANS[id].text;
@@ -850,13 +890,17 @@ async function setTr(id,to){
 }
 function setSty(id,s){const u=ui(id);u.ts=s;u.sty=false;if(u.tr)setTr(id,u.tr);else{u.menu=true;u.msg='Ab language chuno: Hinglish, অসমীয়া ya বাংলা.';draw()}}
 function setDef(id,s){ST.tstyle=s;stSave();setSty(id,s);const u=ui(id);u.msg='Ab ye style default hai.';draw()}
+// Kahani / Example of the built-in questions wait for admin approval (aireview.js); a student's own question is not gated
+const gatedK=(id,k)=>!!(window.AIREVIEW&&AIREVIEW.gated(k))&&!(((IDX[rid(id)]||{}).course||{}).custom);
 async function reMore(id,k){
  const xk=id+'|'+k,u=ui(xk),prev=(MR[xk]||{}).text;
  u.tr=null;u.vis=false;u.menu=false;u.msg='';delete VIS[xk];for(const t in TR)if(t.startsWith(xk+'|'))delete TR[t];
  MR[xk]={loading:true,text:prev};draw();
  try{
-  const j=await api('/api/more',{id,kind:k,fresh:true,text:(ANS[id]||{}).text});
-  MR[xk]={text:j.text};(MRC[id]=MRC[id]||{})[k]={text:j.text,base:(CACHE[id]||{}).at};mrPersist();
+  const gen=()=>api('/api/more',{id,kind:k,fresh:true,text:(ANS[id]||{}).text}),g2=gatedK(id,k);
+  const j=g2?await AIREVIEW.load(id,k,gen,true):await gen();
+  MR[xk]={text:j.text};
+  if(!g2){(MRC[id]=MRC[id]||{})[k]={text:j.text,base:(CACHE[id]||{}).at};mrPersist()}
  }catch(e){MR[xk]={err:errMsg(e),text:prev}}
  draw();
 }
@@ -867,9 +911,10 @@ async function setMore(id,k){
  if(!(MR[key]&&MR[key].text)){
   MR[key]={loading:true};draw();
   try{
-   const j=await api('/api/more',{id,kind:k,text:(ANS[id]||{}).text});
+   const gen=()=>api('/api/more',{id,kind:k,text:(ANS[id]||{}).text}),g2=gatedK(id,k);
+   const j=g2?await AIREVIEW.load(id,k,gen):await gen();
    MR[key]={text:j.text};
-   (MRC[id]=MRC[id]||{})[k]={text:j.text,base:(CACHE[id]||{}).at};mrPersist();
+   if(!g2){(MRC[id]=MRC[id]||{})[k]={text:j.text,base:(CACHE[id]||{}).at};mrPersist()}
   }catch(e){MR[key]={err:errMsg(e)}}
  }
  draw();
@@ -891,15 +936,28 @@ function toggleVis(id){
 }
 function say(id){
  const u=ui(id);u.msg='';
+ if(window.VOICE){   // Phase 5: the phone's own voice, or the AI voice (parent key) when the phone has none for this language
+  if(u.say){VOICE.stop();u.say=false;draw();return}
+  const t=plain(shown(id));if(!t)return;
+  const lc=(u.tr?TRL[u.tr].v:(isHi(courseOfId(id))?'hi-IN':isAs(courseOfId(id))?'as-IN':'en-IN')).slice(0,2);
+  u.say=true;draw();
+  VOICE.speak(t,lc).then(r=>{u.say=false;if(r&&r.error)u.msg=r.error;draw()});
+  return}
  if(!('speechSynthesis' in window)){u.msg='Is browser mein sunne ki suvidha nahi hai.';draw();return}
  if(u.say||speechSynthesis.speaking){speechSynthesis.cancel();u.say=false;draw();return}
  const t=plain(shown(id));if(!t)return;
  const ut=new SpeechSynthesisUtterance(t);
  ut.lang=u.tr?TRL[u.tr].v:(isHi(courseOfId(id))?'hi-IN':isAs(courseOfId(id))?'as-IN':'en-IN');
+ ut.onboundary=()=>{if(window.AVATAR)AVATAR.pulse()};   // each spoken word moves the face's mouth
  ut.onend=ut.onerror=()=>{u.say=false;draw()};
  u.say=true;speechSynthesis.speak(ut);draw();
 }
 // 3-dot menu "Copy question": copies the question text (with its parts / options) so it can be pasted into Get Video.
+// Task 50: what a report carries (question text, the AI answer if there is one, class and language).
+function reportCtx(id){const q=qFor(id)||{},c=courseOfId(id);
+ return {qid:id,question:[q.text].concat(q.parts||[]).filter(Boolean).join(' '),answer:plain(srcText(id)),course:c?cLabel(c):'',lang:dLang(id)||'en'}}
+// Task 54: true while any answer is being read aloud (the cartoon face follows it).
+const anySay=()=>{for(const k in UI)if(UI[k]&&UI[k].say)return true;return false};
 async function qCopy(id){
  const u=ui(id),q=qFor(id);let txt=q?qSrc(q):'';
  // Maths questions carry their textbook id as invisible characters in front of the text. Get Video cuts it out again and the admin form fills Exercise / Question from it.
@@ -1013,6 +1071,7 @@ document.addEventListener('click',e=>{
  else if(act==='qm'){const u=ui(id),was=u.qm;for(const k in UI)UI[k].qm=false;u.qm=!was;draw()}
  else if(act==='qtr'){const u=ui(id);if(u.qt){u.qt=null;u.qm=false;draw()}else qTr(id,dLang(id))}
  else if(act==='qcp')qCopy(id);
+ else if(act==='qrep'){ui(id).qm=false;draw();if(window.REPORT)REPORT.open(reportCtx(id))}
  else if(act==='qtrset')qTr(id,b.dataset.to);
  else if(act==='setl'){ST.tlang=b.dataset.v;LS.cid='';stSave();draw()}
  else if(act==='more'){const u=ui(id);u.more=!u.more;draw()}
@@ -1028,7 +1087,9 @@ document.addEventListener('click',e=>{
  else if(act==='lock'){LOCKED=+b.dataset.ch;draw()}
  else if(act==='setd'){ST.dtype=b.dataset.v;stSave();draw()}
  else if(act==='sett'){ST.theme=b.dataset.v;applyTheme();stSave();draw()}
+ else if(act==='settts'){ST.tts=b.dataset.v==='ai'||b.dataset.v==='browser'?b.dataset.v:'auto';stSave();draw()}
  else if(act==='setrv'){ST.rvoice=b.dataset.v==='text'?'text':'ai';if(window.RECALL)RECALL.voiceChanged();stSave();draw()}
+ else if(act==='setlow'){ST.low=b.dataset.v==='on'?'on':b.dataset.v==='off'?'off':'auto';stSave();draw();if(!lowData()&&ST.img!=='off')for(const k in OPEN)if(OPEN[k]&&ANS[k]&&ANS[k].text)ensureImg(k)}
  else if(act==='seti'){ST.img=b.dataset.v==='off'?'off':'on';stSave();draw();if(ST.img==='on')for(const k in OPEN)if(OPEN[k]&&ANS[k]&&ANS[k].text)ensureImg(k)}
  else if(act==='ask')ask(id,false);
  else if(act==='re')ask(id,true);
@@ -1108,8 +1169,18 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/analytics.js"></script>
 <script src="/parent-key.js"></script>
 <script src="/recall.js"></script>
+<script src="/answer-check.js"></script>
+<script src="/quiz.js"></script>
+<script src="/aireview.js"></script>
+<script src="/classroom.js"></script>
+<script src="/weekly.js"></script>
 <script src="/bolo-core.js"></script>
 <script src="/bolo.js"></script>
+<script src="/voice-tutor.js"></script>
+<script src="/vlab.js"></script>
+<script src="/models3d.js"></script>
+<script src="/report.js"></script>
+<script src="/avatar.js"></script>
 <script type="module">import('/cloud.js').catch(e=>window.onCloudFail&&window.onCloudFail(e))</script>
 </body>
 </html>
