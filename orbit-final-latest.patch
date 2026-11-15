@@ -1,0 +1,849 @@
+diff --git a/.gitignore b/.gitignore
+index 753b2d6..9bf3d4d 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -4,3 +4,8 @@ public/questions.json
+ public/videos.json
+ .firebase/
+ public/publicvideos.json
++public/free-notes.json
++public/notes/
++public/learn/
++public/class-*/
++public/seba-class-10-notes/
+diff --git a/build-questions.js b/build-questions.js
+index 038b971..ffe9ed0 100644
+--- a/build-questions.js
++++ b/build-questions.js
+@@ -6,4 +6,59 @@ const w = (f, d) => fs.writeFileSync(path.join(__dirname, 'public', f), JSON.str
+ w('questions.json', require('./questions-public'));
+ w('videos.json', require('./videos').map(({ id, course, chapter, title, free }) => ({ id, course: course || 'c10-science', chapter, title, free: !!free })));
+ w('publicvideos.json', require('./publicvideos').map(({ id, cls, title, desc, file }) => ({ id, cls, title, desc, file })));
+-console.log('public/questions.json, public/videos.json and public/publicvideos.json written');
++
++// Free notes (no login): JSON for the app + static pages for Google, in English and Assamese (/notes/<id>.html and /notes/<id>-as.html).
++// sitemap.xml and robots.txt are written by build-seo.js, which also points a note page to its chapter page (canonical) when one exists.
++const NOTES = require('./freenotes');
++const SITE = (process.env.SITE_URL || 'https://orbittutorial.web.app').replace(/\/$/, '');   // same setting as build-seo.js
++const x = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
++const cut = t => t.length > 155 ? t.slice(0, 155).replace(/\s+\S*$/, '') + '…' : t;
++const SUB_AS = { 'Mathematics': 'গণিত', 'Science': 'বিজ্ঞান', 'Social Science': 'সমাজ বিজ্ঞান', 'Social Science (History)': 'সমাজ বিজ্ঞান (ইতিহাস)', 'English Grammar': 'ইংৰাজী ব্যাকৰণ' };
++w('free-notes.json', NOTES);
++const dir = path.join(__dirname, 'public', 'notes');
++fs.rmSync(dir, { recursive: true, force: true });
++fs.mkdirSync(dir, { recursive: true });
++const CSS = 'body{margin:0;background:#f4f2ec;color:#111;font:16px/1.6 system-ui,sans-serif}main{max-width:720px;margin:0 auto;padding:20px}h1{font-size:26px;line-height:1.25}li{margin:8px 0}a{color:inherit}.mut{color:#6b6b6b}a.btn{display:inline-block;background:#111;color:#f4f2ec;border-radius:12px;padding:12px 18px;text-decoration:none;font-weight:600;margin:10px 8px 0 0}@media(prefers-color-scheme:dark){body{background:#111;color:#f2f2f2}.mut{color:#9a9a9a}a.btn{background:#f2f2f2;color:#111}}';
++for (const n of NOTES) {
++  for (const lang of ['en', 'as']) {
++    const as = lang === 'as', d = as ? n.as : n, file = n.id + (as ? '-as' : '') + '.html', url = SITE + '/notes/' + file;
++    const sub = as ? (SUB_AS[n.subject] || n.subject) : n.subject;
++    const title = as ? `শ্ৰেণী ${n.cls} ${sub}: ${d.title} – অধ্যায় ${n.no} নোট আৰু মূল কথা | Orbit Tutorial` : `Class ${n.cls} ${n.subject} Chapter ${n.no} ${d.title}: Notes and Key Points | Orbit Tutorial`;
++    const desc = cut(d.summary);
++    const share = `https://wa.me/?text=${encodeURIComponent((as ? d.title : n.title) + ' (Class ' + n.cls + ' ' + n.subject + ') notes: ' + url)}`;
++    const medium = n.medium === 'Assamese' ? (as ? 'অসমীয়া মাধ্যম' : 'Assamese medium') : (as ? 'ইংৰাজী মাধ্যম' : 'English medium');
++    fs.writeFileSync(path.join(dir, file), `<!doctype html>
++<html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
++<title>${x(title)}</title>
++<meta name="description" content="${x(desc)}">
++<link rel="canonical" href="${url}">
++<link rel="alternate" hreflang="en" href="${SITE}/notes/${n.id}.html"><link rel="alternate" hreflang="as" href="${SITE}/notes/${n.id}-as.html">
++<meta property="og:type" content="article"><meta property="og:title" content="${x(title)}"><meta property="og:description" content="${x(desc)}"><meta property="og:image" content="${SITE}/icon-512.png"><meta property="og:url" content="${url}">
++<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'LearningResource', name: d.title, description: d.summary, inLanguage: lang, educationalLevel: 'Class ' + n.cls, about: n.subject, isAccessibleForFree: true, provider: { '@type': 'Organization', name: 'Orbit Tutorial' } }).replace(/</g, '\\u003c')}</script>
++<style>${CSS}</style>
++</head><body><main>
++<p class="mut">${as ? 'শ্ৰেণী' : 'Class'} ${n.cls} · ${x(sub)} · ${medium}</p>
++<h1>${as ? 'অধ্যায়' : 'Chapter'} ${n.no}: ${x(d.title)}</h1>
++<p>${x(d.summary)}</p>
++<h2>${as ? 'মূল কথা' : 'Key points'}</h2>
++<ul>${d.points.map(p => `<li>${x(p)}</li>`).join('\n')}</ul>
++<!--chapter-link-->
++<p class="mut">${as ? 'এই অধ্যায়ৰ AI উত্তৰ, ব্লেকব\'ৰ্ড ভিডিঅ\' আৰু অনুশীলন Orbit Tutorial এপত পোৱা যাব (বিনামূলীয়া Google লগইন)।' : 'AI answers, whiteboard videos and practice for this chapter are inside the Orbit Tutorial app (free Google login).'}</p>
++<a class="btn" href="/">${as ? 'Orbit Tutorial খোলক' : 'Open Orbit Tutorial'}</a><a class="btn" href="/notes/">${as ? 'আটাইবোৰ বিনামূলীয়া নোট' : 'All free notes'}</a><a class="btn" href="${share}">${as ? 'WhatsApp ত শ্বেয়াৰ কৰক' : 'Share on WhatsApp'}</a><a class="btn" href="/notes/${n.id}${as ? '' : '-as'}.html">${as ? 'English' : 'অসমীয়া'}</a>
++</main></body></html>`);
++  }
++}
++const ititle = 'Free Class 6, 7 and 10 Notes and Key Points (English and Assamese) | Orbit Tutorial';
++fs.writeFileSync(path.join(dir, 'index.html'), `<!doctype html>
++<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
++<title>${x(ititle)}</title>
++<meta name="description" content="Free chapter notes and key points in English and Assamese for school students in Assam: Maths, Science, Social Science and English Grammar. No login needed.">
++<link rel="canonical" href="${SITE}/notes/">
++<style>${CSS}</style>
++</head><body><main>
++<h1>Free chapter notes · বিনামূলীয়া নোট</h1>
++<p class="mut">No login needed. English and Assamese medium. For AI answers and videos, open the Orbit Tutorial app.</p>
++<ul>${NOTES.map(n => `<li>Class ${n.cls} ${x(n.subject)}: Chapter ${n.no} ${x(n.title)} — <a href="/notes/${n.id}.html">English</a> · <a href="/notes/${n.id}-as.html" lang="as">অসমীয়া (${x(n.as.title.split(' (')[0])})</a></li>`).join('\n')}</ul>
++<a class="btn" href="/">Open Orbit Tutorial</a>
++</main></body></html>`);
++console.log('public/questions.json, public/videos.json, public/publicvideos.json, public/free-notes.json, public/notes/*.html (English + Assamese) written');
+diff --git a/build-seo.js b/build-seo.js
+new file mode 100644
+index 0000000..de1684d
+--- /dev/null
++++ b/build-seo.js
+@@ -0,0 +1,104 @@
++// Builds crawlable static pages (no JS) for every course/chapter + /learn/ hub + sitemap.xml, from questions-public.js.
++// Runs before deploy (see firebase.json predeploy). Change SITE_URL when you buy your own domain:  SITE_URL=https://yourdomain.in node build-seo.js
++// Optional richer content per chapter: seo-content/<courseId>-<chapterNo>.json
++//   { "summary": "…", "keyPoints": ["…"], "answers": { "<questionId>": "reviewed answer text" } }
++const fs = require('fs'), path = require('path');
++const SITE = (process.env.SITE_URL || 'https://orbittutorial.web.app').replace(/\/$/, '');
++const MIN_Q = 5; // chapters with fewer questions (and no seo-content) are noindex + left out of the sitemap (thin pages hurt)
++const PUB = path.join(__dirname, 'public'), Q = require('./questions-public');
++const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
++const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
++const hasAs = s => /[\u0980-\u09FF]/.test(s);
++const board = c => c.class === 10 ? 'SEBA HSLC Class 10' : 'Class ' + c.class;
++const subSlug = c => slug(c.subject) + (c.medium === 'Assamese' ? '-assamese-medium' : '');
++const chSlug = ch => { const m = /\(([^)]*[A-Za-z][^)]*)\)/.exec(ch.title); return slug(m ? m[1] : ch.title) || 'chapter-' + ch.no; };
++const qCount = ch => (ch.sections || []).reduce((n, s) => n + s.questions.length, 0);
++const NOTES = (() => { try { return require('./freenotes') } catch (e) { return [] } })();   // free notes (no login): their summary and points also fill the chapter page
++const noteOf = (c, ch) => NOTES.find(n => n.course === c.id && n.no === ch.no);
++const extra = (c, ch) => {
++  let f = null; try { f = JSON.parse(fs.readFileSync(path.join(__dirname, 'seo-content', c.id + '-' + ch.no + '.json'), 'utf8')) } catch (e) {}
++  const n = noteOf(c, ch);
++  if (!f && !n) return null;
++  return Object.assign({}, n ? { summary: n.summary, keyPoints: n.points, as: n.as } : {}, f || {});   // a seo-content file wins over the free note
++};
++const css = 'body{font:16px/1.6 system-ui,sans-serif;max-width:720px;margin:0 auto;padding:16px;color:#111;background:#fff}a{color:#0b57d0}h1{font-size:1.5rem;line-height:1.3}h2{font-size:1.15rem;margin-top:1.6em}li{margin:.5em 0}nav,footer{font-size:.9rem;color:#444}.cta{display:inline-block;background:#111;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;margin:12px 0}table{border-collapse:collapse}td,th{border:1px solid #999;padding:4px 8px}@media(prefers-color-scheme:dark){body{background:#111;color:#eee}a{color:#8ab4f8}.cta{background:#eee;color:#111}nav,footer{color:#bbb}}';
++function page({ title, desc, url, body, ld, robots }) {
++  return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(title) + '</title><meta name="description" content="' + esc(desc) + '"><link rel="canonical" href="' + SITE + url + '"><meta name="robots" content="' + (robots || 'index, follow') + '"><meta name="theme-color" content="#111111"><meta property="og:type" content="website"><meta property="og:site_name" content="Orbit Tutorial"><meta property="og:title" content="' + esc(title) + '"><meta property="og:description" content="' + esc(desc) + '"><meta property="og:url" content="' + SITE + url + '"><meta property="og:image" content="' + SITE + '/icon-512.png"><meta name="twitter:card" content="summary"><link rel="icon" type="image/png" href="/icon-192.png"><script type="application/ld+json">' + JSON.stringify(ld) + '</script><style>' + css + '</style></head><body>' + body + '<footer><p><a href="/">Orbit Tutorial</a> · <a href="/learn/">All classes and subjects</a> · <a href="/seba-class-10-notes/">SEBA Class 10 notes</a> · <a href="/notes/">Free notes</a> · Free AI study helper for school students in Assam</p></footer></body></html>';
++}
++function crumbs(items) { return { '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: items.map((x, i) => ({ '@type': 'ListItem', position: i + 1, name: x[0], item: SITE + x[1] })) } }
++function qHtml(q, ans) {
++  const L = hasAs(q.text) ? ' lang="as"' : '';
++  let h = '<li id="' + esc(q.id) + '"><p' + L + '>' + (q.label ? esc(q.label) + ' ' : '') + esc(q.text) + '</p>';
++  if (q.parts && q.parts.length) h += '<ul>' + q.parts.map(p => '<li>' + esc(p) + '</li>').join('') + '</ul>';
++  if (q.options && q.options.length) h += '<ul>' + q.options.map(p => '<li>' + esc(p) + '</li>').join('') + '</ul>';
++  if (q.table) h += '<table><tr>' + q.table.head.map(x => '<th>' + esc(x) + '</th>').join('') + '</tr>' + q.table.rows.map(r => '<tr>' + r.map(x => '<td>' + esc(x) + '</td>').join('') + '</tr>').join('') + '</table>';
++  if (ans) h += '<p><strong>Answer:</strong> ' + esc(ans) + '</p>';
++  return h + '</li>';
++}
++const out = (url, html) => { const d = path.join(PUB, url.replace(/^\//, '')); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'index.html'), html) };
++const sm = [{ loc: '/', pr: '1.0' }, { loc: '/learn/', pr: '0.9' }, { loc: '/notes/', pr: '0.7' }], hub = [];
++let made = 0, thin = 0;
++const noteUrl = {}, c10 = [];   // note id -> chapter page url (when that page exists); class 10 course pages for the SEBA hub
++for (const c of Q.courses) {
++  const chs = c.chapters.filter(ch => qCount(ch) > 0);
++  if (!chs.length) continue;
++  const cBase = '/class-' + c.class + '/' + subSlug(c) + '/', cName = board(c) + ' ' + c.subject + (c.medium === 'Assamese' ? ' (Assamese medium)' : '');
++  const links = [];
++  chs.forEach((ch, i) => {
++    const ex = extra(c, ch), n = qCount(ch), url = cBase + chSlug(ch) + '/', rich = !!ex || n >= MIN_Q;
++    const title = cName + ' Chapter ' + ch.no + ': ' + ch.title + ' – Questions | Orbit';
++    const desc = cName + ' Chapter ' + ch.no + ' "' + ch.title + '": all ' + n + ' textbook questions listed chapter-wise, with an AI study helper for step-by-step answers. Free on Orbit Tutorial.';
++    const prev = chs[i - 1], next = chs[i + 1];
++    let b = '<nav><a href="/">Orbit</a> › <a href="/learn/">Classes</a> › <a href="' + cBase + '">' + esc(cName) + '</a></nav><h1>' + esc(cName) + ' – Chapter ' + ch.no + ': ' + esc(ch.title) + '</h1>';
++    b += '<p>' + n + ' textbook questions from this chapter. Open Orbit to get a short, textbook-style answer for any question.</p><a class="cta" href="/">Open Orbit and get answers</a>';
++    if (ex && ex.summary) b += '<h2>Chapter summary</h2><p>' + esc(ex.summary) + '</p>';
++    if (ex && ex.keyPoints && ex.keyPoints.length) b += '<h2>Key points</h2><ul>' + ex.keyPoints.map(k => '<li>' + esc(k) + '</li>').join('') + '</ul>';
++    if (ex && ex.as && ex.as.summary) b += '<div lang="as"><h2>অসমীয়াত সাৰাংশ আৰু মূল কথা</h2><p>' + esc(ex.as.summary) + '</p><ul>' + ex.as.points.map(k => '<li>' + esc(k) + '</li>').join('') + '</ul></div>';
++    for (const s of ch.sections) b += '<h2>' + esc(s.title) + '</h2><ol>' + s.questions.map(q => qHtml(q, ex && ex.answers && ex.answers[q.id])).join('') + '</ol>';
++    b += '<p>' + (prev ? '← <a href="' + cBase + chSlug(prev) + '/">' + esc('Chapter ' + prev.no) + '</a> ' : '') + (next ? '<a href="' + cBase + chSlug(next) + '/">' + esc('Chapter ' + next.no) + '</a> →' : '') + '</p>';
++    out(url, page({ title, desc, url, body: b, robots: rich ? 'index, follow' : 'noindex, follow', ld: crumbs([['Orbit', '/'], [cName, cBase], ['Chapter ' + ch.no + ': ' + ch.title, url]]) }));
++    const fn = noteOf(c, ch);
++    if (fn && rich) noteUrl[fn.id] = url;
++    if (fn && rich) {   // the free-note pages (English + Assamese) share their text with this chapter page: Google should list the chapter page
++      for (const lang of ['en', 'as']) {
++        try {
++          const file = fn.id + (lang === 'as' ? '-as' : '') + '.html', f = path.join(PUB, 'notes', file), old = SITE + '/notes/' + file;
++          const link = lang === 'as' ? '<p><a href="' + url + '">এই অধ্যায়ৰ সকলো পাঠ্যপুথিৰ প্ৰশ্ন</a></p>' : '<p><a href="' + url + '">All textbook questions of this chapter</a></p>';
++          fs.writeFileSync(f, fs.readFileSync(f, 'utf8').split('<link rel="canonical" href="' + old + '">').join('<link rel="canonical" href="' + SITE + url + '">').split('<meta property="og:url" content="' + old + '">').join('<meta property="og:url" content="' + SITE + url + '">').replace('<!--chapter-link-->', link));
++        } catch (e) {}
++      }
++    }
++    links.push('<li><a href="' + url + '">Chapter ' + ch.no + ': ' + esc(ch.title) + '</a> (' + n + ' questions)</li>');
++    if (rich) sm.push({ loc: url, pr: '0.8' }); else thin++;
++    made++;
++  });
++  const cUrl = cBase;
++  out(cUrl, page({ title: cName + ' – Chapter-wise Questions | Orbit', desc: cName + ': chapter-wise textbook questions with an AI study helper. Free on Orbit Tutorial.', url: cUrl, ld: crumbs([['Orbit', '/'], [cName, cUrl]]), body: '<nav><a href="/">Orbit</a> › <a href="/learn/">Classes</a></nav><h1>' + esc(cName) + '</h1><ul>' + links.join('') + '</ul><a class="cta" href="/">Open Orbit</a>' }));
++  sm.push({ loc: cUrl, pr: '0.9' });
++  if (c.class === 10) c10.push('<li><a href="' + cUrl + '">' + esc(cName) + '</a></li>');
++  hub.push('<li><a href="' + cUrl + '">' + esc(cName) + '</a> (' + chs.length + ' chapters)</li>');
++}
++// Hub page for the broad queries ("SEBA Class 10 notes"): original intro text + every Class 10 note in both languages + links to the Class 10 course pages.
++{
++  const n10 = NOTES.filter(n => n.cls === 10), url = '/seba-class-10-notes/';
++  const subs = [...new Set(n10.map(n => n.subject))];
++  const sections = subs.map(sub => '<h2>' + esc(sub) + '</h2><ul>' + n10.filter(n => n.subject === sub).sort((a, b) => a.no - b.no).map(n =>
++    '<li>Chapter ' + n.no + ': ' + esc(n.title) + ' — <a href="' + (noteUrl[n.id] || '/notes/' + n.id + '.html') + '">English</a> · <a lang="as" href="/notes/' + n.id + '-as.html">অসমীয়া (' + esc(n.as.title.split(' (')[0]) + ')</a></li>').join('') + '</ul>').join('');
++  if (n10.length) {
++    out(url, page({
++      title: 'SEBA Class 10 Notes: Science, Maths and Social Science (English and Assamese) | Orbit Tutorial',
++      desc: 'Free SEBA HSLC Class 10 chapter notes with a short summary and key points, in English and Assamese. Science, Mathematics and Social Science. No login needed.',
++      url, ld: crumbs([['Orbit', '/'], ['SEBA Class 10 notes', url]]),
++      body: '<nav><a href="/">Orbit</a> › <a href="/learn/">Classes</a></nav><h1>SEBA Class 10 notes (HSLC)</h1>' +
++        '<p>Short chapter notes for students of Class 10 in Assam. Every note has a summary and the key points you need to revise, and each one is available in English and in Assamese so you can read it in your own medium. Read the note first, then practise the textbook questions of the same chapter in the Orbit Tutorial app.</p>' +
++        sections + (c10.length ? '<h2>Chapter-wise questions</h2><ul>' + c10.join('') + '</ul>' : '') +
++        '<p>All notes are free and need no login. For AI answers and whiteboard videos, sign in with Google in the app.</p><a class="cta" href="/">Open Orbit</a>'
++    }));
++    sm.push({ loc: url, pr: '0.9' });
++  }
++}
++out('/learn/', page({ title: 'Classes and Subjects – Orbit Tutorial (Assam)', desc: 'All classes and subjects on Orbit Tutorial: chapter-wise textbook questions and a free AI study helper for school students in Assam.', url: '/learn/', ld: crumbs([['Orbit', '/'], ['Classes and subjects', '/learn/']]), body: '<nav><a href="/">Orbit</a></nav><h1>Classes and subjects</h1><ul>' + hub.join('') + '</ul>' }));
++const day = new Date().toISOString().slice(0, 10);
++fs.writeFileSync(path.join(PUB, 'sitemap.xml'), '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + sm.map(u => '  <url><loc>' + SITE + u.loc + '</loc><lastmod>' + day + '</lastmod><priority>' + u.pr + '</priority></url>').join('\n') + '\n</urlset>\n');
++fs.writeFileSync(path.join(PUB, 'robots.txt'), 'User-agent: *\nAllow: /\n\nSitemap: ' + SITE + '/sitemap.xml\n');
++console.log('SEO pages: ' + made + ' chapter pages (' + thin + ' noindex as thin), ' + sm.length + ' URLs in sitemap, base ' + SITE);
+diff --git a/firebase.json b/firebase.json
+index c83aa81..912e544 100644
+--- a/firebase.json
++++ b/firebase.json
+@@ -2,7 +2,7 @@
+   "hosting": {
+     "site": "orbittutorial",
+     "public": "public",
+-    "predeploy": ["node build-questions.js"],
++    "predeploy": ["node build-questions.js", "node build-seo.js"],
+     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+     "headers": [
+       {
+diff --git a/freenotes-as.js b/freenotes-as.js
+new file mode 100644
+index 0000000..e017adf
+--- /dev/null
++++ b/freenotes-as.js
+@@ -0,0 +1,245 @@
++// Assamese versions of the free notes (key = note id in freenotes.js). Same number of points as the English note, written in our own words.
++// Technical terms keep the English word in brackets so students can match it with the textbook. Please have an Assamese-medium teacher check before publishing.
++module.exports = {
++  'class-7-maths-integers': {
++    title: `পূৰ্ণসংখ্যা (Integers)`,
++    summary: `পূৰ্ণসংখ্যা (integers) হ'ল ঋণাত্মক সংখ্যা, শূন্য আৰু ধনাত্মক সংখ্যাৰ সমষ্টি: ..., -3, -2, -1, 0, 1, 2, 3, ...। এই অধ্যায়ত পূৰ্ণসংখ্যাৰ তুলনা, চাৰিটা মৌলিক প্ৰক্ৰিয়া, ধৰ্ম আৰু BODMAS ব্যৱহাৰ কৰি ৰাশি সৰল কৰা শিকা যায়।`,
++    points: [
++      `শূন্য (0) এটা পূৰ্ণসংখ্যা, কিন্তু ই ধনাত্মকো নহয়, ঋণাত্মকো নহয়।`,
++      `সংখ্যাৰেখাত সোঁফালে থকা সংখ্যাটো সদায় ডাঙৰ। প্ৰতিটো ধনাত্মক পূৰ্ণসংখ্যা 0 তকৈ ডাঙৰ আৰু 0 প্ৰতিটো ঋণাত্মক পূৰ্ণসংখ্যাতকৈ ডাঙৰ। আটাইতকৈ ডাঙৰ ঋণাত্মক পূৰ্ণসংখ্যা হ'ল -1।`,
++      `পৰম মান (absolute value) |a| হ'ল 0 ৰ পৰা a লৈ দূৰত্ব, গতিকে ই কেতিয়াও ঋণাত্মক নহয়। যেনে |-7| = 7 আৰু |7| = 7।`,
++      `a ৰ উত্তৰসূৰী (successor) হ'ল a + 1 আৰু পূৰ্বসূৰী (predecessor) হ'ল a - 1। যেনে 5 ৰ উত্তৰসূৰী 6 আৰু 0 ৰ পূৰ্বসূৰী -1।`,
++      `যোগ: একে চিনৰ সংখ্যাৰ ক্ষেত্ৰত পৰম মানবোৰ যোগ কৰি একে চিন বহুৱাওক: (-8) + (-5) = -13। বেলেগ চিনৰ ক্ষেত্ৰত ডাঙৰ পৰম মানৰ পৰা সৰু পৰম মান বিয়োগ কৰি ডাঙৰ পৰম মানৰ চিন বহুৱাওক: (-8) + 5 = -3।`,
++      `বিয়োগ: a - b = a + (-b)। এটা পূৰ্ণসংখ্যা বিয়োগ কৰা মানে তাৰ বিপৰীত সংখ্যাটো যোগ কৰা, গতিকে 5 - (-3) = 5 + 3 = 8।`,
++      `পূৰণ আৰু হৰণ: একে চিন হ'লে ফল ধনাত্মক, বেলেগ চিন হ'লে ফল ঋণাত্মক। যিকোনো সংখ্যা × 0 = 0, 0 ÷ (অশূন্য পূৰ্ণসংখ্যা) = 0, আৰু 0 ৰে হৰণ সম্ভৱ নহয়।`,
++      `সংবৃতিৰ ধৰ্ম (closure): যোগ, বিয়োগ আৰু পূৰণত পূৰ্ণসংখ্যা সংবৃত, কিন্তু হৰণত নহয় (1 ÷ 2 পূৰ্ণসংখ্যা নহয়)।`,
++      `যোগ আৰু পূৰণ বিনিময়ী (commutative) আৰু সংযোগী (associative) হয়। বিয়োগ আৰু হৰণ নহয়।`,
++      `অভেদ (identity): যোগৰ বাবে 0 (a + 0 = a) আৰু পূৰণৰ বাবে 1 (a × 1 = a)। a ৰ যোগাত্মক বিপৰীত (additive inverse) হ'ল -a।`,
++      `বণ্টন ধৰ্ম (distributive property): a × (b + c) = a × b + a × c, আৰু বিয়োগৰ ক্ষেত্ৰতো একেই হয়।`,
++      `(-1) ৰ ঘাত যুগ্ম হ'লে ফল 1 আৰু অযুগ্ম হ'লে ফল -1।`,
++      `BODMAS ক্ৰম: প্ৰথমে বন্ধনী (সৰু ( ), তাৰ পিছত { }, তাৰ পিছত [ ]), তাৰ পিছত Of, হৰণ, পূৰণ, যোগ, বিয়োগ। "Of" মানে পূৰণ।`
++    ]
++  },
++  'class-7-science-nutrition-in-plants': {
++    title: `উদ্ভিদৰ পুষ্টি (Nutrition in Plants)`,
++    summary: `পুষ্টি (nutrition) হ'ল জীৱই শক্তি, বৃদ্ধি আৰু মেৰামতিৰ বাবে খাদ্য গ্ৰহণ আৰু ব্যৱহাৰ কৰা প্ৰক্ৰিয়া। সেউজীয়া উদ্ভিদে সালোকসংশ্লেষণ (photosynthesis)ৰ দ্বাৰা নিজৰ খাদ্য নিজেই প্ৰস্তুত কৰে; আন কিছুমান উদ্ভিদে আন জীৱ বা মৃত পদাৰ্থৰ ওপৰত নিৰ্ভৰ কৰে।`,
++    points: [
++      `পুষ্টিকৰ পদাৰ্থ (nutrients) হ'ল খাদ্যৰ প্ৰয়োজনীয় উপাদান: শৰ্কৰা (carbohydrate), প্ৰ'টিন, চৰ্বি, ভিটামিন আৰু খনিজ লৱণ।`,
++      `স্বভোজী (autotroph) জীৱে নিজৰ খাদ্য নিজেই প্ৰস্তুত কৰে (সেউজীয়া উদ্ভিদ, শেলুৱৈ)। পৰভোজী (heterotroph) জীৱ আনৰ ওপৰত নিৰ্ভৰশীল (প্ৰাণী, মাশ্ৰুম, ঈষ্ট, পাউৰুটিৰ ফাংগাছ আৰু কিছুমান বেক্টেৰিয়া)।`,
++      `সালোকসংশ্লেষণত সেউজীয়া উদ্ভিদে সূৰ্যৰ পোহৰত ক্ল'ৰ'ফিলৰ সহায়ত কাৰ্বন ডাই অক্সাইড আৰু পানীৰ পৰা গ্লুক'জ প্ৰস্তুত কৰে। চমুকৈ: কাৰ্বন ডাই অক্সাইড + পানী → গ্লুক'জ + অক্সিজেন। চাৰিটা বস্তু লাগে: সূৰ্যৰ পোহৰ, ক্ল'ৰ'ফিল, কাৰ্বন ডাই অক্সাইড আৰু পানী।`,
++      `ক্ল'ৰ'ফিল হ'ল ক্ল'ৰ'প্লাষ্টৰ ভিতৰত থকা সেউজীয়া ৰঙৰ পদাৰ্থ, যি মূলতঃ পাতত পোৱা যায়। মাটিৰ পৰা পানী জাইলেম নলীৰ যোগেদি পাতলৈ যায়।`,
++      `পাতৰ তলৰ ফালে থকা স্তোমাটা (stomata) নামৰ সৰু ছিদ্ৰেৰে কাৰ্বন ডাই অক্সাইড ভিতৰলৈ সোমায় আৰু অক্সিজেন ওলাই যায়। প্ৰতিটো ছিদ্ৰ ৰক্ষী কোষ (guard cells)এ খোলে আৰু বন্ধ কৰে।`,
++      `অতিৰিক্ত গ্লুক'জ শ্বেতসাৰ (starch)লৈ সলনি হৈ শিপা, ডাল আৰু পাতত জমা থাকে।`,
++      `শ্বেতসাৰ পৰীক্ষা: পাতটো উতলাওক, পানীৰ গা-ধোৱা (water bath)ত এলকোহলত ডুবাই ৰং আঁতৰাওক, ধুই আয়'ডিন দ্ৰৱ দিয়ক। নীলা-ক'লা ৰং হ'লে শ্বেতসাৰ আছে বুলি বুজিব।`,
++      `সালোকসংশ্লেষণৰ গুৰুত্ব: ই সূৰ্যৰ শক্তিক খাদ্যৰ ৰাসায়নিক শক্তিলৈ ৰূপান্তৰ কৰে আৰু বায়ুলৈ অক্সিজেন এৰি দিয়ে।`,
++      `ৰঙা, বেঙুনীয়া বা মাটিয়া ৰঙৰ পাততো ক্ল'ৰ'ফিল থাকে; আন ৰঙৰ পদাৰ্থই সেউজীয়া ৰং ঢাকি ৰাখে। ক্যাক্টাছত পাতবোৰ সৰু কাঁইটলৈ সলনি হৈছে (পানীৰ ক্ষয় কম কৰিবলৈ) আৰু সেউজীয়া ডালেই সালোকসংশ্লেষণ কৰে।`,
++      `পৰজীৱী (parasite) উদ্ভিদে জীৱিত পোষকৰ পৰা খাদ্য লয়: কাছকিউটা (Cuscuta) — হালধীয়া, সূতাৰ দৰে, ক্ল'ৰ'ফিল নাই — আৰু ৰেফ্লেছিয়া (Rafflesia)। মিষ্টলটো (Mistletoe)ৰ পাত সেউজীয়া, গতিকে ই আংশিক পৰজীৱী; ই পোষকৰ পৰা কেৱল পানী আৰু খনিজ লয়।`,
++      `মৃতজীৱী (saprotroph) জীৱে মৰা আৰু পচি যোৱা পদাৰ্থৰ পৰা খাদ্য লয়: মাশ্ৰুম, পাউৰুটিৰ ফাংগাছ, ঈষ্ট আৰু কিছুমান বেক্টেৰিয়া।`,
++      `সহজীৱিতা (symbiosis) মানে দুটা জীৱে ইটোৱে সিটোক সহায় কৰি একেলগে বাস কৰা। লাইকেন (lichen) হ'ল শেলুৱৈ (alga) আৰু ফাংগাছৰ মিলন; ফাংগাছে পানী আৰু খনিজ দিয়ে, শেলুৱৈয়ে খাদ্য দিয়ে। ৰাইজ'বিয়াম (Rhizobium) বেক্টেৰিয়া শিমজাতীয় উদ্ভিদৰ শিপাৰ গুটিত থাকি বায়ুৰ নাইট্ৰ'জেনক উদ্ভিদে ব্যৱহাৰ কৰিব পৰা ৰূপলৈ সলনি কৰে।`,
++      `কীটভোজী (insectivorous) উদ্ভিদ (পিচাৰ প্লাণ্ট, ছানডিউ, ভেনাছ ফ্লাইট্ৰেপ, ব্লাডাৰৱৰ্ট) নাইট্ৰ'জেনৰ অভাৱ থকা মাটিত গজে, সেয়ে পোক-পতংগ ধৰি হজম কৰে। কিন্তু সিহঁতে নিজৰ খাদ্যও প্ৰস্তুত কৰিব পাৰে।`,
++      `শস্যই নাইট্ৰ'জেন, ফছফৰাছ আৰু পটাছিয়াম শুহি লোৱাত মাটিত সিহঁত কমি যায়। সাৰ (যেনে NPK), জৈৱ সাৰ আৰু শিমজাতীয় শস্য খেতি কৰি সিহঁত পূৰণ কৰা হয়; শিমজাতীয় শস্যই মাটিত নাইট্ৰ'জেন যোগ কৰে।`
++    ]
++  },
++  'class-6-maths-patterns-in-mathematics': {
++    title: `গণিতৰ ধাৰা (Patterns in Mathematics)`,
++    summary: `এই অধ্যায়ত সংখ্যাৰ ধাৰা আৰু অনুক্ৰম (sequence), আৰু সম্পূৰ্ণ সংখ্যাই (whole numbers) যোগ, বিয়োগ, পূৰণ আৰু হৰণত মানি চলা নিয়মবোৰ আলোচনা কৰা হৈছে। ধাৰাৰ নিয়ম ধৰিব পাৰিলে পৰৱৰ্তী পদ উলিওৱা আৰু হিচাপ সোনকালে কৰা সহজ হয়।`,
++    points: [
++      `স্বাভাৱিক সংখ্যা (natural numbers) 1 ৰ পৰা আৰম্ভ হয় (1, 2, 3, ...)। সম্পূৰ্ণ সংখ্যা (whole numbers) 0 ৰ পৰা আৰম্ভ হয় (0, 1, 2, 3, ...)। প্ৰতিটো স্বাভাৱিক সংখ্যা সম্পূৰ্ণ সংখ্যা, কিন্তু 0 সম্পূৰ্ণ সংখ্যা হৈও স্বাভাৱিক সংখ্যা নহয়। আটাইতকৈ ডাঙৰ সম্পূৰ্ণ সংখ্যা বুলি একো নাই।`,
++      `সংখ্যাৰেখাত সোঁফালে থকা সংখ্যা ডাঙৰ।`,
++      `সংবৃতি (closure): সম্পূৰ্ণ সংখ্যা যোগ আৰু পূৰণত সংবৃত, কিন্তু বিয়োগ (8 - 15) আৰু হৰণ (8 ÷ 3)ত নহয়।`,
++      `যোগ আৰু পূৰণ বিনিময়ী (a + b = b + a, a × b = b × a) আৰু সংযোগী। বিয়োগ আৰু হৰণ কোনোটোৱেই নহয়।`,
++      `অভেদ: যোগৰ বাবে 0 (a + 0 = a) আৰু পূৰণৰ বাবে 1 (a × 1 = a)। লগতে a × 0 = 0, আৰু a অশূন্য হ'লে 0 ÷ a = 0। 0 ৰে হৰণৰ কোনো অৰ্থ নাই।`,
++      `বণ্টন ধৰ্ম: a × (b + c) = a × b + a × c, আৰু a × (b - c) = a × b - a × c। ডাঙৰ পূৰণ সহজ অংশত ভাগ কৰিবলৈ ইয়াক ব্যৱহাৰ কৰক।`,
++      `চটকৈ হিচাপ কৰিবলৈ এনে সংখ্যা একেলগে ৰাখক যাৰ পূৰণফল গোটা সংখ্যা হয়, যেনে 4 × 25 = 100, 2 × 50 = 100 আৰু 8 × 125 = 1000।`,
++      `বিপৰীত প্ৰক্ৰিয়াই ইটোৱে সিটোক বাতিল কৰে: যোগ-বিয়োগ, পূৰণ-হৰণ। ভাজ্য = ভাজক × ভাগফল + ভাগশেষ।`,
++      `সমান্তৰ অনুক্ৰমত (arithmetic sequence) প্ৰতিবাৰ একেটা সংখ্যা যোগ কৰা হয়। গুণোত্তৰ অনুক্ৰমত (geometric sequence) প্ৰতিবাৰ একেটা সংখ্যাৰে পূৰণ কৰা হয়। কিছুমান ধাৰাত দুটা পদক্ষেপ থাকে, যেনে 4 ৰে পূৰণ কৰি তাৰ পিছত 2 ৰে হৰণ।`,
++      `বিশেষ অনুক্ৰম: যুগ্ম, অযুগ্ম, মৌলিক আৰু যৌগিক সংখ্যা; বৰ্গ সংখ্যা (1, 4, 9, 16, ...); ঘন সংখ্যা (1, 8, 27, 64, ...); ত্ৰিভুজাকাৰ সংখ্যা (1, 3, 6, 10, 15, ...); বিৰহাংক সংখ্যা (Virahanka numbers: 1, 2, 3, 5, 8, 13, ...), য'ত প্ৰতিটো পদ আগৰ দুটা পদৰ যোগফল।`,
++      `চুটি পথ: 9, 99 বা 999 যোগ কৰা মানে 10, 100 বা 1000 যোগ কৰি তাৰ পিছত 1 বিয়োগ কৰা। 99 ৰে পূৰণ কৰা মানে (100 - 1) ৰে পূৰণ কৰা।`
++    ]
++  },
++  'class-6-science-the-wonderful-world-of-science': {
++    title: `বিজ্ঞানৰ আচৰিত জগত (The Wonderful World of Science)`,
++    summary: `বিজ্ঞান হ'ল আমাৰ চাৰিওফালৰ জগত বুজিবলৈ প্ৰশ্ন কৰা, পৰ্যবেক্ষণ কৰা আৰু চিন্তা কৰাৰ এটা পদ্ধতি। ই কৌতূহলৰ পৰা আৰম্ভ হয় আৰু ৰান্ধনিশালৰ পৰা মহাকাশলৈকে সকলোতে আছে।`,
++    points: [
++      `কৌতূহল (curiosity) বিজ্ঞানৰ আটাইতকৈ গুৰুত্বপূৰ্ণ হাতিয়াৰ। বিজ্ঞান সদায় "কিয়", "কেনেকৈ", "কি" এনে প্ৰশ্নৰে আৰম্ভ হয়।`,
++      `পৰ্যবেক্ষণ (observation) হ'ল আমি ইন্দ্ৰিয়েৰে যি লক্ষ্য কৰোঁ। অনুমান বা সিদ্ধান্ত (inference) হ'ল সেই পৰ্যবেক্ষণৰ পৰা আমি উলিওৱা ব্যাখ্যা।`,
++      `বিজ্ঞান কেৱল বিদ্যালয়ৰ বিষয় বা পৰীক্ষাগাৰৰ কাম নহয়। ই এনে এক চিন্তাৰ পদ্ধতি যিয়ে সমস্যা সমাধান কৰি জীৱন উন্নত কৰাত সহায় কৰে।`,
++      `বিজ্ঞান সকলোতে আছে। ৰন্ধনত ঈষ্টে কাৰ্বন ডাই অক্সাইড গেছ উৎপন্ন কৰি আটাক ফুলাই তোলে, আৰু তাপে খাদ্যৰ সোৱাদ আৰু গঠন সলনি কৰে।`,
++      `অৱস্থাৰ সলনি: তাপত বৰফ গলে, পানী উতলি বাষ্প হয়, আৰু তাপ আঁতৰালে পানী জমি বৰফ হয়।`,
++      `জলচক্ৰ (water cycle): বাষ্পীভৱন (evaporation), ঘনীভৱন (condensation), বৰষুণ বা তুষাৰপাত (precipitation), তাৰ পিছত প্ৰবাহ আৰু ভূগৰ্ভস্থ পানী।`,
++      `বিজ্ঞান এটা বিশাল জিগ্ছ' পাজলৰ দৰে: প্ৰতিটো আৱিষ্কাৰ এটা নতুন টুকুৰা আৰু নতুন প্ৰশ্ন তুলি আনে, সেয়ে বিজ্ঞানৰ শেষ নাই।`,
++      `নতুন প্ৰমাণ পালে আগৰ বিশ্বাস সলনিও হ'ব পাৰে। প্লুটোক এসময়ত নৱম গ্ৰহ বুলি কোৱা হৈছিল, এতিয়া ইয়াক বামন গ্ৰহ (dwarf planet) বুলি শ্ৰেণীবিভাগ কৰা হয়।`,
++      `পৃথিৱী আমি জনা একমাত্ৰ গ্ৰহ য'ত জীৱন আছে। জীৱবোৰে নিজৰ পৰিৱেশৰ লগত খাপ খুৱাই লয়: ক্যাক্টাছৰ ডাল ডাঠ আৰু পানী জমা কৰে, আৰু পাতৰ ঠাইত কাঁইট থাকি পানীৰ ক্ষয় কমায়।`,
++      `প্ৰজাপতিয়ে চাৰিটা স্তৰ পাৰ হয়: কণী, লাৰ্ভা (caterpillar), পিউপা আৰু প্ৰাপ্তবয়স্ক প্ৰজাপতি।`,
++      `সকলো জীৱৰ খাদ্য আৰু পানী লাগে। খাদ্যই শক্তি আৰু বৃদ্ধিৰ বাবে পুষ্টিকৰ পদাৰ্থ দিয়ে, আৰু সুস্থ খাদ্যাভ্যাস বয়স, কামৰ পৰিমাণ আৰু প্ৰয়োজনৰ ওপৰত নিৰ্ভৰ কৰে।`
++    ]
++  },
++  'class-6-social-science-locating-places-and-reading-maps': {
++    title: `স্থান নিৰ্ণয় আৰু মানচিত্ৰ পঢ়া (Locating Places and Reading Maps)`,
++    summary: `পৃথিৱী ইমান ডাঙৰ যে আমি ইয়াক এবাৰতে চাব নোৱাৰোঁ, সেয়ে গোলক (globe) আৰু মানচিত্ৰ ব্যৱহাৰ কৰোঁ। এই অধ্যায়ত পৃথিৱীৰ আকৃতি, অক্ষাংশ আৰু দ্ৰাঘিমাংশ, আৰু সিহঁতে কেনেকৈ যিকোনো ঠাইৰ সঠিক অৱস্থান দিয়ে সেই কথা আছে।`,
++    points: [
++      `পৃথিৱী মেৰুত অলপ চেপেটা আৰু নিৰক্ষৰেখাত ওলমি থকা, সেয়ে ইয়াৰ আকৃতিক অব্লেট স্ফেৰইড (oblate spheroid) বোলা হয়। নিৰক্ষীয় ব্যাস (প্ৰায় 12,756 কিমি) মেৰুৰ ব্যাস (প্ৰায় 12,714 কিমি)তকৈ অলপ বেছি।`,
++      `গোলক (globe) পৃথিৱীৰ এটা সৰু ত্ৰিমাত্ৰিক আদৰ্শ। ই প্ৰকৃত আকৃতি, দিশ, দূৰত্ব আৰু ক্ষেত্ৰফল, লগতে দিন-ৰাতি আৰু পৃথিৱীৰ ঘূৰ্ণন দেখুৱায়।`,
++      `গোলকৰ সীমাবদ্ধতা: ই ডাঙৰ আৰু দামী, সহজে ভাঁজ কৰি কঢ়িয়াব নোৱাৰি, সৰু ঠাইৰ বিৱৰণ দেখুৱাব নোৱাৰে আৰু গোটেই পৃথিৱী এবাৰতে দেখুৱাব নোৱাৰে।`,
++      `পৃথিৱী নিজৰ অক্ষ (axis)ৰ ওপৰত ঘূৰে। অক্ষ হ'ল পৃথিৱীৰ কেন্দ্ৰৰ মাজেৰে যোৱা কাল্পনিক ৰেখা; ইয়াৰ দুটা মূৰ উত্তৰ মেৰু আৰু দক্ষিণ মেৰু। অক্ষ উলম্বৰ পৰা 23.5 ডিগ্ৰী হালি আছে।`,
++      `অক্ষাংশ (latitude) বা সমান্তৰাল ৰেখা হ'ল গোলকৰ চাৰিওফালে পৰস্পৰ সমান্তৰালকৈ থকা কাল্পনিক বৃত্ত। এইবোৰ নিৰক্ষৰেখাৰ পৰা ডিগ্ৰীত জোখা হয়। নিৰক্ষৰেখা 0 ডিগ্ৰী আৰু ই পৃথিৱীক উত্তৰ আৰু দক্ষিণ গোলাৰ্ধত ভাগ কৰে।`,
++      `গুৰুত্বপূৰ্ণ অক্ষাংশ: নিৰক্ষৰেখা (0), কৰ্কটক্ৰান্তি ৰেখা (23.5 উত্তৰ), মকৰক্ৰান্তি ৰেখা (23.5 দক্ষিণ), সুমেৰুবৃত্ত (66.5 উত্তৰ), কুমেৰুবৃত্ত (66.5 দক্ষিণ), আৰু মেৰুদ্বয় (90 উত্তৰ আৰু 90 দক্ষিণ)।`,
++      `অক্ষাংশই পৃথিৱীক তাপ মণ্ডলত ভাগ কৰাত সহায় কৰে।`,
++      `দ্ৰাঘিমাংশ (longitude) বা মধ্যাহ্নৰেখা হ'ল উত্তৰ মেৰুৰ পৰা দক্ষিণ মেৰুলৈ যোৱা কাল্পনিক ৰেখা। সিহঁত সকলোৱে সমান দৈৰ্ঘ্যৰ, সমান্তৰাল নহয় আৰু মেৰুত লগ লাগে।`,
++      `মূল মধ্যাহ্নৰেখা (Prime Meridian) 0 ডিগ্ৰী দ্ৰাঘিমা, ই লণ্ডনৰ ওচৰৰ গ্ৰীনউইচৰ ৰয়েল অবজাৰ্ভেটৰীৰ মাজেৰে যায়। ই পৃথিৱীক পূব আৰু পশ্চিম গোলাৰ্ধত ভাগ কৰে।`,
++      `আন্তৰ্জাতিক তাৰিখ ৰেখা (International Date Line) মূল মধ্যাহ্নৰেখাৰ বিপৰীতে প্ৰায় 180 ডিগ্ৰীত থাকে আৰু ইয়াত এটা দিনৰ পৰা আনটো দিন আৰম্ভ হয়। পশ্চিমলৈ পাৰ হ'লে এদিন যোগ হয় আৰু পূবলৈ পাৰ হ'লে এদিন কমে।`,
++      `অক্ষাংশ আৰু দ্ৰাঘিমাংশে একেলগে ভৌগোলিক স্থানাংক (geographic coordinates) গঠন কৰে, যিয়ে যিকোনো ঠাইৰ সঠিক অৱস্থান দিয়ে।`
++    ]
++  },
++  'class-6-english-grammar-the-sentence': {
++    title: `বাক্য (The Sentence)`,
++    summary: `বাক্য (sentence) হ'ল শব্দৰ এনে এটা দল যিয়ে সঠিক ক্ৰমত থাকি সম্পূৰ্ণ অৰ্থ প্ৰকাশ কৰে। এই অধ্যায়ত বাক্য আৰু বাক্যাংশ (phrase), বাক্যৰ চাৰিটা প্ৰকাৰ, বিস্ময়সূচক বাক্য কেনেকৈ বনাব লাগে, আৰু উদ্দেশ্য আৰু বিধেয় (subject and predicate) শিকোৱা হৈছে।`,
++    points: [
++      `বাক্যত এটা ক্ৰিয়া (verb) থাকে, ই সম্পূৰ্ণ অৰ্থ দিয়ে, ডাঙৰ আখৰেৰে আৰম্ভ হয় আৰু full stop, question mark বা exclamation markৰে শেষ হয়।`,
++      `বাক্যাংশ (phrase) হ'ল শব্দৰ এনে এটা দল যিয়ে অসম্পূৰ্ণ অৰ্থ দিয়ে। ই বাক্যৰ এটা অংশ মাথোন আৰু ইয়াত ক্ৰিয়া নাথাকিবও পাৰে। যেনে "On the phone" এটা phrase, কিন্তু "I am on the phone." এটা sentence।`,
++      `Declarative (assertive) sentence-এ তথ্য দিয়ে বা কিবা কয়, আৰু full stopৰে শেষ হয়।`,
++      `Imperative sentence-এ অনুৰোধ, উপদেশ, নিৰ্দেশ বা আদেশ দিয়ে। ই সাধাৰণতে ক্ৰিয়াৰে আৰম্ভ হয়, আৰু "you" কৰ্তা বুজা যায় কিন্তু লিখা নহয়।`,
++      `Interrogative sentence-এ প্ৰশ্ন সুধিবলৈ ব্যৱহাৰ হয়; প্ৰায়ে who, what, where, when, how, which, whose বা whyৰে আৰম্ভ হয় আৰু question markৰে শেষ হয়।`,
++      `Exclamatory sentence-এ প্ৰৱল অনুভূতি প্ৰকাশ কৰে আৰু exclamation markৰে শেষ হয়।`,
++      `এটা বাক্যক বিস্ময়সূচক কৰিবলৈ adjectiveৰ আগত a/an থাকিলে "What" ব্যৱহাৰ কৰক: "She is a graceful dancer." হৈ পৰে "What a graceful dancer she is!"`,
++      `a/an নাথাকিলে adjective বা adverbৰ লগত "How" ব্যৱহাৰ কৰক: "She dances gracefully." হৈ পৰে "How gracefully she dances!"`,
++      `প্ৰতিটো বাক্যৰ দুটা অংশ থাকে। উদ্দেশ্য (subject)ই কয় বাক্যটো কাৰ বা কিহৰ বিষয়ে। বিধেয় (predicate)ই উদ্দেশ্যৰ বিষয়ে কিবা কয় আৰু ইয়াত সদায় ক্ৰিয়া থাকে।`,
++      `উদাহৰণ: "The brown jacket was very warm." বাক্যটোত উদ্দেশ্য "The brown jacket" আৰু বিধেয় "was very warm"।`
++    ]
++  },
++  'class-10-maths-real-numbers': {
++    title: `বাস্তৱ সংখ্যা (Real Numbers)`,
++    summary: `এই অধ্যায়ত দুটা প্ৰধান কথা আছে: পাটীগণিতৰ মূল উপপাদ্য (Fundamental Theorem of Arithmetic), যাৰ মতে প্ৰতিটো যৌগিক সংখ্যাক মৌলিক উৎপাদকত মাত্ৰ এটা ধৰণেহে ভাঙিব পাৰি, আৰু √2 ৰ দৰে সংখ্যা যে অমূলদ তাৰ প্ৰমাণ।`,
++    points: [
++      `পাটীগণিতৰ মূল উপপাদ্য: প্ৰতিটো যৌগিক সংখ্যাক মৌলিক সংখ্যাৰ পূৰণফল হিচাপে লিখিব পাৰি, আৰু এই মৌলিক উৎপাদকীকৰণ উৎপাদকৰ ক্ৰম বাদে অদ্বিতীয়।`,
++      `গ.সা.গু. (HCF) হ'ল সাধাৰণ মৌলিক উৎপাদকবোৰৰ আটাইতকৈ সৰু ঘাতৰ পূৰণফল। ল.সা.গু. (LCM) হ'ল দুয়োটা সংখ্যাত থকা প্ৰতিটো মৌলিক উৎপাদকৰ আটাইতকৈ ডাঙৰ ঘাতৰ পূৰণফল।`,
++      `দুটা ধনাত্মক পূৰ্ণসংখ্যা a আৰু b ৰ বাবে: HCF(a, b) × LCM(a, b) = a × b। এই নিয়ম দুটা সংখ্যাৰ বাবেহে খাটে, তিনিটা সংখ্যাৰ বাবে নহয়।`,
++      `0 ৰে শেষ হোৱা সংখ্যাৰ মৌলিক উৎপাদকত 2 আৰু 5 দুয়োটা থাকিবই লাগিব। গতিকে 6 ৰ যিকোনো ঘাত n কেতিয়াও 0 ৰে শেষ নহয়, কাৰণ 6 ৰ মৌলিক উৎপাদক কেৱল 2 আৰু 3।`,
++      `এটা সংখ্যা যৌগিক বুলি দেখুৱাবলৈ ইয়াক 1 তকৈ ডাঙৰ দুটা সংখ্যাৰ পূৰণফল হিচাপে লিখক (সাধাৰণ উৎপাদক উলিয়াই)।`,
++      `মূলদ সংখ্যা (rational number) p/q আকাৰত লিখিব পাৰি (p, q পূৰ্ণসংখ্যা, q ≠ 0)। অমূলদ সংখ্যা (irrational number) এই আকাৰত লিখিব নোৱাৰি।`,
++      `মূল কথা: যদি মৌলিক সংখ্যা p এ a² ক হৰণ কৰে, তেন্তে p এ a কো হৰণ কৰে।`,
++      `অমূলদতাৰ প্ৰমাণ বিৰোধ পদ্ধতিৰে (contradiction) কৰা হয়। ধৰক √p = a/b (সৰ্বনিম্ন আকাৰত), দুয়োফালে বৰ্গ কৰক, দেখুৱাওক যে p এ a ক হৰণ কৰে আৰু তাৰ পিছত p এ b কো হৰণ কৰে; ই "a আৰু b ৰ কোনো সাধাৰণ উৎপাদক নাই" কথাৰ বিৰোধী।`,
++      `এটা মূলদ আৰু এটা অমূলদ সংখ্যাৰ যোগফল বা বিয়োগফল অমূলদ।`,
++      `এটা অশূন্য মূলদ আৰু এটা অমূলদ সংখ্যাৰ পূৰণফল বা ভাগফল অমূলদ।`
++    ]
++  },
++  'class-10-social-science-partition-of-bengal-and-swadeshi-movement': {
++    title: `বংগ বিভাজন আৰু স্বদেশী আন্দোলন (Partition of Bengal and Swadeshi Movement)`,
++    summary: `১৯০৫ চনত ব্ৰিটিছে বংগ বিভাজন কৰিছিল, যাৰ ফলত দেশত তৈয়াৰী বস্তু ব্যৱহাৰৰ ভিত্তিত এক বিশাল প্ৰতিবাদী আন্দোলন গঢ়ি উঠিছিল। এই আন্দোলনে ভাৰতৰ পৰৱৰ্তী জাতীয়তাবাদক গঢ় দিছিল আৰু ১৯১১ চনত বিভাজন ৰদ কৰা হৈছিল।`,
++    points: [
++      `বংগ বিভাজনৰ ঘোষণা ১৯০৫ চনৰ জুলাই মাহত ভাইচৰয় লৰ্ড কাৰ্জনে কৰিছিল আৰু ই ১৯০৫ চনৰ ১৬ অক্টোবৰত কাৰ্যকৰী হৈছিল।`,
++      `ইয়াৰ ফলত পূব বংগ আৰু অসম (ৰাজধানী ঢাকা) আৰু কলিকতাক ৰাজধানী কৰি এখন পৃথক বংগ প্ৰদেশ গঠন হৈছিল।`,
++      `চৰকাৰী কাৰণ আছিল বংগ শাসন কৰিবলৈ বেছি ডাঙৰ। প্ৰকৃত উদ্দেশ্য আছিল বংগালী জাতীয়তাবাদক দুৰ্বল কৰা আৰু হিন্দু-মুছলমানক বিভক্ত কৰা (বিভাজন আৰু শাসন নীতি)।`,
++      `১৯০৫ চনৰ ৭ আগষ্টত কলিকতাৰ টাউন হলৰ সভাত বিদেশী বস্তু বৰ্জনৰ প্ৰস্তাৱ গ্ৰহণ কৰা হৈছিল।`,
++      `১৯০৫ চনৰ ১৬ অক্টোবৰত ৰবীন্দ্ৰনাথ ঠাকুৰে হিন্দু-মুছলমানৰ ঐক্যৰ চিনস্বৰূপে ৰাখীবন্ধন অনুষ্ঠানৰ নেতৃত্ব দিছিল।`,
++      `ইয়াক স্বদেশী আন্দোলন বোলা হয় কাৰণ মানুহক নিজৰ দেশত তৈয়াৰী বস্তু (স্ব = নিজ, দেশ = দেশ) ব্যৱহাৰ কৰিবলৈ আৰু বিদেশী বস্তু বৰ্জন কৰিবলৈ কোৱা হৈছিল।`,
++      `শিক্ষা: ১৯০৬ চনত জাতীয় শিক্ষা পৰিষদ (National Council of Education) গঠন কৰা হৈছিল আৰু অৰবিন্দ ঘোষ বংগ জাতীয় মহাবিদ্যালয়ৰ প্ৰথম অধ্যক্ষ হৈছিল।`,
++      `উদ্যোগ: আচাৰ্য প্ৰফুল্লচন্দ্ৰ ৰায়ে বেংগল কেমিকেল এণ্ড ফাৰ্মাচিউটিকেল ৱাৰ্কছ স্থাপন কৰিছিল। স্বদেশী কাপোৰ কল, তাঁত, চাবোন আৰু মৃৎশিল্পৰ কাৰখানা আৰু স্বদেশী দোকানো খোলা হৈছিল।`,
++      `চৰকাৰে আন্দোলন বন্ধ কৰিবলৈ ছাত্ৰ-ছাত্ৰীৰ বিৰুদ্ধে কাৰ্লাইল সাকুলাৰ, সভা আৰু শ্লোগানৰ ওপৰত নিষেধাজ্ঞা, ১৯০৭ চনৰ ৰাজদ্ৰোহমূলক সভা আইন, ১৯০৮ চনৰ সংবাদপত্ৰ (অপৰাধত প্ৰৰোচনা) আইন, ১৯১০ চনৰ ভাৰতীয় সংবাদপত্ৰ আইন আৰু নেতাসকলক গ্ৰেপ্তাৰ কৰিছিল।`,
++      `১৯০৬ চনৰ কলিকতা অধিৱেশনত দাদাভাই নৌৰোজীৰ সভাপতিত্বত ভাৰতীয় জাতীয় কংগ্ৰেছে স্বৰাজক লক্ষ্য বুলি ঘোষণা কৰিছিল। ১৯০৭ চনত চুৰাটত কংগ্ৰেছ নৰমপন্থী আৰু চৰমপন্থীত ভাগ হৈছিল।`,
++      `১৯০৬ চনৰ ডিচেম্বৰত নৱাব ছলিমুল্লাৰ নেতৃত্বত ঢাকাত মুছলিম লীগ গঠন হৈছিল।`,
++      `১৯১১ চনৰ ১২ ডিচেম্বৰৰ দিল্লী দৰবাৰত বিভাজন ৰদ কৰাৰ ঘোষণা কৰা হৈছিল আৰু ৰাজধানী কলিকতাৰ পৰা দিল্লীলৈ স্থানান্তৰ কৰা হৈছিল। ১৯১২ চনত অসম পৃথক মুখ্য আয়ুক্ত প্ৰদেশ (Chief Commissioner's province) হৈছিল।`
++    ]
++  }
++,
++  'class-10-science-chemical-reactions-and-equations': {
++    title: `ৰাসায়নিক বিক্ৰিয়া আৰু সমীকৰণ (Chemical Reactions and Equations)`,
++    summary: `ৰাসায়নিক বিক্ৰিয়াত পদাৰ্থবোৰ নতুন ধৰ্মৰ নতুন পদাৰ্থলৈ সলনি হয়। আমি বিক্ৰিয়াক সমতুলিত ৰাসায়নিক সমীকৰণ (balanced chemical equation)ৰ ৰূপত লিখোঁ আৰু বিক্ৰিয়াক সংযোজন, বিয়োজন, বিস্থাপন, দ্বিবিস্থাপন আৰু ৰেডক্স আদি ধৰণত ভাগ কৰোঁ।`,
++    points: [
++      `ৰাসায়নিক বিক্ৰিয়া হোৱাৰ চিন: অৱস্থাৰ সলনি, ৰঙৰ সলনি, গেছ নিৰ্গমন, উষ্ণতাৰ সলনি, বা অধঃক্ষেপ (precipitate, অদ্ৰৱণীয় কঠিন পদাৰ্থ) সৃষ্টি।`,
++      `ৰাসায়নিক সমীকৰণত বিক্ৰিয়কবোৰ (reactants) বাওঁফালে আৰু উৎপাদবোৰ (products) সোঁফালে কাঁড় চিনৰ দুয়োপাশে লিখা হয়। সমতুলন নকৰা সমীকৰণক কংকালসদৃশ সমীকৰণ (skeletal equation) বোলে।`,
++      `ভৰৰ সংৰক্ষণ সূত্ৰ (law of conservation of mass): বিক্ৰিয়কৰ মুঠ ভৰ আৰু উৎপাদৰ মুঠ ভৰ সমান। গতিকে প্ৰতিটো মৌলৰ পৰমাণুৰ সংখ্যা দুয়োফালে সমান হ'ব লাগিব; সেইবাবেই সমীকৰণ সমতুলন কৰা হয়।`,
++      `সমীকৰণ সমতুলন কৰিবলৈ সহগ (coefficient, সূত্ৰৰ আগৰ সংখ্যা) সলনি কৰক, কেতিয়াও সূত্ৰ সলনি নকৰিব। উদাহৰণ: 3Fe + 4H2O -> Fe3O4 + 4H2।`,
++      `অৱস্থা-চিন: (s) কঠিন, (l) তৰল, (g) গেছ আৰু (aq) পানীত দ্ৰৱীভূত। তাপ, পোহৰ বা অনুঘটকৰ দৰে চৰ্ত কাঁড় চিনৰ ওপৰত বা তলত লিখা হয়।`,
++      `সংযোজন বিক্ৰিয়া (combination): দুই বা ততোধিক পদাৰ্থ লগ লাগি এটা উৎপাদ হয়। CaO + H2O -> Ca(OH)2 (চূণ নিভোৱা) বিক্ৰিয়াত তাপ ওলায়। তাপ নিৰ্গত কৰা বিক্ৰিয়াক তাপমোচী (exothermic) বোলে; জুইত ইন্ধন পোৰা আৰু শ্বসনো তাপমোচী।`,
++      `বিয়োজন বিক্ৰিয়া (decomposition): এটা পদাৰ্থ ভাঙি দুই বা ততোধিক পদাৰ্থ হয়। ই তাপেৰে (CaCO3 -> CaO + CO2), বিদ্যুতেৰে (2H2O -> 2H2 + O2) বা পোহৰেৰে (2AgCl -> 2Ag + Cl2) হ'ব পাৰে। এই বিক্ৰিয়াই শক্তি শুহি লয়, গতিকে ই তাপশোষী (endothermic)।`,
++      `বিস্থাপন বিক্ৰিয়া (displacement): অধিক সক্ৰিয় মৌলে কম সক্ৰিয় মৌলক ইয়াৰ যৌগৰ পৰা আঁতৰাই দিয়ে। Fe + CuSO4 -> FeSO4 + Cu: নীলা ৰং ফিকা হয় আৰু বাদামী তামৰ জমা লোৰাত পৰে।`,
++      `দ্বিবিস্থাপন বিক্ৰিয়া (double displacement): দুটা যৌগে নিজৰ আয়ন সলনা-সলনি কৰে। Na2SO4 + BaCl2 -> BaSO4 + 2NaCl, য'ত BaSO4 বগা অধঃক্ষেপ; গতিকে ইয়াক অধঃক্ষেপণ বিক্ৰিয়াও বোলা হয়।`,
++      `জাৰণ (oxidation) হ'ল অক্সিজেন লাভ বা হাইড্ৰ'জেন ক্ষয়। বিজাৰণ (reduction) হ'ল অক্সিজেন ক্ষয় বা হাইড্ৰ'জেন লাভ। দুয়োটা একেলগে হ'লে ই ৰেডক্স (redox) বিক্ৰিয়া: CuO + H2 -> Cu + H2O ত কপাৰ অক্সাইডৰ বিজাৰণ আৰু হাইড্ৰ'জেনৰ জাৰণ হয়।`,
++      `ক্ষয়ীভৱন (corrosion) হ'ল বায়ু আৰু আৰ্দ্ৰতাই ধাতুক লাহে লাহে নষ্ট কৰা: লোহাত মামি ধৰে, ৰূপ ক'লা হয় আৰু তামত সেউজীয়া আৱৰণ পৰে। ৰং কৰা, তেল দিয়া, গেলভানাইজ কৰা (জিংকৰ আৱৰণ) আৰু সংকৰ (alloy) কৰিলে ইয়াক ৰোধ কৰিব পাৰি।`,
++      `ৰেন্ছিডিটী (rancidity) হ'ল জাৰিত হোৱা তেল-চৰ্বিৰ বেয়া গোন্ধ আৰু সোৱাদ। এন্টিঅক্সিডেণ্ট, বায়ুৰোধী পাত্ৰ আৰু পেকেটত নাইট্ৰ'জেন গেছ ভৰোৱাই ইয়াক লেহেমীয়া কৰে।`
++    ]
++  },
++  'class-10-science-acids-bases-and-salts': {
++    title: `অম্ল, ক্ষাৰক আৰু লৱণ (Acids, Bases and Salts)`,
++    summary: `অম্লৰ সোৱাদ টেঙা আৰু ই নীলা লিটমাছক ৰঙা কৰে; ক্ষাৰকৰ সোৱাদ তিতা আৰু গাত চাবোনৰ দৰে পিছল লাগে। অম্ল আৰু ক্ষাৰকৰ বিক্ৰিয়াত লৱণ আৰু পানী হয়। pH স্কেলে দ্ৰৱ কিমান অম্লীয় বা ক্ষাৰীয় সেয়া কয়, আৰু কেইবাটাও লৱণৰ দৈনন্দিন ব্যৱহাৰ আছে।`,
++    points: [
++      `অম্লই নীলা লিটমাছক ৰঙা কৰে আৰু ক্ষাৰকে ৰঙা লিটমাছক নীলা কৰে। ফেনলফথেলিন অম্লত বৰণহীন আৰু ক্ষাৰকত গোলাপী। মিথাইল অৰেঞ্জ অম্লত ৰঙা আৰু ক্ষাৰকত হালধীয়া।`,
++      `অম্ল + ধাতু -> লৱণ + হাইড্ৰ'জেন গেছ, যি পপ্ শব্দৰে জ্বলে। Zn + H2SO4 -> ZnSO4 + H2।`,
++      `অম্ল + ধাতুৰ কাৰ্বনেট বা হাইড্ৰ'জেনকাৰ্বনেট -> লৱণ + কাৰ্বন ডাই অক্সাইড + পানী। কাৰ্বন ডাই অক্সাইডে চূণৰ পানী ঘোলা কৰে: Ca(OH)2 + CO2 -> CaCO3 + H2O।`,
++      `প্ৰশমন (neutralisation): অম্ল + ক্ষাৰক -> লৱণ + পানী, যেনে HCl + NaOH -> NaCl + H2O। ধাতুৰ অক্সাইড ক্ষাৰীয় আৰু অধাতুৰ অক্সাইড অম্লীয়।`,
++      `পানীত অম্লই হাইড্ৰ'জেন আয়ন (H+) আৰু ক্ষাৰকে হাইড্ৰক্সাইড আয়ন (OH-) দিয়ে। পানীত দ্ৰৱীভূত হোৱা ক্ষাৰকক ক্ষাৰ (alkali) বোলে।`,
++      `অম্ল বা ক্ষাৰক পানীত দ্ৰৱীভূত কৰোঁতে বহুত তাপ ওলায়। সদায় অম্ল লাহে লাহে পানীত ঢালিব, কেতিয়াও অম্লত পানী নঢালিব।`,
++      `pH স্কেল 0 ৰ পৰা 14 লৈকে। pH 7 নিৰপেক্ষ, 7 তকৈ কম অম্লীয় আৰু 7 তকৈ বেছি ক্ষাৰীয়। pH যিমান কম, অম্ল সিমান শক্তিশালী। ইয়াক সৰ্বজনীন সূচক (universal indicator) বা pH কাগজেৰে জোখা হয়।`,
++      `দৈনন্দিন জীৱনত pH: মুখৰ pH 5.5 তকৈ কমিলে দাঁত ক্ষয় হ'বলৈ ধৰে, pH 5.6 তকৈ কম বৰষুণ হ'ল অম্লীয় বৰষুণ, আৰু এণ্টাছিড (ক্ষাৰক)য়ে অম্লতা কমায়। পৰুৱা বা বিছাৰতিৰ কামোৰত মিথানইক অম্ল থাকে আৰু বেকিং ছোডাই তাক কমায়।`,
++      `সাধাৰণ নিমখ (NaCl) NaOH, ক্ল'ৰিন, হাইড্ৰ'জেন, বেকিং ছোডা, ধোৱা ছোডা আৰু ব্লিচিং পাউদাৰৰ কেঁচামাল। লৱণ পানীৰ তড়িৎ-বিশ্লেষণক ক্ল'ৰ-ক্ষাৰ প্ৰক্ৰিয়া (chlor-alkali process) বোলে: 2NaCl + 2H2O -> 2NaOH + Cl2 + H2।`,
++      `ব্লিচিং পাউদাৰ (CaOCl2) শুকান নিভোৱা চূণৰ ওপৰেৰে ক্ল'ৰিন গেছ পাৰ কৰাই বনোৱা হয়। ইয়াক ব্লিচ কৰিবলৈ আৰু খোৱা পানী বীজাণুমুক্ত কৰিবলৈ ব্যৱহাৰ কৰা হয়।`,
++      `বেকিং ছোডা (NaHCO3) এণ্টাছিড হিচাপে আৰু বেকিং পাউদাৰত ব্যৱহাৰ হয়। তপত কৰিলে ই ছডিয়াম কাৰ্বনেট দিয়ে: 2NaHCO3 -> Na2CO3 + H2O + CO2।`,
++      `ধোৱা ছোডা (Na2CO3.10H2O) ছডিয়াম কাৰ্বনেটক পুনৰ স্ফটিকীকৰণ কৰি পোৱা যায়। ইয়াক কাঁচ, চাবোন আৰু কাগজ বনাবলৈ আৰু পানীৰ কঠিনতা আঁতৰাবলৈ ব্যৱহাৰ কৰা হয়।`,
++      `স্ফটিকজল (water of crystallisation) হ'ল লৱণৰ এটা সূত্ৰ-এককত থকা নিৰ্দিষ্ট সংখ্যক পানীৰ অণু। নীলা তুঁতে (CuSO4.5H2O) তপত কৰিলে এই পানী হেৰুৱাই বগা হৈ পৰে।`,
++      `প্লাষ্টাৰ অৱ পেৰিছ (CaSO4.1/2H2O) জিপছাম (CaSO4.2H2O) তপত কৰি বনোৱা হয়। পানীৰ লগত মিহলালে ই আকৌ জিপছামৰূপে শক্ত হয়, সেয়ে ভঙা হাড় বান্ধিবলৈ আৰু খেলনা আৰু মসৃণ পৃষ্ঠ বনাবলৈ ব্যৱহাৰ হয়।`
++    ]
++  },
++  'class-10-science-metals-and-non-metals': {
++    title: `ধাতু আৰু অধাতু (Metals and Non-metals)`,
++    summary: `ধাতু আৰু অধাতুৰ ভৌতিক আৰু ৰাসায়নিক ধৰ্ম বেলেগ। সক্ৰিয়তা শ্ৰেণীয়ে কোনটো ধাতুৱে কোনটোক স্থানচ্যুত কৰে সেয়া কয়, ধাতু নিষ্কাশনৰ পদ্ধতি ইয়াৰ সক্ৰিয়তাৰ ওপৰত নিৰ্ভৰ কৰে, আৰু ক্ষয়ীভৱন কেইবাটাও উপায়েৰে ৰোধ কৰিব পাৰি।`,
++    points: [
++      `ধাতু উজ্জ্বল, কঠিন (কিন্তু ছডিয়াম আৰু পটাছিয়াম কোমল), পিটিব পৰা (malleable), টানিব পৰা (ductile), ধ্বনিময় (sonorous) আৰু তাপ-বিদ্যুতৰ ভাল পৰিবাহী। বেছিভাগেই কঠিন আৰু গলনাংক উচ্চ; পাৰদ তৰল।`,
++      `অধাতু সাধাৰণতে নিষ্প্ৰভ, ভঙুৰ আৰু বেয়া পৰিবাহী। ব্যতিক্ৰম: গ্ৰেফাইট (কাৰ্বনৰ এটা ৰূপ) বিদ্যুৎ পৰিবহন কৰে, হীৰা প্ৰাকৃতিক পদাৰ্থৰ ভিতৰত আটাইতকৈ কঠিন, আৰু আয়'ডিন উজ্জ্বল।`,
++      `ধাতু অক্সিজেনত জ্বলি ধাতুৰ অক্সাইড দিয়ে, যিবোৰ ক্ষাৰীয়। এলুমিনিয়াম অক্সাইড আৰু জিংক অক্সাইডে অম্ল আৰু ক্ষাৰক দুয়োটাৰে লগত বিক্ৰিয়া কৰে, সেয়ে ইহঁতক উভধৰ্মী অক্সাইড (amphoteric oxide) বোলে।`,
++      `পানীৰ লগত বিক্ৰিয়া: ছডিয়াম আৰু পটাছিয়ামে প্ৰচণ্ডভাৱে, মেগনেছিয়ামে গৰম পানীৰ লগত, এলুমিনিয়াম, লোহা আৰু জিংকে বাষ্পৰ লগত বিক্ৰিয়া কৰে; সীহ, তাম, ৰূপ আৰু সোণে নকৰে।`,
++      `সক্ৰিয়তা শ্ৰেণী (reactivity series), আটাইতকৈ বেছি সক্ৰিয়ৰ পৰা আটাইতকৈ কম সক্ৰিয়লৈ: K, Na, Ca, Mg, Al, Zn, Fe, Pb, H, Cu, Hg, Ag, Au।`,
++      `শ্ৰেণীত হাইড্ৰ'জেনৰ ওপৰত থকা ধাতুবোৰে লঘু অম্লৰ লগত বিক্ৰিয়া কৰি হাইড্ৰ'জেন গেছ দিয়ে। তামে লঘু অম্লৰ লগত বিক্ৰিয়া নকৰে।`,
++      `বিস্থাপন: অধিক সক্ৰিয় ধাতুৱে কম সক্ৰিয় ধাতুক ইয়াৰ লৱণ দ্ৰৱৰ পৰা আঁতৰাই দিয়ে, যেনে Zn + CuSO4 -> ZnSO4 + Cu।`,
++      `ধাতুৱে অধাতুক ইলেক্ট্ৰন দিলে আয়নিক যৌগ (ionic compound) হয়, যেনে ছডিয়াম ক্ল'ৰাইড। এইবোৰ কঠিন, ভঙুৰ, গলনাংক আৰু স্ফুটনাংক উচ্চ, পানীত দ্ৰৱীভূত হয়, আৰু গলিত বা দ্ৰৱীভূত অৱস্থাত বিদ্যুৎ পৰিবহন কৰে, কিন্তু কঠিন অৱস্থাত নকৰে।`,
++      `আকৰিক (ore) হ'ল এনে খনিজ যাৰ পৰা লাভজনকভাৱে ধাতু উলিয়াব পাৰি। ইয়াত থকা মাটি-বালিৰ অশুদ্ধিক গেংগ (gangue) বোলে।`,
++      `নিষ্কাশন সক্ৰিয়তাৰ ওপৰত নিৰ্ভৰ কৰে। অতি সক্ৰিয় ধাতু (K ৰ পৰা Al) ইহঁতৰ গলিত যৌগৰ তড়িৎ-বিশ্লেষণেৰে পোৱা যায়। মাজৰ ধাতু (Zn, Fe, Pb) ভজন (roasting, সালফাইডৰ বাবে) বা ভস্মীকৰণ (calcination, কাৰ্বনেটৰ বাবে)ৰ দ্বাৰা অক্সাইড কৰি কাৰ্বনেৰে বিজাৰিত কৰা হয়। শ্ৰেণীৰ তলত থকা ধাতু (Hg, Cu) আকৰিক তপত কৰিয়েই পোৱা যায়।`,
++      `থাৰ্মিট বিক্ৰিয়া (Thermit reaction): Fe2O3 + 2Al -> 2Fe + Al2O3 বিক্ৰিয়াত ইমান তাপ ওলায় যে লোহা গলি যায়; ইয়াক ৰেলৰ পাত জোৰা লগাবলৈ ব্যৱহাৰ কৰা হয়।`,
++      `তড়িৎ-পৰিশোধনেৰে (electrolytic refining) শুদ্ধ ধাতু পোৱা যায়: অশুদ্ধ ধাতু এনোড, শুদ্ধ ধাতুৰ পাতল পাত কেথোড আৰু ধাতুৰ লৱণৰ দ্ৰৱ তড়িৎ-বিশ্লেষ্য (electrolyte)।`,
++      `লোহাত মামি ধৰিবলৈ অক্সিজেন আৰু আৰ্দ্ৰতা দুয়োটা লাগে। ৰং কৰি, তেল বা গ্ৰীজ লগাই, গেলভানাইজ কৰি (জিংকৰ আৱৰণ), ক্ৰোম প্লেটিং কৰি বা সংকৰ বনাই ইয়াক ৰোধ কৰিব পাৰি।`,
++      `সংকৰ (alloy) হ'ল ধাতুৰ লগত আন ধাতু বা অধাতুৰ সমসত্ত্ব মিশ্ৰণ। পিতল হ'ল তাম আৰু জিংক, কাঁহ হ'ল তাম আৰু টিন, আৰু ষ্টেইনলেছ ষ্টীল হ'ল লোহাৰ লগত নিকেল আৰু ক্ৰ'মিয়াম।`
++    ]
++  },
++  'class-10-maths-pair-of-linear-equations-in-two-variables': {
++    title: `দুটা চলকত বৈখিক সমীকৰণৰ যোৰ (Pair of Linear Equations in Two Variables)`,
++    summary: `দুটা চলকত বৈখিক সমীকৰণৰ যোৰ ছক (graph) আঁকি বা বীজগণিতীয় পদ্ধতিৰে সমাধান কৰিব পাৰি। সহগৰ অনুপাতবোৰে আগতেই কয় যে যোৰটোৰ এটা সমাধান, বহুতো সমাধান নে এটাও নাই।`,
++    points: [
++      `সমীকৰণৰ যোৰৰ মানক ৰূপ হ'ল a1x + b1y + c1 = 0 আৰু a2x + b2y + c2 = 0, য'ত প্ৰতিটো সমীকৰণত a আৰু b দুয়োটা শূন্য নহয়।`,
++      `প্ৰতিটো সমীকৰণৰ ছক এডাল সৰলৰেখা। যোৰটোৰ সমাধান হ'ল দুয়োডাল ৰেখাত থকা বিন্দু।`,
++      `যদি a1/a2 ≠ b1/b2, ৰেখা দুডালে এটা বিন্দুত ছেদ কৰে, গতিকে ঠিক এটা সমাধান থাকে। যোৰটো সংগত (consistent)।`,
++      `যদি a1/a2 = b1/b2 = c1/c2, ৰেখা দুডাল ঐক্যবদ্ধ হয়, গতিকে অসীম সংখ্যক সমাধান থাকে। যোৰটো সংগত (নিৰ্ভৰশীলো বোলে)।`,
++      `যদি a1/a2 = b1/b2 কিন্তু c1/c2 বেলেগ, ৰেখা দুডাল সমান্তৰাল, গতিকে কোনো সমাধান নাথাকে। যোৰটো অসংগত (inconsistent)।`,
++      `প্ৰতিস্থাপন পদ্ধতি (substitution): এটা সমীকৰণৰ পৰা এটা চলকক আনটোৰ ৰাশিত লিখক, তাক আনটো সমীকৰণত বহুৱাওক, এটা চলক উলিয়াওক, তাৰ পিছত দ্বিতীয়টো উলিয়াওক।`,
++      `অপনয়ন পদ্ধতি (elimination): সমীকৰণ দুটাক পূৰণ কৰি এটা চলকৰ সহগ সমান কৰক, যোগ বা বিয়োগ কৰি সেই চলক আঁতৰাওক, সমাধান কৰক, তাৰ পিছত পুনৰ প্ৰতিস্থাপন কৰক।`,
++      `আড়পূৰণ পদ্ধতি (cross-multiplication): x/(b1c2 - b2c1) = y/(c1a2 - c2a1) = 1/(a1b2 - a2b1), যি a1b2 - a2b1 শূন্য নহ'লে খাটে।`,
++      `শব্দ সমস্যাত (word problem) দুটা অজ্ঞাত ৰাশিক x আৰু y লওক, দুটা চৰ্তক দুটা সমীকৰণলৈ ৰূপান্তৰ কৰক, সমাধান কৰক আৰু উত্তৰটো কাহিনীৰ লগত মিলাই চাওক।`
++    ]
++  },
++  'class-10-maths-quadratic-equations': {
++    title: `দ্বিঘাত সমীকৰণ (Quadratic Equations)`,
++    summary: `দ্বিঘাত সমীকৰণৰ ৰূপ ax^2 + bx + c = 0। ইয়াৰ মূলবোৰ উৎপাদকীকৰণ, বৰ্গ পূৰ্ণকৰণ (completing the square) বা দ্বিঘাত সূত্ৰৰে উলিয়াব পাৰি, আৰু নিৰ্ণায়কে (discriminant) কয় মূলবোৰ কেনেধৰণৰ হ'ব।`,
++    points: [
++      `মানক ৰূপ হ'ল ax^2 + bx + c = 0, য'ত a, b, c বাস্তৱ সংখ্যা আৰু a ≠ 0। a = 0 হ'লে সমীকৰণ বৈখিক হ'ব।`,
++      `সমীকৰণৰ মূল (root বা zero) হ'ল x ৰ সেই মান যিয়ে সমীকৰণ সিদ্ধ কৰে। দ্বিঘাত সমীকৰণৰ বেছিতে দুটা বাস্তৱ মূল থাকে।`,
++      `উৎপাদকীকৰণ: মাজৰ পদক এনে দুটা সংখ্যাৰে ভাঙক যাৰ পূৰণফল ac আৰু যোগফল b; গোট কৰি উৎপাদক উলিয়াওক, তাৰ পিছত প্ৰতিটো উৎপাদকক শূন্যৰ সমান কৰক।`,
++      `বৰ্গ পূৰ্ণকৰণ: a ৰে হৰণ কৰক, ধ্ৰুৱক পদক সোঁফালে নিয়ক, x ৰ সহগৰ আধাৰ বৰ্গ দুয়োফালে যোগ কৰক, তাৰ পিছত বৰ্গমূল লওক।`,
++      `দ্বিঘাত সূত্ৰ: x = (-b ± √(b^2 - 4ac)) / 2a। বাস্তৱ মূল থকা প্ৰতিটো দ্বিঘাত সমীকৰণৰ বাবে ই খাটে।`,
++      `নিৰ্ণায়ক D = b^2 - 4ac। D > 0 হ'লে দুটা পৃথক বাস্তৱ মূল, D = 0 হ'লে দুটা সমান বাস্তৱ মূল, আৰু D < 0 হ'লে কোনো বাস্তৱ মূল নাই।`,
++      `শব্দ সমস্যাত চৰ্তৰ পৰা সমীকৰণ গঠন কৰক, সমাধান কৰক, আৰু যিবোৰ মূল পৰিস্থিতিৰ লগত খাপ নাখায় (যেনে ঋণাত্মক দৈৰ্ঘ্য বা বয়স) সেইবোৰ বাদ দিয়ক।`
++    ]
++  },
++  'class-10-maths-arithmetic-progressions': {
++    title: `সমান্তৰ প্ৰগতি (Arithmetic Progressions)`,
++    summary: `সমান্তৰ প্ৰগতি (AP) হ'ল সংখ্যাৰ এনে এটা তালিকা যাৰ প্ৰতিটো পদ আগৰ পদটোত একে নিৰ্দিষ্ট সংখ্যা যোগ কৰি পোৱা যায়। এই অধ্যায়ত n তম পদ আৰু প্ৰথম n টা পদৰ যোগফলৰ সূত্ৰ আছে।`,
++    points: [
++      `AP ত যিকোনো পদ আৰু তাৰ আগৰ পদৰ মাজৰ পাৰ্থক্য সদায় একে। এই নিৰ্দিষ্ট সংখ্যাক সাধাৰণ অন্তৰ (common difference) d বোলে, গতিকে d = a(n+1) - a(n)।`,
++      `প্ৰথম পদ a আৰু সাধাৰণ অন্তৰ d থকা AP হ'ল a, a + d, a + 2d, a + 3d, ইত্যাদি।`,
++      `d ধনাত্মক হ'লে AP বাঢ়ি যায়, d ঋণাত্মক হ'লে কমি যায়, আৰু d = 0 হ'লে সকলো পদ সমান।`,
++      `n তম পদ হ'ল a(n) = a + (n - 1)d।`,
++      `সসীম AP ৰ এটা শেষ পদ থাকে, সাধাৰণতে l লিখা হয়। অসীম AP কেতিয়াও শেষ নহয়।`,
++      `প্ৰথম n টা পদৰ যোগফল S(n) = n/2 × [2a + (n - 1)d]। শেষ পদ l জনা থাকিলে S(n) = n/2 × (a + l)।`,
++      `n তম পদ যোগফলৰ পৰাও উলিয়াব পাৰি: a(n) = S(n) - S(n - 1)।`,
++      `তিনিটা সংখ্যা a, b, c AP ত থাকিব যদিহে আৰু যদিহে 2b = a + c, অৰ্থাৎ মাজৰ পদটো আন দুটাৰ গড়।`
++    ]
++  }
++};
+diff --git a/freenotes.js b/freenotes.js
+new file mode 100644
+index 0000000..8b114f6
+--- /dev/null
++++ b/freenotes.js
+@@ -0,0 +1,265 @@
++// Free notes: shown to anyone WITHOUT login (button "Free contents" on the login page) and as static pages for Google (public/notes/<id>.html).
++// Only what is written here becomes public. Write in our own words (never copy textbook text), and never put exercise answers here.
++// Both English (below) and Assamese (freenotes-as.js) are required for every note.
++// Fields: id (unique, letters/digits/-), course (course id in questions.js, e.g. c7-maths; with no it links the note to its chapter page), cls, subject, medium ('English' if not given), no (chapter number), title, summary, points[].
++const NOTES = [
++  {
++    id: 'class-7-maths-integers', course: 'c7-maths',
++    cls: 7, subject: 'Mathematics', medium: 'English', no: 1, title: 'Integers',
++    summary: 'Integers are the whole numbers together with their negatives: ..., -3, -2, -1, 0, 1, 2, 3, ... This chapter shows how to compare integers, do the four operations with them, use their properties and simplify expressions with BODMAS.',
++    points: [
++      'Zero is an integer, but it is neither positive nor negative.',
++      'On a number line the number on the right is always greater. Every positive integer is greater than 0, and 0 is greater than every negative integer. The greatest negative integer is -1.',
++      'Absolute value |a| is the distance of a from 0, so it is never negative. For example |-7| = 7 and |7| = 7.',
++      'Successor of a is a + 1 and predecessor of a is a - 1. For example the successor of 5 is 6 and the predecessor of 0 is -1.',
++      'Addition: with the same signs, add the absolute values and keep the sign: (-8) + (-5) = -13. With different signs, subtract the smaller absolute value from the larger and keep the sign of the larger: (-8) + 5 = -3.',
++      'Subtraction: a - b = a + (-b). Subtracting an integer means adding its opposite, so 5 - (-3) = 5 + 3 = 8.',
++      'Multiplication and division: same signs give a positive result, different signs give a negative result. Any number times 0 is 0, 0 divided by a non-zero integer is 0, and division by 0 is not allowed.',
++      'Closure: integers are closed under addition, subtraction and multiplication, but not under division (1 / 2 is not an integer).',
++      'Addition and multiplication are commutative and associative. Subtraction and division are not.',
++      'Identities: 0 for addition (a + 0 = a) and 1 for multiplication (a x 1 = a). The additive inverse of a is -a.',
++      'Distributive property: a x (b + c) = a x b + a x c, and the same works with subtraction.',
++      '(-1) raised to an even power is 1 and raised to an odd power is -1.',
++      'BODMAS order: Brackets first (small ( ), then curly { }, then square [ ]), then Of, Division, Multiplication, Addition, Subtraction. "Of" means multiplication.'
++    ]
++  },
++  {
++    id: 'class-7-science-nutrition-in-plants', course: 'c7-science',
++    cls: 7, subject: 'Science', medium: 'English', no: 1, title: 'Nutrition in Plants',
++    summary: 'Nutrition is how a living thing gets and uses food for energy, growth and repair. Green plants make their own food by photosynthesis, while other plants depend on other living things or on dead matter.',
++    points: [
++      'Nutrients are the useful substances in food: carbohydrates, proteins, fats, vitamins and minerals.',
++      'Autotrophs make their own food (green plants, algae). Heterotrophs depend on others for food (animals, mushrooms, yeast, bread mould and some bacteria).',
++      'Photosynthesis: green plants make glucose from carbon dioxide and water in sunlight, using chlorophyll. Short form: carbon dioxide + water -> glucose + oxygen. Four things are needed: sunlight, chlorophyll, carbon dioxide and water.',
++      'Chlorophyll is the green pigment inside chloroplasts, found mainly in leaves. Water reaches the leaves from the soil through xylem vessels.',
++      'Carbon dioxide enters (and oxygen leaves) through stomata, tiny pores on the underside of leaves. Guard cells open and close each stoma.',
++      'Extra glucose is changed into starch and stored in roots, stems and leaves.',
++      'Starch test: boil the leaf, remove its colour in alcohol kept in a water bath, wash it and add iodine solution. A blue-black colour shows that starch is present.',
++      'Why photosynthesis matters: it changes the energy of sunlight into the chemical energy of food, and it puts oxygen into the air.',
++      'Red, violet or brown leaves also contain chlorophyll; the other pigments hide the green colour. In a cactus the leaves are tiny spines (they cut down water loss) and the green stem does the photosynthesis.',
++      'Parasites take food from a living host: Cuscuta (yellow, thread-like, no chlorophyll) and Rafflesia. Mistletoe has green leaves, so it is a partial parasite and only takes water and minerals from its host.',
++      'Saprotrophs feed on dead and rotting matter: mushrooms, bread mould, yeast and some bacteria.',
++      'Symbiosis means two organisms living together and helping each other. A lichen is an alga plus a fungus (the fungus gives water and minerals, the alga gives food). Rhizobium bacteria live in the root nodules of pulses and change nitrogen from the air into a form the plant can use.',
++      'Insectivorous plants (pitcher plant, sundew, Venus flytrap, bladderwort) grow in soil poor in nitrogen, so they trap and digest insects. They can still make their own food.',
++      'Soil loses nitrogen, phosphorus and potassium as crops use them. Farmers replace them with fertilisers (for example NPK), manure, and by growing pulses, which add nitrogen to the soil.'
++    ]
++  },
++  {
++    id: 'class-6-maths-patterns-in-mathematics', course: 'c6-maths',
++    cls: 6, subject: 'Mathematics', medium: 'English', no: 1, title: 'Patterns in Mathematics',
++    summary: 'This chapter looks at number patterns and sequences, and at the rules whole numbers follow when we add, subtract, multiply and divide them. Spotting the rule in a pattern helps you find the next terms and do sums faster.',
++    points: [
++      'Natural numbers start from 1 (1, 2, 3, ...). Whole numbers start from 0 (0, 1, 2, 3, ...). Every natural number is a whole number, but 0 is a whole number that is not natural. There is no largest whole number.',
++      'On the number line the number on the right is greater.',
++      'Closure: whole numbers are closed under addition and multiplication, but not under subtraction (8 - 15) or division (8 / 3).',
++      'Addition and multiplication are commutative (a + b = b + a, a x b = b x a) and associative. Subtraction and division are neither.',
++      'Identities: 0 for addition (a + 0 = a) and 1 for multiplication (a x 1 = a). Also a x 0 = 0, and 0 / a = 0 when a is not 0. Division by 0 has no meaning.',
++      'Distributive property: a x (b + c) = a x b + a x c, and a x (b - c) = a x b - a x c. Use it to split a big multiplication into easy parts.',
++      'For quick sums, group numbers whose product is round, such as 4 x 25 = 100, 2 x 50 = 100 and 8 x 125 = 1000.',
++      'Inverse operations undo each other: addition and subtraction, multiplication and division. Dividend = divisor x quotient + remainder.',
++      'In an arithmetic sequence the same number is added every time. In a geometric sequence the same number is multiplied every time. Some patterns use two steps, for example multiply by 4 and then divide by 2.',
++      'Special sequences: even, odd, prime and composite numbers; squares (1, 4, 9, 16, ...); cubes (1, 8, 27, 64, ...); triangular numbers (1, 3, 6, 10, 15, ...); Virahanka numbers (1, 2, 3, 5, 8, 13, ...), where each term is the sum of the two before it.',
++      'Shortcut: adding 9, 99 or 999 is the same as adding 10, 100 or 1000 and then taking away 1. Multiplying by 99 means multiplying by (100 - 1).'
++    ]
++  },
++  {
++    id: 'class-6-science-the-wonderful-world-of-science', course: 'c6-science',
++    cls: 6, subject: 'Science', medium: 'English', no: 1, title: 'The Wonderful World of Science',
++    summary: 'Science is a way of thinking, observing and asking questions to understand the world around us. It starts with curiosity and it is found everywhere, from the kitchen to outer space.',
++    points: [
++      'Curiosity is the most important tool of science. Science always begins with asking questions such as why, how and what.',
++      'Observation is what we notice with our senses. Inference is the conclusion or explanation we draw from what we observed.',
++      'Science is not only a school subject or something done in a lab. It is a way of thinking that helps us solve problems and improve life.',
++      'Science is everywhere. In cooking, yeast makes dough rise by producing carbon dioxide gas, and heat changes the taste and texture of food.',
++      'Changes of state: heat makes ice melt, makes water boil into steam, and taking heat away freezes water into ice.',
++      'Water cycle: evaporation (water rises as vapour), condensation (vapour cools and forms clouds), precipitation (rain or snow), then runoff and groundwater.',
++      'Science is like a giant jigsaw puzzle: every discovery is one more piece and raises new questions, so science never ends.',
++      'Sometimes new evidence changes what we believed. Pluto was once called the ninth planet and is now classed as a dwarf planet.',
++      'Earth is the only planet we know that supports life. Living things adapt to where they live: a cactus has thick stems that store water and spines instead of leaves to lose less water.',
++      'A butterfly passes through four stages: egg, caterpillar (larva), pupa and adult.',
++      'All living things need food and water. Food gives nutrients for energy and growth, and a healthy diet depends on age, activity and needs.'
++    ]
++  },
++  {
++    id: 'class-6-social-science-locating-places-and-reading-maps', course: 'c6-social',
++    cls: 6, subject: 'Social Science', medium: 'English', no: 1, title: 'Locating Places and Reading Maps',
++    summary: 'Earth is too large to see all at once, so we use globes and maps. This chapter explains the shape of Earth, latitudes and longitudes, and how they help us fix the exact position of any place.',
++    points: [
++      'Earth is slightly flattened at the poles and bulges at the equator, so its shape is called an oblate spheroid. Its equatorial diameter (about 12,756 km) is a little more than its polar diameter (about 12,714 km).',
++      'A globe is a small 3D model of Earth. It shows true shapes, directions, distances and areas, and also day and night and rotation.',
++      'Limits of a globe: it is bulky and costly, it cannot be folded or carried easily, it cannot show small areas in detail and it cannot show the whole Earth at one glance.',
++      'Earth spins on its axis, an imaginary line through its centre. The ends of the axis are the North Pole and the South Pole. The axis is tilted by 23.5 degrees from the vertical.',
++      'Latitudes (parallels) are imaginary circles that run parallel to each other around the globe. They are measured in degrees from the Equator, which is 0 degrees and splits Earth into the Northern and Southern Hemispheres.',
++      'Important latitudes: Equator (0), Tropic of Cancer (23.5 N), Tropic of Capricorn (23.5 S), Arctic Circle (66.5 N), Antarctic Circle (66.5 S), and the poles (90 N and 90 S).',
++      'Latitudes help us divide Earth into heat zones.',
++      'Longitudes (meridians) are imaginary lines running from the North Pole to the South Pole. They are all equal in length, they are not parallel, and they meet at the poles.',
++      'The Prime Meridian is 0 degrees longitude and passes through the Royal Observatory at Greenwich near London. It splits Earth into the Eastern and Western Hemispheres.',
++      'The International Date Line lies near 180 degrees, opposite the Prime Meridian, and marks where one calendar day changes to the next. Crossing it going west adds a day and going east takes away a day.',
++      'Latitude and longitude together form the geographic coordinates that give the exact location of a place.'
++    ]
++  },
++  {
++    id: 'class-6-english-grammar-the-sentence', course: 'c6-grammar',
++    cls: 6, subject: 'English Grammar', medium: 'English', no: 1, title: 'The Sentence',
++    summary: 'A sentence is a group of words in a proper order that gives a complete meaning. This chapter covers sentences and phrases, the four types of sentences, how to make exclamatory sentences, and subject and predicate.',
++    points: [
++      'A sentence has a verb, gives a complete meaning, begins with a capital letter and ends with a full stop, question mark or exclamation mark.',
++      'A phrase is a group of words that gives an incomplete meaning. It is only a part of a sentence and may have no verb. For example, "On the phone" is a phrase, while "I am on the phone." is a sentence.',
++      'Declarative (assertive) sentences give information or state a fact and end with a full stop.',
++      'Imperative sentences give a request, advice, instruction or command. They usually start with a verb, and the subject "you" is understood but not written.',
++      'Interrogative sentences ask a question, often begin with who, what, where, when, how, which, whose or why, and end with a question mark.',
++      'Exclamatory sentences show strong feeling and end with an exclamation mark.',
++      'To change a statement into an exclamation, use "What" when there is a/an before the adjective: "She is a graceful dancer." becomes "What a graceful dancer she is!"',
++      'Use "How" when there is no a/an, with an adjective or adverb: "She dances gracefully." becomes "How gracefully she dances!"',
++      'Every sentence has two parts. The subject tells who or what the sentence is about. The predicate tells something about the subject and always contains the verb.',
++      'Example: in "The brown jacket was very warm.", the subject is "The brown jacket" and the predicate is "was very warm".'
++    ]
++  },
++  {
++    id: 'class-10-maths-real-numbers', course: 'c10-maths',
++    cls: 10, subject: 'Mathematics', medium: 'Assamese', no: 1, title: 'Real Numbers',
++    summary: 'This chapter has two big ideas: the Fundamental Theorem of Arithmetic, which says every composite number breaks into primes in only one way, and the proofs that numbers like the square root of 2 are irrational.',
++    points: [
++      'Fundamental Theorem of Arithmetic: every composite number can be written as a product of primes, and this prime factorisation is unique except for the order of the factors.',
++      'HCF is the product of the smallest power of each common prime factor. LCM is the product of the greatest power of every prime that appears in either number.',
++      'For two positive integers a and b: HCF(a, b) x LCM(a, b) = a x b. This rule works for two numbers only, not for three.',
++      'A number ending in 0 must have both 2 and 5 among its prime factors. So 6 raised to any power n can never end in 0, because 6 has only the prime factors 2 and 3.',
++      'To show a number is composite, rewrite it as a product of two numbers that are both greater than 1 (take out a common factor).',
++      'A rational number can be written as p/q with integers p and q (q not 0). An irrational number cannot.',
++      'Key fact: if a prime p divides a squared, then p also divides a.',
++      'Proof of irrationality is by contradiction. Assume the square root of p equals a/b in lowest terms, square both sides, show that p divides a and then that p divides b, which contradicts "a and b have no common factor".',
++      'The sum or difference of a rational number and an irrational number is irrational.',
++      'The product or quotient of a non-zero rational number and an irrational number is irrational.'
++    ]
++  },
++  {
++    id: 'class-10-social-science-partition-of-bengal-and-swadeshi-movement', course: 'c10-social',
++    cls: 10, subject: 'Social Science (History)', medium: 'Assamese', no: 1, title: 'Partition of Bengal and Swadeshi Movement',
++    summary: 'In 1905 the British divided Bengal, which led to a wide protest movement based on using Indian-made goods. The movement shaped later nationalism in India, and the partition was cancelled in 1911.',
++    points: [
++      'The partition of Bengal was announced in July 1905 by Viceroy Lord Curzon and took effect on 16 October 1905.',
++      'It created Eastern Bengal and Assam (capital Dhaka) and a separate Bengal with Calcutta as its capital.',
++      'The official reason was that Bengal was too large to govern well. The real aim was to weaken Bengali nationalism and divide Hindus and Muslims (divide and rule).',
++      'On 7 August 1905 a meeting at the Town Hall, Calcutta, passed the resolution to boycott foreign goods.',
++      'On 16 October 1905 Rabindranath Tagore led the Rakhi Bandhan programme as a sign of Hindu-Muslim unity.',
++      'It is called the Swadeshi movement because people were asked to use goods made in their own country (swa = own, desh = country) and to boycott foreign goods.',
++      'Education: the National Council of Education was set up in 1906, and Aurobindo Ghose became the first principal of the Bengal National College.',
++      'Industry: Acharya Prafulla Chandra Ray founded the Bengal Chemical and Pharmaceutical Works. Swadeshi cotton mills, handloom, soap and pottery works and swadeshi stores were also started.',
++      'The government tried to stop the movement with the Carlyle circular against students, bans on meetings and slogans, the Seditious Meetings Act (1907), the Newspapers (Incitement to Offences) Act (1908), the Indian Press Act (1910) and arrests of leaders.',
++      'At the Calcutta session of the Indian National Congress in 1906, presided over by Dadabhai Naoroji, Swaraj was declared the goal. In 1907, at Surat, the Congress split into Moderates and Extremists.',
++      'The Muslim League was founded at Dhaka in December 1906 under the lead of Nawab Salimullah.',
++      'The partition was annulled in 1911, announced at the Delhi Durbar on 12 December 1911, and the capital was moved from Calcutta to Delhi. Assam became a separate Chief Commissioner\'s province in 1912.'
++    ]
++  }
++  ,{
++    id: 'class-10-science-chemical-reactions-and-equations', course: 'c10-science',
++    cls: 10, subject: 'Science', medium: 'English', no: 1, title: 'Chemical Reactions and Equations',
++    summary: 'In a chemical reaction, substances change into new substances with new properties. We write a reaction as a balanced chemical equation, and we sort reactions into types such as combination, decomposition, displacement, double displacement and redox.',
++    points: [
++      'Signs that a chemical reaction has happened: a change of state, a change of colour, a gas given off, a change of temperature, or a precipitate (an insoluble solid) forming.',
++      'A chemical equation shows reactants on the left and products on the right with an arrow between them. An equation written without balancing is called a skeletal equation.',
++      'Law of conservation of mass: the total mass of the reactants equals the total mass of the products. So each element must have the same number of atoms on both sides, and that is why equations are balanced.',
++      'Balance an equation by changing the coefficients (the numbers in front of the formulas), never the formulas themselves. Example: 3Fe + 4H2O -> Fe3O4 + 4H2.',
++      'State symbols: (s) solid, (l) liquid, (g) gas and (aq) dissolved in water. Conditions such as heat, light or a catalyst are written above or below the arrow.',
++      'Combination reaction: two or more substances join to form one product. CaO + H2O -> Ca(OH)2 (slaking of lime) gives out heat. Reactions that give out heat are exothermic; burning of fuels and respiration are also exothermic.',
++      'Decomposition reaction: one substance breaks into two or more. It can be done by heat (CaCO3 -> CaO + CO2), by electricity (2H2O -> 2H2 + O2) or by light (2AgCl -> 2Ag + Cl2). These reactions take in energy, so they are endothermic.',
++      'Displacement reaction: a more reactive element pushes a less reactive element out of its compound. Fe + CuSO4 -> FeSO4 + Cu: the blue colour fades and brown copper settles on the iron.',
++      'Double displacement reaction: two compounds swap their ions. Na2SO4 + BaCl2 -> BaSO4 + 2NaCl, where BaSO4 is a white precipitate, so this is also a precipitation reaction.',
++      'Oxidation is the gain of oxygen or loss of hydrogen. Reduction is the loss of oxygen or gain of hydrogen. When both happen together it is a redox reaction: in CuO + H2 -> Cu + H2O, copper oxide is reduced and hydrogen is oxidised.',
++      'Corrosion is the slow damage of a metal by air and moisture: iron rusts, silver turns black and copper gets a green coating. Painting, oiling, galvanising (a zinc coat) and alloying help prevent it.',
++      'Rancidity is the bad smell and taste of oils and fats that have been oxidised. Antioxidants, airtight containers and flushing packets with nitrogen gas slow it down.'
++    ]
++  },
++  {
++    id: 'class-10-science-acids-bases-and-salts', course: 'c10-science',
++    cls: 10, subject: 'Science', medium: 'English', no: 2, title: 'Acids, Bases and Salts',
++    summary: 'Acids taste sour and turn blue litmus red, while bases taste bitter and feel soapy. An acid and a base react to make a salt and water. The pH scale tells how acidic or basic a solution is, and several important salts have everyday uses.',
++    points: [
++      'Acids turn blue litmus red and bases turn red litmus blue. Phenolphthalein is colourless in acid and pink in base. Methyl orange is red in acid and yellow in base.',
++      'Acid + metal -> salt + hydrogen gas, which burns with a pop sound. Zn + H2SO4 -> ZnSO4 + H2.',
++      'Acid + metal carbonate or hydrogencarbonate -> salt + carbon dioxide + water. Carbon dioxide turns lime water milky: Ca(OH)2 + CO2 -> CaCO3 + H2O.',
++      'Neutralisation: acid + base -> salt + water, for example HCl + NaOH -> NaCl + H2O. Metal oxides are basic and non-metal oxides are acidic.',
++      'In water an acid gives hydrogen ions (H+) and a base gives hydroxide ions (OH-). A base that dissolves in water is called an alkali.',
++      'Dissolving an acid or a base in water gives out a lot of heat. Always add the acid slowly to water, never water to the acid.',
++      'The pH scale runs from 0 to 14. pH 7 is neutral, below 7 is acidic and above 7 is basic. The lower the pH, the stronger the acid. It is measured with universal indicator or pH paper.',
++      'pH in daily life: tooth decay starts when the pH of the mouth falls below 5.5, rain with pH below 5.6 is acid rain, and antacids (bases) cure acidity. The sting of an ant or nettle contains methanoic acid, and baking soda eases it.',
++      'Common salt (NaCl) is the raw material for NaOH, chlorine, hydrogen, baking soda, washing soda and bleaching powder. Electrolysis of brine is the chlor-alkali process: 2NaCl + 2H2O -> 2NaOH + Cl2 + H2.',
++      'Bleaching powder (CaOCl2) is made by passing chlorine over dry slaked lime. It is used for bleaching and for disinfecting drinking water.',
++      'Baking soda (NaHCO3) is used as an antacid and in baking powder. On heating it gives sodium carbonate: 2NaHCO3 -> Na2CO3 + H2O + CO2.',
++      'Washing soda (Na2CO3.10H2O) is made by recrystallising sodium carbonate. It is used in making glass, soap and paper and for removing the hardness of water.',
++      'Water of crystallisation is the fixed number of water molecules in one formula unit of a salt. Blue copper sulphate (CuSO4.5H2O) turns white when heated because it loses this water.',
++      'Plaster of Paris (CaSO4.1/2H2O) is made by heating gypsum (CaSO4.2H2O). When mixed with water it sets hard as gypsum again, so it is used for supporting fractured bones and making toys and smooth surfaces.'
++    ]
++  },
++  {
++    id: 'class-10-science-metals-and-non-metals', course: 'c10-science',
++    cls: 10, subject: 'Science', medium: 'English', no: 3, title: 'Metals and Non-metals',
++    summary: 'Metals and non-metals differ in their physical and chemical properties. The reactivity series shows which metals displace others, the way a metal is extracted depends on its reactivity, and corrosion can be prevented in several ways.',
++    points: [
++      'Metals are lustrous, hard (but sodium and potassium are soft), malleable, ductile, sonorous and good conductors of heat and electricity. Most are solid with high melting points; mercury is a liquid.',
++      'Non-metals are usually dull, brittle and poor conductors. Exceptions: graphite (a form of carbon) conducts electricity, diamond is the hardest natural substance, and iodine is lustrous.',
++      'Metals burn in oxygen to form metal oxides, which are basic. Aluminium oxide and zinc oxide react with both acids and bases, so they are called amphoteric oxides.',
++      'Reaction with water: sodium and potassium react violently, magnesium reacts with hot water, aluminium, iron and zinc react with steam, while lead, copper, silver and gold do not react.',
++      'Reactivity series, from most to least reactive: K, Na, Ca, Mg, Al, Zn, Fe, Pb, H, Cu, Hg, Ag, Au.',
++      'Metals above hydrogen in the series react with dilute acids and give hydrogen gas. Copper does not react with dilute acids.',
++      'Displacement: a more reactive metal displaces a less reactive metal from its salt solution, for example Zn + CuSO4 -> ZnSO4 + Cu.',
++      'Ionic compounds form when a metal gives electrons to a non-metal, as in sodium chloride. They are hard, brittle solids with high melting and boiling points, they dissolve in water, and they conduct electricity when molten or dissolved but not as solids.',
++      'An ore is a mineral from which a metal can be extracted profitably. The earthy impurities in it are called gangue.',
++      'Extraction depends on reactivity. Very reactive metals (K to Al) are obtained by electrolysis of their molten compounds. Metals in the middle (Zn, Fe, Pb) are changed to oxides by roasting (for sulphides) or calcination (for carbonates) and then reduced with carbon. Metals low in the series (Hg, Cu) are got just by heating the ore.',
++      'Thermit reaction: Fe2O3 + 2Al -> 2Fe + Al2O3 gives out so much heat that the iron is molten; it is used to join railway tracks.',
++      'Electrolytic refining gives pure metal: the impure metal is the anode, a thin strip of pure metal is the cathode and a solution of the metal salt is the electrolyte.',
++      'Rusting of iron needs both oxygen and moisture. Prevent it by painting, oiling, greasing, galvanising (zinc coat), chrome plating or making alloys.',
++      'An alloy is a homogeneous mixture of a metal with other metals or non-metals. Brass is copper and zinc, bronze is copper and tin, and stainless steel is iron with nickel and chromium.'
++    ]
++  },
++  {
++    id: 'class-10-maths-pair-of-linear-equations-in-two-variables', course: 'c10-maths',
++    cls: 10, subject: 'Mathematics', medium: 'Assamese', no: 3, title: 'Pair of Linear Equations in Two Variables',
++    summary: 'A pair of linear equations in two variables can be solved by drawing graphs or by algebraic methods. The ratios of the coefficients tell us in advance whether the pair has one solution, many solutions or none.',
++    points: [
++      'The standard form of a pair is a1x + b1y + c1 = 0 and a2x + b2y + c2 = 0, where in each equation a and b are not both zero.',
++      'The graph of each equation is a straight line. A solution of the pair is a point that lies on both lines.',
++      'If a1/a2 is not equal to b1/b2, the lines intersect at one point, so there is exactly one solution. The pair is consistent.',
++      'If a1/a2 = b1/b2 = c1/c2, the lines coincide, so there are infinitely many solutions. The pair is consistent (also called dependent).',
++      'If a1/a2 = b1/b2 but c1/c2 is different, the lines are parallel, so there is no solution. The pair is inconsistent.',
++      'Substitution method: write one variable in terms of the other from one equation, put it into the other equation, solve for one variable, then find the second.',
++      'Elimination method: multiply the equations so that the coefficients of one variable become equal, add or subtract to remove that variable, solve, then back-substitute.',
++      'Cross-multiplication method: x/(b1c2 - b2c1) = y/(c1a2 - c2a1) = 1/(a1b2 - a2b1), which works when a1b2 - a2b1 is not zero.',
++      'For word problems, take two unknowns as x and y, turn the two conditions into two equations, solve them and check the answer against the story.'
++    ]
++  },
++  {
++    id: 'class-10-maths-quadratic-equations', course: 'c10-maths',
++    cls: 10, subject: 'Mathematics', medium: 'Assamese', no: 4, title: 'Quadratic Equations',
++    summary: 'A quadratic equation has the form ax^2 + bx + c = 0. We can find its roots by factorisation, by completing the square or by the quadratic formula, and the discriminant tells what kind of roots to expect.',
++    points: [
++      'The standard form is ax^2 + bx + c = 0 where a, b, c are real numbers and a is not 0. If a were 0 the equation would be linear.',
++      'The roots (zeroes) of the equation are the values of x that satisfy it. A quadratic equation has at most two real roots.',
++      'Factorisation: split the middle term using two numbers whose product is ac and whose sum is b, factorise by grouping, then put each factor equal to zero.',
++      'Completing the square: divide by a, move the constant to the right side, add the square of half the coefficient of x to both sides, then take the square root.',
++      'Quadratic formula: x = (-b +/- sqrt(b^2 - 4ac)) / 2a. It works for every quadratic equation that has real roots.',
++      'Discriminant D = b^2 - 4ac. If D > 0 there are two distinct real roots, if D = 0 there are two equal real roots, and if D < 0 there are no real roots.',
++      'In word problems, form the equation from the conditions, solve it, and reject any root that does not fit the situation, such as a negative length or age.'
++    ]
++  },
++  {
++    id: 'class-10-maths-arithmetic-progressions', course: 'c10-maths',
++    cls: 10, subject: 'Mathematics', medium: 'Assamese', no: 5, title: 'Arithmetic Progressions',
++    summary: 'An arithmetic progression (AP) is a list of numbers in which each term comes from the previous one by adding the same fixed number. This chapter gives formulas for the nth term and for the sum of the first n terms.',
++    points: [
++      'In an AP the difference between any term and the one before it is always the same. This fixed number is the common difference d, so d = a(n+1) - a(n).',
++      'An AP with first term a and common difference d is a, a + d, a + 2d, a + 3d, and so on.',
++      'If d is positive the AP increases, if d is negative it decreases, and if d is 0 all the terms are equal.',
++      'The nth term is a(n) = a + (n - 1)d.',
++      'A finite AP has a last term, usually written l. An infinite AP never ends.',
++      'The sum of the first n terms is S(n) = n/2 x [2a + (n - 1)d]. When the last term l is known, S(n) = n/2 x (a + l).',
++      'The nth term can also be found from sums: a(n) = S(n) - S(n - 1).',
++      'Three numbers a, b, c are in AP exactly when 2b = a + c, that is, the middle term is the average of the other two.'
++    ]
++  }
++];
++
++// Each note also carries its Assamese version (freenotes-as.js): as = { title, summary, points[] }.
++// Assamese-medium notes open in Assamese first in the app; every note has both languages.
++const AS = require('./freenotes-as');
++module.exports = NOTES.map(n => Object.assign({}, n, { as: AS[n.id] }));
+diff --git a/public/index.html b/public/index.html
+index b7346a2..1a63cae 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -157,6 +157,7 @@ h2.sec{margin:26px 0 8px;font-size:20px}
+ <aside id="side" class="side" aria-label="Menu" aria-hidden="true" inert></aside>
+ <div id="inst" class="inst" hidden></div>
+ <div id="app"><h1 style="font-size:26px;margin-top:14px">Orbit Tutorial</h1><p class="mut">Free AI study helper for school students in Assam: textbook-style answers, diagrams and translations for Class 7, Class 8 and Class 10 (English, Mathematics, Science). Log in with Google to start.</p><p class="mut">Loading…</p></div>
++<footer class="mut" style="text-align:center;font-size:13px;padding:18px 12px 28px"><a href="/learn/" style="color:inherit">All classes and subjects</a> · <a href="/seba-class-10-notes/" style="color:inherit">SEBA Class 10 notes</a> · <a href="/notes/" style="color:inherit">Free notes</a></footer>
+ <script src="/config.js"></script>
+ <script src="/limit-msg.js"></script>
+ <script src="/revision-core.js"></script>
+@@ -572,11 +573,30 @@ function settingsHTML(){
+  <p class="mut" style="margin-top:8px">AI awaaz sirf tab chalti hai jab parent ki Gemini key lagi ho (Advanced AI Features), uska kharcha parent ki key se hota hai. Assamese ke liye aksar phone mein awaaz nahi hoti, isliye wahan AI awaaz kaam aati hai.</p>`;
+ }
+ // ---- Google login + cloud sync (Firebase). cloud.js sets window.CLOUD; if it fails to load (offline) the app still works. ----
+-let USER=null,LOGINERR='',SYNCT=null,AUTH_READY=false,CLOUDFAIL='';   // AUTH_READY: Firebase has told us if someone is logged in
+-function loginHTML(){
+- const h='<h1 style="font-size:26px;margin-top:14px">Log in</h1>';
+- if(USER)return h+`<div class="soon" data-clarity-mask="true">${USER.photo?`<img src="${esc(USER.photo)}" alt="" width="64" height="64" style="border-radius:50%" referrerpolicy="no-referrer">`:I.login}<p><b>${esc(USER.name||'')}</b><br><span class="mut" style="font-size:15px">${esc(USER.email||'')}</span></p></div><div style="text-align:center"><button class="btn" data-act="logout">Log out</button></div>`;
+- return h+`<p class="mut" style="margin-top:8px">Google se log in karo. Tumhare favourite, pinned aur settings har phone par mil jayenge. AI answer ke liye log in zaroori hai.</p><button class="btn" data-act="login" ${window.CLOUD?'':'disabled'}>Google se Log in</button>${window.CLOUD?'':'<p class="mut" style="margin-top:10px">Login abhi load nahi hua. Internet check karke page refresh karo.</p>'}${LOGINERR?`<p class="err">${esc(LOGINERR)}</p>`:''}`;
++let USER=null,LOGINERR='',SYNCT=null,AUTH_READY=false,CLOUDFAIL='';
++// ---- Free contents (no login): only the ready-made notes from /free-notes.json. No AI, videos, favourites or other features. ----
++let FREE=false,FREE_ID=null,FREE_NOTES=null,FREE_ERR=false,FREE_BUSY=false,FREE_LANG=null;   // FREE_LANG: null = default per note, or 'en' / 'as'
++{const m=/^#free(?:\/([\w-]+))?$/.exec(location.hash);if(m){FREE=true;FREE_ID=m[1]||null}}
++function freeLoad(){
++ if(FREE_NOTES||FREE_BUSY||FREE_ERR)return;FREE_BUSY=true;
++ fetch('/free-notes.json').then(r=>{if(!r.ok)throw new Error('n');return r.json()}).then(d=>{FREE_NOTES=Array.isArray(d)?d:[]}).catch(()=>{FREE_ERR=true}).finally(()=>{FREE_BUSY=false;if(FREE)draw()});
++}
++function freeSet(on,id){FREE_ERR=false;FREE=on;FREE_ID=on?(id||null):null;try{history.replaceState(null,'',on?'#free'+(FREE_ID?'/'+FREE_ID:''):location.pathname+location.search)}catch(e){}draw()}
++function freeHTML(){
++ freeLoad();
++ const top=`<div class="logo" style="margin:14px 0">${LOGO}Orbit Tutorial</div>`;
++ const cta=`<div class="card" style="text-align:center"><p style="margin:0;font-weight:600">AI answers, videos aur baaki features ke liye log in karo</p><button class="btn" data-act="login" ${window.CLOUD?'':'disabled'}>Google se Log in</button>${LOGINERR?`<p class="err">${esc(LOGINERR)}</p>`:''}</div>`;
++ const back=(act,label)=>`<button class="back" data-act="${act}">${I.back}<span>${esc(label)}</span></button>`;
++ const fl=n=>FREE_LANG||(/Assamese/.test((n&&n.medium)||'')?'as':'en');   // Assamese-medium notes open in Assamese first; the person can switch
++ const chips=cur=>`<div class="chips" role="group" aria-label="Language"><button class="chip" data-act="freelang" data-v="en" aria-pressed="${cur==='en'}">English</button><button class="chip" data-act="freelang" data-v="as" aria-pressed="${cur==='as'}">অসমীয়া</button></div>`;
++ if(!FREE_NOTES)return top+back('freeexit','Login page')+(FREE_ERR?`<p class="err">Notes load nahi hue. Internet check karke page refresh karo.</p>`:`<p class="mut">Notes load ho rahe hain…</p>`);
++ const n=FREE_ID&&FREE_NOTES.find(x=>x.id===FREE_ID);
++ if(n){
++  const L=fl(n),as=L==='as'&&n.as,d=as?n.as:n,sub={Mathematics:'গণিত',Science:'বিজ্ঞান','Social Science':'সমাজ বিজ্ঞান','Social Science (History)':'সমাজ বিজ্ঞান (ইতিহাস)','English Grammar':'ইংৰাজী ব্যাকৰণ'}[n.subject]||n.subject;
++  const url=`https://orbittutorial.web.app/notes/${n.id}${as?'-as':''}.html`;
++  return top+back('freeback','Free notes')+chips(as?'as':'en')+`<div class="mut"${as?' lang="as"':''}>${as?'শ্ৰেণী':'Class'} ${n.cls} · ${esc(as?sub:n.subject)}</div>`+`<div${as?' lang="as"':''}>`+head1(`${as?'অধ্যায়':'Chapter'} ${n.no}: ${d.title}`)+`<div class="card"><p style="margin:0">${esc(d.summary)}</p><h2 class="sec" style="margin-top:14px">${as?'মূল কথা':'Key points'}</h2><ul style="padding-left:20px;margin:6px 0 0">${d.points.map(p=>`<li style="margin:7px 0">${esc(p)}</li>`).join('')}</ul></div></div>`+`<a class="btn" style="display:inline-block;text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(`${d.title} (Class ${n.cls} ${n.subject}) notes: ${url}`)}">WhatsApp par share karo</a>`+cta;
++ }
++ return top+back('freeexit','Login page')+head1('Free notes')+`<p class="mut">Bina login ke sirf ready-made notes. English aur অসমীয়া dono mein.</p>`+chips(FREE_LANG||'en')+(FREE_NOTES.length?FREE_NOTES.map(x=>{const as=fl(x)==='as'&&x.as;return `<button class="card" data-act="freenote" data-id="${esc(x.id)}" style="display:block;width:100%;text-align:left;border:0;color:inherit;font:inherit;cursor:pointer"><div class="mut">Class ${x.cls} · ${esc(x.subject)}</div><b${as?' lang="as"':''}>${as?'অধ্যায়':'Chapter'} ${x.no}: ${esc(as?x.as.title:x.title)}</b></button>`}).join(''):`<p class="mut">Abhi koi free note nahi hai.</p>`)+cta;
+ }
+ function syncSoon(){
+  if(!USER||!window.CLOUD)return;
+@@ -584,7 +604,7 @@ function syncSoon(){
+  SYNCT=setTimeout(()=>window.CLOUD.push({saved:SAVED,pins:PINS,settings:ST}).catch(e=>console.warn('sync failed',e)),1500);
+ }
+ window.onCloudFail=e=>{CLOUDFAIL=String((e&&e.message)||e||'unknown');console.error('cloud.js failed',e);if(navigator.onLine&&!USER)draw()};
+-window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u)}if(DATA||!u)draw()};
++window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(u&&FREE){FREE=false;FREE_ID=null;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u)}if(DATA||!u)draw()};
+ // First login on a device: merge this device's data with the cloud. After that the cloud copy wins.
+ window.onCloudData=cd=>{
+  if(window.RECALL&&RECALL.sync)RECALL.sync();   // Recall tracker + topic records: phone <-> account
+@@ -714,6 +734,8 @@ function gateHTML(){
+  <p style="margin:18px 0 4px;font-size:20px;font-weight:600">Shuru karne ke liye log in karo</p>
+  <p class="mut" style="max-width:320px;margin:0 auto">Google se ek tap me login. Tumhare favourite, pinned aur settings har phone par saath rahenge.</p>
+  <button class="btn" data-act="login" ${window.CLOUD?'':'disabled'} style="font-size:17px;padding:14px 22px;margin-top:22px">Google se Continue</button>
++ <button class="btn" data-act="freeopen" style="background:transparent;color:inherit;border:1px solid var(--ln);font-size:16px;padding:12px 22px;margin-top:12px">Free contents</button>
++ <p class="mut" style="max-width:320px;margin:8px auto 0;font-size:13px">Bina login ke sirf ready-made notes.</p>
+  ${CLOUDFAIL&&!window.CLOUD?`<p class="err" style="max-width:320px">Login system load nahi hua. Page refresh karo. Error: ${esc(CLOUDFAIL)}</p>`:''}${LOGINERR?`<p class="err" style="max-width:320px">${esc(LOGINERR)}</p>`:''}</div>`;
+ }
+ // Which screen is the student on? (sent to Google Analytics as a page_view; ids and numbers only)
+@@ -724,7 +746,7 @@ function screenInfo(){
+  if(n.org)o.org=n.org;if(n.cls)o.cls=n.cls;if(n.sub)o.sub=n.sub;if(n.med)o.med=n.med;if(n.ch)o.ch=n.ch;
+  return o}
+ function draw(){
+- if((AUTH_READY||(CLOUDFAIL&&navigator.onLine))&&!USER){openSide(false,true);$('#app').innerHTML=PARENT_LINK&&window.PARENT_KEY?`<div class="logo" style="margin:14px 0">${LOGO}Orbit Tutorial</div>`+PARENT_KEY.viewHTML():gateHTML();window.scrollTo(0,0);if(window.Analytics)window.Analytics.screen({name:'login_gate'});return}
++ if((AUTH_READY||(CLOUDFAIL&&navigator.onLine))&&!USER){openSide(false,true);$('#app').innerHTML=PARENT_LINK&&window.PARENT_KEY?`<div class="logo" style="margin:14px 0">${LOGO}Orbit Tutorial</div>`+PARENT_KEY.viewHTML():FREE?freeHTML():gateHTML();window.scrollTo(0,0);if(window.Analytics)window.Analytics.screen({name:FREE&&!(PARENT_LINK&&window.PARENT_KEY)?'free_notes':'login_gate'});return}
+  if(!DATA)return;
+  const d=DATA,y=window.scrollY;
+  let body;
+@@ -1106,6 +1128,11 @@ document.addEventListener('click',e=>{
+  else if(act==='qvdel'){if(window.QVideo)window.QVideo.remove(id)}
+  else if(act==='login'){LOGINERR='';window.CLOUD.login().catch(e=>{const c=e&&e.code;LOGINERR=c==='auth/popup-closed-by-user'?'':c==='auth/operation-not-allowed'?'Firebase Console me Authentication → Google enable karna baaki hai.':c==='auth/unauthorized-domain'?'Ye website Firebase ke Authorized domains me nahi hai.':'Login nahi ho paya. Dobara try karo.';draw()})}
+  else if(act==='logout'){window.CLOUD.logout()}
++ else if(act==='freelang'){FREE_LANG=b.dataset.v==='as'?'as':'en';draw()}
++ else if(act==='freeopen')freeSet(true);
++ else if(act==='freenote')freeSet(true,id);
++ else if(act==='freeback')freeSet(true);
++ else if(act==='freeexit')freeSet(false);
+  else if(act==='instgo')instGo();
+  else if(act==='instlater'){instSnooze();instDraw()}
+ });
+diff --git a/seo-content/c10-science-1.json.example b/seo-content/c10-science-1.json.example
+new file mode 100644
+index 0000000..75336ab
+--- /dev/null
++++ b/seo-content/c10-science-1.json.example
+@@ -0,0 +1,7 @@
++{
++  "summary": "Apne shabdon mein 3-4 line ka chapter saar (teacher se check karwao). Textbook se copy mat karo.",
++  "keyPoints": ["Key point 1", "Key point 2", "Key point 3"],
++  "answers": {
++    "c1-p6-1": "Reviewed answer yahan likho. Key = question id (public/questions.json mein dekho)."
++  }
++}
+diff --git a/tests/free-notes.test.js b/tests/free-notes.test.js
+new file mode 100644
+index 0000000..27e6961
+--- /dev/null
++++ b/tests/free-notes.test.js
+@@ -0,0 +1,20 @@
++// Free notes (shown without login) must be well-formed and must not leak exercise answers.
++const assert = require('assert');
++const notes = require('../freenotes');
++const ids = new Set();
++for (const n of notes) {
++  assert(/^[a-z0-9-]+$/.test(n.id), 'bad id ' + n.id);
++  assert(!ids.has(n.id), 'duplicate id ' + n.id);
++  ids.add(n.id);
++  assert(/^c\d+-[a-z-]+$/.test(n.course), 'course id missing in ' + n.id);
++  assert(Number.isInteger(n.cls) && n.subject && n.title && Number.isInteger(n.no), 'missing field in ' + n.id);
++  assert(typeof n.summary === 'string' && n.summary.length > 40, 'summary too short in ' + n.id);
++  assert(Array.isArray(n.points) && n.points.length >= 5 && n.points.every(p => typeof p === 'string' && p.length > 10), 'points in ' + n.id);
++  assert(n.as && typeof n.as.title === 'string' && typeof n.as.summary === 'string', 'Assamese version missing in ' + n.id);
++  assert(Array.isArray(n.as.points) && n.as.points.length === n.points.length, 'Assamese points must match English points in ' + n.id);
++  assert(/[\u0980-\u09FF]/.test(n.as.title + n.as.summary + n.as.points.join('')), 'Assamese text must use Assamese script in ' + n.id);
++  assert(n.as.points.every(p => /[\u0980-\u09FF]/.test(p)), 'every Assamese point needs Assamese script in ' + n.id);
++  const all = JSON.stringify(n);
++  assert(!/answer key|Ex \d|Exercise \d/i.test(all), 'exercise answers must not be in free notes: ' + n.id);
++}
++console.log((notes.length * 10) + ' passed, 0 failed');

@@ -1,0 +1,7 @@
+{
+  "summary": "Apne shabdon mein 3-4 line ka chapter saar (teacher se check karwao). Textbook se copy mat karo.",
+  "keyPoints": ["Key point 1", "Key point 2", "Key point 3"],
+  "answers": {
+    "c1-p6-1": "Reviewed answer yahan likho. Key = question id (public/questions.json mein dekho)."
+  }
+}

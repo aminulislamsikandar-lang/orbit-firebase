@@ -2,7 +2,7 @@
   "hosting": {
     "site": "orbittutorial",
     "public": "public",
-    "predeploy": ["node build-questions.js"],
+    "predeploy": ["node build-questions.js", "node build-seo.js"],
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "headers": [
       {
