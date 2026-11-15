@@ -195,7 +195,8 @@
       await CLOUD().del(id);
       (d.chapters || []).forEach(ch => (ch.questions || []).forEach(q => forget('cq_' + id + '_' + q.k)));
       S.own = S.own.filter(x => x.id !== id); S.page = 'list'; S.cur = ''; S.msg = 'Course hata diya.'; cacheSave(); apply();
-    } catch (e) { S.err = errText(e); }
+      if (typeof VIEW !== 'undefined' && VIEW !== 'custom') { S.busy = false; g.go('custom'); return; }
+    } catch (e) { S.err = errText(e); if (typeof VIEW !== 'undefined' && VIEW !== 'custom') { S.busy = false; S.page = 'list'; g.go('custom'); return; } }
     S.busy = false; redraw(true);
   }
   async function setShared(on) { const d = cur(); if (d) await save({ ...d, shared: !!on }, () => { S.msg = on ? 'Sharing chalu. Link kisi ko bhi bhejo, wo sirf dekh sakta hai.' : 'Sharing band. Purana link ab kaam nahi karega.'; }); }
@@ -346,7 +347,7 @@
 
   function listHTML() {
     const card = (d, own) => `<div class="card"><div class="rtitle">${esc(title(d))}</div><div class="rsub">${esc(sub(d))}${own && d.shared ? ' · Shared' : ''}${own ? '' : ' · Sirf dekh sakte ho'}</div>
-      <div class="ccrow"><button class="btn alt" data-cc="open" data-id="${d.id}">Open course</button>${own ? `<button class="btn alt" data-cc="manage" data-id="${d.id}">Edit / Share</button>` : `<button class="btn alt" data-cc="copy" data-id="${d.id}">Meri copy banao</button><button class="lnk" data-cc="unsave" data-id="${d.id}">Hatao</button>`}</div></div>`;
+      <div class="ccrow"><button class="btn alt" data-cc="open" data-id="${d.id}">Open course</button>${own ? `<button class="btn alt" data-cc="manage" data-id="${d.id}">Edit / Share</button><button class="btn alt ccdel" data-cc="delcourse" data-id="${d.id}" ${S.busy ? 'disabled' : ''}>Delete</button>` : `<button class="btn alt" data-cc="copy" data-id="${d.id}">Meri copy banao</button><button class="lnk" data-cc="unsave" data-id="${d.id}">Hatao</button>`}</div></div>`;
     return h1('My Courses') + `<p class="mut">Apna school, class, subject aur chapter banao. Chapter ke questions ki photo lo, AI questions padh leta hai. Phir har question ka AI Answer, translate aur diagram milta hai.</p>
       <button class="btn" data-cc="new">+ Add custom course</button>` + note()
       + (S.loading ? '<p class="mut">Load ho raha hai…</p>' : '')
@@ -380,7 +381,7 @@
            <input readonly class="ccl" value="${esc(url)}" aria-label="Share link" onclick="this.select()">
            <div class="ccrow"><button class="btn alt" data-cc="copylink">Link copy karo</button><a class="btn alt" style="text-decoration:none;display:inline-block" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text=${encodeURIComponent('Orbit Tutorial par meri ' + d.subject + ' (Class ' + d.class + ') course dekho: ' + url)}">WhatsApp</a><button class="lnk" data-cc="shareoff">Sharing band karo</button></div>`
         : `<div class="mut">Abhi sirf aap ye course dekh sakte ho. Share karoge to link wala koi bhi student ise dekh sakta hai.</div><div class="ccrow"><button class="btn alt" data-cc="shareon" ${S.busy ? 'disabled' : ''}>Link se share karo</button></div>`)
-      + `</div><div style="margin-top:26px"><button class="lnk" data-cc="delcourse" data-id="${d.id}">Ye poora course delete karo</button></div>`;
+      + `</div><div style="margin-top:26px"><button class="btn alt ccdel" data-cc="delcourse" data-id="${d.id}" ${S.busy ? 'disabled' : ''}>Ye poora course delete karo</button></div>`;
   }
   function chapterHTML() {
     const d = cur(), w = S.work; if (!d || !w) return back('list', 'My Courses') + '<p class="mut">Chapter nahi mila.</p>';
@@ -422,7 +423,7 @@
   // Small bar on the subject's chapter list (index page) of a custom course.
   function courseBar(c) {
     if (!c || !c.custom) return '';
-    return c.own ? `<div class="chips"><button class="chip" data-cc="manage" data-id="${c.docId}">Edit / Share course</button></div>`
+    return c.own ? `<div class="chips"><button class="chip" data-cc="manage" data-id="${c.docId}">Edit / Share course</button><button class="chip" data-cc="delcourse" data-id="${c.docId}">Delete course</button></div>`
       : `<div class="chips"><span class="mut" style="align-self:center">Share hua course: sirf dekh sakte ho.</span><button class="chip" data-cc="copy" data-id="${c.docId}">Meri copy banao</button></div>`;
   }
 
@@ -439,7 +440,7 @@
 .ccnotes{width:100%;font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:10px 12px}.ccq details{margin-top:8px}.ccq summary{cursor:pointer}
 .ccsm{width:76px!important;padding:6px 10px!important;font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--ln);border-radius:10px}
 .ccrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}.ccrow .btn{margin-top:0}
-.btn.alt{background:transparent;color:var(--tx);border:1px solid var(--ln)}
+.btn.alt{background:transparent;color:var(--tx);border:1px solid var(--ln)}.btn.ccdel{color:#d9534f;border-color:#d9534f}
 .ccbar{position:sticky;bottom:0;background:var(--bg);padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));margin-top:14px}.ccbar .btn{width:100%;margin-top:0}`;
     doc.head.appendChild(st);
   }
