@@ -1,16 +1,37 @@
-// Orbit service worker: keeps the app page and fonts so the app opens offline.
+// Orbit service worker: keeps the app page, its scripts and the question lists so chapters open offline.
 // API calls (/api/*) are never cached here; answers are stored by the page itself.
-const SHELL = 'orbit-shell-v30';
+// robots.txt, sitemap.xml and the Google verification file are NOT touched: they always go to the server.
+const SHELL = 'orbit-shell-v33';
 const FONTS = 'orbit-fonts-v1';
+const ASSETS = 'orbit-assets-v1';
+
+// Same-origin files the app needs to run offline (JSON lists + scripts + icons).
+const CORE = [
+  '/config.js', '/custom-course.js', '/warp-loader.js', '/team.js', '/mathvideo-admin.js',
+  '/narration-sync.js', '/narration-sprites.js', '/mathvideo-player.js', '/narration-loader.js',
+  '/voiceover.js', '/voiceover-admin.js', '/narration-admin.js', '/video-admin.js', '/qvideo.js',
+  '/analytics.js', '/parent-key.js', '/recall.js', '/bolo-core.js', '/bolo.js', '/vlab.js', '/models3d.js', '/report.js', '/avatar.js', '/cloud.js',
+  '/limit-msg.js', '/revision-core.js', '/answer-check.js', '/quiz.js', '/aireview.js', '/classroom.js', '/weekly.js', '/voice-tutor.js',
+  '/firebase-config.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png',
+  '/questions.json', '/videos.json', '/publicvideos.json'
+];
+const CORE_SET = new Set(CORE);
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(SHELL).then(c => c.add('/')).catch(() => {}).then(() => self.skipWaiting()));
+  e.waitUntil(
+    Promise.all([
+      caches.open(SHELL).then(c => c.add('/')).catch(() => {}),
+      // One failed file must not block the install, so each is added on its own.
+      caches.open(ASSETS).then(c => Promise.all(CORE.map(u => c.add(u).catch(() => {}))))
+    ]).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', e => {
+  const keep = [SHELL, FONTS, ASSETS];
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== SHELL && k !== FONTS).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => !keep.includes(k)).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -31,10 +52,17 @@ self.addEventListener('fetch', e => {
   const r = e.request;
   if (r.method !== 'GET') return;
   const u = new URL(r.url);
+  const same = u.origin === location.origin;
   // Only the app's home page gets the saved app page. Other addresses (robots.txt, sitemap.xml, the Google verification file) go to the server as normal.
-  if (r.mode === 'navigate' && u.origin === location.origin && (u.pathname === '/' || u.pathname === '/index.html')) {
+  if (r.mode === 'navigate' && same && (u.pathname === '/' || u.pathname === '/index.html')) {
     e.respondWith(staleWhileRevalidate(SHELL, '/', r));
   } else if (u.hostname === 'fonts.googleapis.com' || u.hostname === 'fonts.gstatic.com') {
     e.respondWith(staleWhileRevalidate(FONTS, r, r));
+  } else if (same && CORE_SET.has(u.pathname)) {
+    // Ignore any ?query so /questions.json?x=1 and /questions.json share one saved copy.
+    e.respondWith(staleWhileRevalidate(ASSETS, u.pathname, r));
+  } else if (u.hostname === 'www.gstatic.com' && u.pathname.indexOf('/firebasejs/') === 0) {
+    // Firebase login/sync code, so the account still loads on a weak connection.
+    e.respondWith(staleWhileRevalidate(ASSETS, r, r));
   }
 });

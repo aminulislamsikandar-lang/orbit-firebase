@@ -7,6 +7,7 @@ let pass = 0, fail = 0;
 const t = (name, ok, extra) => { if (ok) pass++; else { fail++; console.log('FAIL  ' + name + (extra ? '  ' + extra : '')); } };
 if (!JSDOM) { console.log('SKIP  jsdom not installed (npm i -D jsdom) - Recall voice tests not run'); console.log('0 passed, 0 failed'); process.exit(0); }
 const src = fs.readFileSync(path.join(ROOT, 'public', 'recall.js'), 'utf8');
+const revSrc = fs.readFileSync(path.join(ROOT, 'public', 'revision-core.js'), 'utf8');   // index.html loads it before recall.js
 const wait = () => new Promise(r => setTimeout(r, 15));
 
 function boot(opts) {
@@ -29,10 +30,11 @@ function boot(opts) {
     Object.defineProperty(w.navigator, 'mediaDevices', { value: { getUserMedia: async () => { if (st.denied) { const e = new Error('no'); e.name = 'NotAllowedError'; throw e; } return { getTracks: () => [{ stop() { st.tracksStopped++; } }] }; } }, configurable: true });
   }
   w.api = async (p, body) => { calls.push({ p, body }); if (st.fail) throw new Error(st.fail); return st.reply || { total: 72, scores: { c: 70, f: 80, t: 60, l: 70, m: 80 }, weights: { c: 30, f: 25, t: 20, l: 15, m: 10 }, got: ['a'], miss: ['b'], wrong: [], revise: 'Revise b.', heard: 'photosynthesis mein plants', left: 0 }; };
-  const custom = opts.custom ? ',{id:"cc-abc",custom:true,orgId:"u-1",class:9,subject:"Geography",chapters:[{no:1,title:"My chapter",sections:[{title:"S",questions:[{id:"cq1",no:1,text:"Q"}]}]}]}' : '';
+  const custom = opts.custom ? ',{id:\"cc-abc\",custom:true,orgId:\"u-1\",class:9,subject:\"Geography\",chapters:[{no:1,title:\"My chapter\",notes:\"' + 'Plants make food by photosynthesis. '.repeat(8) + '\",sections:[{title:\"Questions\",questions:[{id:\"cq1\",no:1,text:\"Q\"}]}]},{no:2,title:\"No notes yet\",notes:\"\",sections:[{title:\"Questions\",questions:[{id:\"cq2\",no:1,text:\"Q2\"}]}]}]}' : '';
   w.eval('var ST={rvoice:"' + (opts.mode || 'ai') + '"};var USER={uid:"u1"};var DATA={courses:[{id:"c7-science",class:7,subject:"Science",chapters:[{no:1,title:"Nutrition in Plants",sections:[{title:"S",questions:[{id:"q1",no:1,text:"Q"}]}]}]}' + custom + ']};function draw(){document.getElementById("app").innerHTML=RECALL.viewHTML()}');
+  if (opts.key !== false) w.eval('window.PARENT_KEY={has:function(){return true}}');   // voice needs a parent key (Task 4)
   if (opts.allowed !== false) w.localStorage.setItem('orbit.recall.voiceok.u1', '1');
-  w.eval(src); w.eval('draw()');
+  w.eval(revSrc); w.eval(src); w.eval('draw()');
   const d = w.document;
   const change = (id, v) => { const el = d.getElementById(id); if (v !== undefined) { if (el.type === 'checkbox') el.checked = v; else el.value = v; } el.dispatchEvent(new w.Event('change', { bubbles: true })); };
   return { w, d, mrs, srs, gos, calls, st, change, click: sel => { const el = d.querySelector(sel); el && el.click(); }, tick: () => ticks.forEach(f => f && f()), timer: () => (d.getElementById('rcTimer') || {}).textContent, app: () => d.getElementById('app').textContent,
@@ -40,6 +42,51 @@ function boot(opts) {
 }
 
 (async () => {
+  // Phase 4 / Task 24: handwritten photo answer
+  const stub = 'window.CUSTOM={shrink:async function(f){ if(f.name==="bad.txt") throw new Error("Ye photo khul nahi paayi. jpg ya png photo lo."); return {mime:"image/jpeg",image:"QUJD".repeat(300)}; }}';
+  const pick = (bb, name) => { const i = bb.d.getElementById('rcPhotoFile'); Object.defineProperty(i, 'files', { value: [{ name }], configurable: true }); i.dispatchEvent(new bb.w.Event('change', { bubbles: true })); };
+  { const pb = boot({ key: false }); pb.w.eval(stub); pb.change('rcTopic', 'c7-science|1');
+    t('photo: button and hidden file input are on screen', !!pb.d.querySelector('[data-rc=photo]') && !!pb.d.getElementById('rcPhotoFile') && /Photo se answer/.test(pb.app()));
+    pick(pb, 'ans.jpg'); await wait(); await wait();
+    t('photo: thumbnail, "Photo ready" and Hatao appear, button says Doosri photo', !!pb.d.querySelector('img[alt="Aapke answer ki photo"]') && /Photo ready hai/.test(pb.app()) && !!pb.d.querySelector('[data-rc=photodel]') && /Doosri photo/.test(pb.app()));
+    pb.click('[data-rc=photodel]');
+    t('photo: Hatao removes it', !pb.d.querySelector('img[alt="Aapke answer ki photo"]'));
+    pick(pb, 'ans.jpg'); await wait(); await wait();
+    pb.click('[data-rc=go]'); await wait(); await wait();
+    const c = pb.calls[0];
+    t('photo: Evaluate sends {mime, data} as photo, no audio, no typed text needed', c && c.p === '/api/recall/evaluate' && c.body.photo && c.body.photo.mime === 'image/jpeg' && /^[A-Za-z0-9+/]+=*$/.test(c.body.photo.data) && c.body.audio === undefined);
+    t('photo: gone from the screen after it was checked and never written to storage', !/Photo ready hai/.test(pb.app()) && !Object.keys(pb.w.localStorage).some(k => /QUJD/.test(pb.w.localStorage.getItem(k))));
+  }
+  { const pb = boot({ key: false }); pb.w.eval(stub); pick(pb, 'bad.txt'); await wait(); await wait();
+    t('photo: unreadable file shows the error and sends nothing', /khul nahi paayi/.test(pb.app()) && pb.calls.length === 0 && !pb.d.querySelector('[data-rc=photodel]')); }
+  { const pb = boot({ key: false }); pb.w.eval(stub); pb.w.api = async () => ({ total: 60, scores: { c: 60, f: 60, t: 60, l: 60, m: 60 }, weights: { c: 30, f: 25, t: 20, l: 15, m: 10 }, got: [], miss: [], wrong: ['Step 2: 3 x 4 = 12, 11 nahi'], revise: 'x', heard: '3 x 4 = 11', src: 'photo', left: 0 });
+    pb.change('rcTopic', 'c7-science|1'); pick(pb, 'ans.jpg'); await wait(); await wait(); pb.click('[data-rc=go]'); await wait(); await wait();
+    t('photo result: heading says "AI ne ye padha" and the wrong step is shown', /AI ne ye padha: 3 x 4 = 11/.test(pb.app()) && /Step 2: 3 x 4 = 12/.test(pb.app()) && !/AI ne ye suna/.test(pb.app())); }
+  { const pb = boot(); pb.w.eval(stub); pick(pb, 'ans.jpg'); await wait(); await wait(); await pb.record(3000);
+    t('starting a voice recording drops the photo (one source at a time)', !pb.d.querySelector('img[alt="Aapke answer ki photo"]')); }
+  // Task 4: no parent key = no voice, in both voice modes
+  for (const m of ['ai', 'text']) {
+    const nb = boot({ key: false, mode: m });
+    nb.click('[data-rc=rec]'); await wait();
+    t('no parent key (' + m + '): Record Voice shows the parent-key message', /Voice ke liye parent ki key chahiye/.test(nb.app()));
+    t('no parent key (' + m + '): mic and speech recogniser are never started', nb.mrs.length === 0 && nb.srs.length === 0 && nb.st.tracksStopped === 0);
+    t('no parent key (' + m + '): the parent permission box is not shown', !nb.d.getElementById('rcVoiceOk'));
+    t('no parent key (' + m + '): a button leads to Advanced AI Features', !!nb.d.querySelector('[data-rc=adv]'));
+  }
+  { // a clip made while a key was set must not be sent after the key is gone
+    const kb = boot(); kb.change('rcTopic', 'c7-science|1'); await kb.record(3000); kb.tick(); kb.click('[data-rc=stop]'); await wait();
+    kb.w.eval('window.PARENT_KEY={has:function(){return false}}');
+    kb.d.getElementById('rcText').value = 'photosynthesis mein plants sunlight se khana banate hain'; kb.d.getElementById('rcText').dispatchEvent(new kb.w.Event('input', { bubbles: true }));
+    kb.click('[data-rc=go]'); await wait(); await wait();
+    t('key removed after recording: request has no audio', kb.calls.length === 1 && kb.calls[0].body.audio === undefined);
+  }
+  { // typing still works without a key
+    const tb = boot({ key: false }); tb.change('rcTopic', 'c7-science|1');
+    tb.d.getElementById('rcText').value = 'photosynthesis mein plants sunlight se khana banate hain'; tb.d.getElementById('rcText').dispatchEvent(new tb.w.Event('input', { bubbles: true }));
+    tb.click('[data-rc=go]'); await wait(); await wait();
+    t('no parent key: typed answer is still evaluated', tb.calls.length === 1 && tb.calls[0].body.audio === undefined && tb.calls[0].body.text.length > 20);
+  }
+
   let b = boot({ allowed: false });
   t('Record Voice, language list, timer and the parent permission box are on screen', !!b.d.querySelector('[data-rc=rec]') && b.d.getElementById('rcLang').options.length === 4 && b.timer() === '0:00 / 2:00' && !!b.d.getElementById('rcVoiceOk'));
   t('languages are Hindi, English, Assamese, Bengali', [...b.d.getElementById('rcLang').options].map(o => o.textContent).join() === 'Hindi,English,Assamese,Bengali');
@@ -146,17 +193,22 @@ function boot(opts) {
   await b.record(2000); b.tick(); b.w.RECALL.voiceChanged();
   t('changing the voice mode in Settings stops the mic and clears the old recording', b.st.tracksStopped === 1 && b.mrs[0].state === 'inactive');
 
-  // ---- a student's own (custom) course: the server cannot score it, so Recall must not offer it ----
+  // ---- a student's own (custom) course: Recall works on a custom chapter only when it has notes (the notes are the textbook reference) ----
   b = boot({ custom: true });
   const optVals = [...b.d.getElementById('rcTopic').options].map(o => o.value);
-  t('custom course chapters are not in the Recall topic list', !optVals.some(v => /^cc-/.test(v)) && optVals.includes('c7-science|1'), optVals.join());
+  t('a custom chapter WITH notes is in the Recall topic list', optVals.includes('cc-abc|1'), optVals.join());
+  t('a custom chapter without notes is not offered (the score would be a guess)', !optVals.includes('cc-abc|2'));
   t('built-in chapters are still offered', optVals.includes('c7-science|1'));
-  t('a short note explains that own courses are not in Recall yet', /custom\) courses abhi Recall AI mein nahi chalte/.test(b.app()) && /AI Answer/.test(b.app()));
+  t('a short note tells where to add notes for the other custom chapters', /chapter yahan tabhi dikhte hain jab unme kitab ke notes ho/.test(b.app()) && /My Courses/.test(b.app()));
   b.change('rcTopic', 'cc-abc|1'); b.d.getElementById('rcText').value = 'photosynthesis mein plants sunlight se khana banate hain'; b.d.getElementById('rcText').dispatchEvent(new b.w.Event('input', { bubbles: true }));
   b.click('[data-rc=go]'); await wait();
-  t('a custom chapter can never be sent to the server from Recall', b.calls.length === 0);
+  const cb = b.calls[0] && b.calls[0].body;
+  t('Recall on a custom chapter sends its class, subject, title and notes (no course id), type and text', cb && b.calls[0].p === '/api/recall/evaluate' && cb.custom && cb.custom.cls === 9 && cb.custom.subject === 'Geography' && cb.custom.chapter === 'My chapter' && /photosynthesis/.test(cb.custom.notes) && !('course' in cb) && !('ch' in cb) && cb.type && /photosynthesis/.test(cb.text));
   b = boot();
-  t('no note when there is no custom course', !/custom\) courses/.test(b.app()));
+  t('no note when there is no custom course', !/custom\) chapter/.test(b.app()));
+  b = boot({ custom: true }); b.change('rcTopic', 'c7-science|1'); b.d.getElementById('rcText').value = 'photosynthesis mein plants sunlight se khana banate hain'; b.d.getElementById('rcText').dispatchEvent(new b.w.Event('input', { bubbles: true }));
+  b.click('[data-rc=go]'); await wait();
+  t('a built-in chapter is sent exactly as before (course id + chapter number)', b.calls[0] && b.calls[0].body.course === 'c7-science' && b.calls[0].body.ch === 1 && !('custom' in b.calls[0].body));
 
   console.log(pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

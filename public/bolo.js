@@ -1,5 +1,5 @@
 // public/bolo.js - Bolo screen: the child speaks (A to Z, tables, poems), the browser's speech recognition listens, bolo-core.js checks it.
-// index.html calls BOLO.viewHTML() for the "Bolo" page. No server and no AI cost.
+// index.html calls BOLO.viewHTML() for the "Bolo" page. Normally no server and no AI cost. Only with the parent's Gemini key AND the parent's tick (Task 28) the child's short clip goes to the AI (/api/bolo/check) for the sahi / dobara check.
 // Privacy: Orbit never records, uploads or stores audio or the recognised text. Only "sahi / dobara" marks, time used and the parent's settings are kept, on THIS device (per account).
 (function () {
   'use strict';
@@ -62,9 +62,57 @@
   function stopSay() { try { g.speechSynthesis && g.speechSynthesis.cancel(); } catch (e) {} }
   function say(t) { if (!TTS) return; try { const u = new g.SpeechSynthesisUtterance(t); u.lang = 'en-IN'; u.rate = 0.8; g.speechSynthesis.cancel(); g.speechSynthesis.speak(u); } catch (e) {} }
 
+  // ---- Task 28: AI check (only with the parent's Gemini key and the parent's tick) ----
+  // The child's clip goes to /api/bolo/check, the AI says sahi or dobara. Nothing is saved. If the AI check fails once, the browser's own check takes over for the rest of the visit.
+  const CAN_REC = !!(g.navigator && g.navigator.mediaDevices && g.navigator.mediaDevices.getUserMedia && g.MediaRecorder);
+  const hasKey = () => !!(g.PARENT_KEY && g.PARENT_KEY.has && g.PARENT_KEY.has());
+  const OKKEY = () => 'orbit.voice.ok.' + uid();
+  const aiTick = () => { try { return g.localStorage.getItem(OKKEY()) === '1'; } catch (e) { return false; } };
+  const aiOn = () => hasKey() && CAN_REC && aiTick() && typeof g.api === 'function' && !st.aiOff;
+  const AI_MS = 6000;
+  let aiRec = null, aiStream = null, aiChunks = [], aiTimer = 0, aiDrop = false;
+  function aiStop(drop) {
+    clearTimeout(aiTimer); aiDrop = !!drop;
+    try { if (aiRec && aiRec.state !== 'inactive') aiRec.stop(); } catch (e) {}
+    try { aiStream && aiStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    aiRec = null; aiStream = null;
+    if (drop) { st.listening = false; aiChunks = []; }
+  }
+  const b64 = blob => new Promise((ok, no) => { const f = new g.FileReader(); f.onload = () => ok(String(f.result).split(',')[1] || ''); f.onerror = () => no(new Error('Recording padh nahi paye.')); f.readAsDataURL(blob); });
+  async function listenAI() {
+    if (over() || !load().set.mic || st.listening) return;
+    stopSay(); st.fb = null; st.err = '';
+    const item = list()[st.i];
+    try { aiStream = await g.navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { st.err = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? 'Browser ne mic ki ijazat nahi di. Address bar mein mic allow karo.' : 'Mic nahi mila. Phone ka mic check karo.'; return redraw(); }
+    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(m => g.MediaRecorder.isTypeSupported && g.MediaRecorder.isTypeSupported(m)) || '';
+    let r; try { r = new g.MediaRecorder(aiStream, Object.assign({ audioBitsPerSecond: 24000 }, mime ? { mimeType: mime } : {})); } catch (e) { aiStop(true); st.err = 'Mic shuru nahi ho paya. Dobara try karo.'; return redraw(); }
+    aiChunks = []; aiDrop = false; aiRec = r; st.listening = true;
+    r.ondataavailable = e => { if (e.data && e.data.size) aiChunks.push(e.data); };
+    r.onstop = async () => {
+      const chunks = aiChunks; aiChunks = []; st.listening = false;
+      if (aiDrop || !chunks.length) return redraw();
+      st.busy = true; redraw();
+      try {
+        const blob = new g.Blob(chunks, { type: mime || r.mimeType || 'audio/webm' });
+        const j = await g.api('/api/bolo/check', { kind: item.match.kind, expected: item.say, audio: { mime: String(blob.type).split(';')[0], data: await b64(blob) } });
+        st.busy = false;
+        if (!onScreen()) return;
+        mark(!!j.ok); if (j.tip) { st.fb = { ok: !!j.ok, t: j.tip }; redraw(); }
+      } catch (e) {
+        st.busy = false; st.aiOff = true;   // the browser check takes over
+        st.err = (e && e.message ? e.message + ' ' : '') + 'AI check nahi ho paya, ab browser se check hoga. Dobara bolo.'; redraw();
+      }
+    };
+    try { r.start(); } catch (e) { aiStop(true); st.err = 'Mic shuru nahi ho paya. Dobara try karo.'; return redraw(); }
+    aiTimer = setTimeout(() => aiStop(false), AI_MS);   // 6 seconds is plenty for a letter, a table line or a poem line
+    redraw();
+  }
+
   // ---- voice in ----
   let rec = null, recTimer = 0;
   function stopListen() {
+    aiStop(true);
     clearTimeout(recTimer); st.listening = false;
     if (rec) { const r = rec; rec = null; r.onresult = r.onerror = r.onend = null; try { r.abort(); } catch (e) {} }
   }
@@ -78,6 +126,7 @@
     redraw();
   }
   function listen() {
+    if (aiOn()) return listenAI();
     if (over() || !load().set.mic || st.listening || !SR) return;
     stopSay(); stopListen(); st.fb = null; st.err = '';
     let r; try { r = new SR(); } catch (e) { st.err = 'Mic shuru nahi ho paya. Dobara try karo.'; redraw(); return; }
@@ -167,16 +216,17 @@
     const cells = items.map((_, i) => `<button data-bl="jump" data-v="${i}" class="${m[i] === 'd' ? 'd' : m[i] === 'r' ? 'r' : ''} ${i === st.i ? 'c' : ''}" aria-label="${esc(items[i].big)} ${m[i] === 'd' ? 'sahi' : m[i] === 'r' ? 'dobara' : ''}" ${i === st.i ? 'aria-current="true"' : ''}>${st.mode === 'alpha' ? items[i].big : i + 1}</button>`).join('');
     const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:56px' : 'font-size:96px';
     const micOff = !s.set.mic;
-    const status = micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
+    const aiAsk = hasKey() && CAN_REC && !aiTick() ? '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13.5px"><input type="checkbox" id="blAiOk" style="margin-top:3px"><span>Parent ki ijazat: AI se jaanch ke liye bachhe ki awaaz Gemini ko jayegi (Orbit save nahi karta). Tick na ho to browser khud check karega.</span></label>' : '';
+    const status = micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? 'AI sun raha hai...' : aiOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
     const self = !SR && !micOff ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
     return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h2 class="sec" style="margin:0">${esc(st.mode === 'table' ? st.table + ' ka table' : st.mode === 'poem' ? (C.POEMS.find(p => p.id === st.poem) || C.POEMS[0]).title : 'A se Z')}</h2><span class="mut">${done} / ${items.length} sahi</span></div>
       <div class="bl-prog" style="margin-top:10px">${cells}</div>
       <div class="bl-big" style="${big}">${esc(it.big)}</div><p class="bl-sub">${esc(it.sub)}</p>
       <div class="bl-two"><button class="btn bl-sec" data-bl="hear" ${TTS ? '' : 'disabled'}>${ICON.say}<span>Sunao</span></button><button class="btn ${st.fb && st.fb.ok ? '' : 'bl-sec'}" data-bl="next" ${last ? 'disabled' : ''}><span>Aage</span>${ICON.next}</button></div>
-      <button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || !SR || st.listening ? 'disabled' : ''}>${ICON.mic}</button>
+      <button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || (!SR && !aiOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>
       <p class="mut" style="text-align:center;margin:0" role="status">${status}</p>
       ${st.err ? `<p class="err" role="alert" style="text-align:center">${esc(st.err)}</p>` : ''}
-      <div class="bl-fb" role="status" ${st.fb ? '' : 'hidden'}>${st.fb ? esc(st.fb.t) : ''}</div>${self}</div>`;
+      <div class="bl-fb" role="status" ${st.fb ? '' : 'hidden'}>${st.fb ? esc(st.fb.t) : ''}</div>${self}${aiAsk}</div>`;
   }
 
   function parent() {
@@ -205,7 +255,7 @@
     else if (a === 'jump') { stopListen(); stopSay(); st.i = +v; st.fb = null; st.err = ''; redraw(); }
     else if (a === 'next') { stopListen(); stopSay(); st.i = Math.min(list().length - 1, st.i + 1); st.fb = null; st.err = ''; redraw(); }
     else if (a === 'hear') say(list()[st.i].say);
-    else if (a === 'mic') listen();
+    else if (a === 'mic') { if (aiRec) aiStop(false); else listen(); }
     else if (a === 'self') mark(v === '1');
     else if (a === 'pin') pinAction(v);
   });
@@ -213,6 +263,7 @@
     const t = e.target, id = t && t.id;
     if (id === 'blTable') { st.table = +t.value; reset(); redraw(); }
     else if (id === 'blPoem') { st.poem = t.value; reset(); redraw(); }
+    else if (id === 'blAiOk') { try { t.checked ? g.localStorage.setItem(OKKEY(), '1') : g.localStorage.removeItem(OKKEY()); } catch (e) {} redraw(); }
     else if (id === 'blLim' && canEdit()) { load().set.limit = +t.value; save(); redraw(); }
     else if (id === 'blMc' && canEdit()) { load().set.mic = t.checked; if (!t.checked) stopListen(); save(); redraw(); }
   });
@@ -228,6 +279,6 @@
         ${modeChips()}${subPick()}${card()}${parent()}`;
     },
     leave() { stopListen(); stopSay(); save(); },
-    _reset() { stopListen(); store = null; Object.assign(st, { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, err: '', unlocked: false, parOpen: false, pinMsg: '', fbInit: false }); }
+    _reset() { stopListen(); store = null; Object.assign(st, { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, err: '', unlocked: false, parOpen: false, pinMsg: '', fbInit: false, aiOff: false, busy: false }); }
   };
 })();

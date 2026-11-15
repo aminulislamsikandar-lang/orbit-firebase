@@ -84,7 +84,7 @@ const allLogs = () => state.logs.join('\n');
     t(name + ' video: the bank check still comes before the limit (a key does not open other questions)', h.indexOf('mvKnown(typed') > 0 && h.indexOf('mvKnown(typed') < h.indexOf('MV_USE.get'));
   }
   t('Get Video page tells a key holder that the limit does not apply', /Aapki apni Gemini key use ho rahi hai, isliye roz ki video limit nahi lagegi/.test(fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8')));
-  t('shared free-limit helpers are untouched', /const FREE_DAILY = 1/.test(src) && /function takeFree/.test(src));
+  t('shared free-limit helpers are untouched (now stored in Firestore through limits-core.js)', /const FREE_DAILY = 1/.test(src) && /const takeFree = uid => RECALL_QUOTA\.take\(uid\)/.test(src) && /createStoredQuota\(\{ db: FSDB, kind: 'recall'/.test(src));
 
   console.log(pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

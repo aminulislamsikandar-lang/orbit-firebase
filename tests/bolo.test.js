@@ -58,12 +58,12 @@ t('service worker cache was bumped past v26', Number((/orbit-shell-v(\d+)/.exec(
 t('Permissions-Policy still allows the microphone for the app', /microphone=\(self\)/.test(read('firebase.json')));
 
 // privacy and safety of the page
-t('page never writes the recognised text or audio anywhere', !/localStorage\.setItem\([^)]*(alts|transcript)/.test(C) && !/fetch\(|XMLHttpRequest|sendBeacon|MediaRecorder|getUserMedia/.test(C));
+t('page never writes the recognised text or audio anywhere', !/localStorage\.setItem\([^)]*(alts|transcript)/.test(C) && !/fetch\(|XMLHttpRequest|sendBeacon/.test(C) && !/localStorage\.setItem\([^)]*(blob|chunks|clip|audio)/i.test(C) && /const aiOn = \(\) => hasKey\(\) && CAN_REC && aiTick\(\)/.test(C) && (C.match(/getUserMedia\(/g) || []).length === 1 && C.indexOf('getUserMedia(') > C.indexOf('async function listenAI()') && /function listen\(\) \{\n    if \(aiOn\(\)\) return listenAI\(\);/.test(C));   // Phase 5: the mic is opened for the AI check only (parent key + parent tick); the only network call is api('/api/bolo/check')
 t('page keeps only marks, time and settings', /prog/.test(C) && /days/.test(C) && !/alts\b[^;\n]*save/.test(C));
 t('PIN is stored as a SHA-256 hash, never plain', /crypto\.subtle\.digest\('SHA-256'/.test(C) && /s\.set\.pin = h/.test(C));
 t('settings can be edited only when no PIN or unlocked', /canEdit\(\)/.test(C) && (C.match(/canEdit\(\)/g) || []).length >= 3);
 t('listening stops after a time limit', /LISTEN_MS/.test(C) && /setTimeout\(\(\) => \{ if \(rec === r\)/.test(C));
-t('mic is off while the daily limit is over', /function listen\(\) \{\s*if \(over\(\)/.test(C));
+t('mic is off while the daily limit is over', /function listen\(\) \{\s*if \(aiOn\(\)\) return listenAI\(\);\s*if \(over\(\)/.test(C) && /async function listenAI\(\) \{\s*if \(over\(\)/.test(C));
 t('page escapes text it shows', /esc\(it\.big\)/.test(C) && /esc\(it\.sub\)/.test(C) && /esc\(st\.fb\.t\)/.test(C));
 t('no emoji in the page or the core', !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(C) && !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(read('public/bolo-core.js')));
 t('page does not say Premium', !/premium/i.test(C));

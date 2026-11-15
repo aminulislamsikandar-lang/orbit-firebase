@@ -3,7 +3,11 @@ const path = require('path');
 const crypto = require('crypto');
 const QUIZ = require('./questions');
 const RECALL = require('./recall-core');
+const CHECK = require('./check-core');   // Apna answer check karo: prompts + parser
+const LEVELS = require('./levels-core');   // class bands + Kahani / Example prompts
+const QZ = require('./quiz-core');         // AI quiz from chapter notes (admin only)
 const CUSTOM = require('./custom-core');
+const VOICE = require('./voice-core.js');
 const { securityHeaders, rateKey, createLimiter, cspReport } = require('./security');
 
 const app = express();
@@ -13,8 +17,11 @@ const jsonSmall = express.json({ limit: '10kb' });
 const jsonNarration = express.json({ limit: '128kb' });      // Assamese/Hindi text is 3 bytes per character, so narration text needs more room
 const jsonAudio = express.json({ limit: '1.5mb' });             // Recall AI voice answer: a short audio clip as base64 (checked again in recall-core.js)
 const jsonPlan = express.json({ limit: '128kb' });             // a video plan with Hindi text is bigger than 10 kb
+const jsonNotes = express.json({ limit: '64kb' });              // a custom question travels with its chapter notes (up to 14000 characters, Assamese is 3 bytes each)
+const NOTES_PATHS = new Set(['/api/read/passage', '/api/answer', '/api/translate', '/api/qtranslate', '/api/more', '/api/visual', '/api/image']);
+const VOICE_AUDIO_PATHS = new Set(['/api/read/evaluate', '/api/talk/turn', '/api/bolo/check']);   // Phase 5: a short recording + the chapter notes
 const jsonImage = express.json({ limit: '4mb' });              // one textbook photo (shrunk by the app to about 0.4 MB) for Add custom course
-app.use((req, res, next) => (req.path === '/api/custom/extract' ? jsonImage : req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : req.path === '/api/recall/evaluate' ? jsonAudio : jsonSmall)(req, res, next));
+app.use((req, res, next) => ((req.path === '/api/custom/extract' || req.path === '/api/answer/check') ? jsonImage : NOTES_PATHS.has(req.path) ? jsonNotes : req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : req.path === '/api/recall/evaluate' ? jsonAudio : VOICE_AUDIO_PATHS.has(req.path) ? jsonAudio : jsonSmall)(req, res, next));
 
 // The browser reports Content-Security-Policy violations here (the policy is set in firebase.json, in Report-Only mode first). No login, tiny body.
 app.post('/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '8kb' }), cspReport());
@@ -25,7 +32,22 @@ app.use('/csp-report', (err, req, res, next) => res.status(204).end());   // a b
 // Render env vars: FIREBASE_PROJECT_ID (your Firebase project id) and ALLOWED_ORIGINS (comma separated,
 // e.g. https://your-project.web.app,https://your-project.firebaseapp.com).
 const admin = require('firebase-admin');
-admin.initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID });
+const LIMITS = require('./limits-core');
+const TOPICS = require('./topics-core');
+// Daily limits live in Firestore (limits-core.js). That needs a service account: Render env FIREBASE_SERVICE_ACCOUNT = the JSON key
+// (plain or base64). Without it the server still runs and the limits stay in memory, like before. Logging in (verifyIdToken) never needs it.
+let FSDB = null;
+{
+  const sa = LIMITS.parseServiceAccount(process.env.FIREBASE_SERVICE_ACCOUNT);
+  try {
+    admin.initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID, ...(sa ? { credential: admin.credential.cert(sa) } : {}) });
+    if (sa) FSDB = admin.firestore();
+  } catch (e) {
+    console.error('[limits] service account not usable, daily limits stay in memory: ' + e.message);
+    if (!admin.apps.length) admin.initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID });
+  }
+  if (!FSDB) console.warn('[limits] FIREBASE_SERVICE_ACCOUNT is not set: daily limits are kept in memory and start again when Render restarts.');
+}
 const ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean);
 app.use('/api', (req, res, next) => {
   const o = req.headers.origin;
@@ -54,17 +76,28 @@ const KEYS = [...new Set([...(process.env.GEMINI_API_KEYS || '').split(','), pro
 const KEY = KEYS[0];
 const USER_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{19,299}$/;
 const userKeyOf = req => { const k = String(req.headers['x-user-key'] || '').trim(); return USER_KEY_RE.test(k) ? k : ''; };
-// Free daily limit for people without their own key. In memory: resets if Render restarts.
-const FREE_DAILY = 1, FREE_USED = new Map();
-const dayKey = () => new Date(Date.now() + 19800000).toISOString().slice(0, 10);   // IST day
-function takeFree(uid) {
-  const k = uid + '|' + dayKey(), n = FREE_USED.get(k) || 0;
-  if (n >= FREE_DAILY) return false;
-  FREE_USED.set(k, n + 1); return true;
+// Free daily limit for people without their own key. Kept in Firestore (limits-core.js), so a Render restart does not reset it.
+const FREE_DAILY = 1;
+const RECALL_QUOTA = LIMITS.createStoredQuota({ db: FSDB, kind: 'recall', max: FREE_DAILY });
+const takeFree = uid => RECALL_QUOTA.take(uid);
+const refundFree = uid => RECALL_QUOTA.refund(uid);
+const freeLeft = uid => RECALL_QUOTA.left(uid);
+setInterval(() => RECALL_QUOTA.prune(), 3600000).unref();
+
+// Chapter topics (Task 31) live in Firestore chapterTopics/<course>_<chapter>: written only here (admin route below), read by every signed-in student.
+// topicsOf() returns the saved doc or null (no Firestore, no topics yet, or an error). Kept 1 hour in memory so a Recall check costs no extra read.
+const TOPIC_CACHE = new Map(), TOPIC_TTL = 3600000;
+async function topicsOf(courseId, chNo) {
+  if (!FSDB) return null;
+  const id = TOPICS.docId(courseId, chNo), hit = TOPIC_CACHE.get(id);
+  if (hit && Date.now() - hit.at < TOPIC_TTL) return hit.doc;
+  try {
+    const snap = await FSDB.collection('chapterTopics').doc(id).get();
+    const doc = snap.exists && TOPICS.validDoc(snap.data()) ? snap.data() : null;
+    TOPIC_CACHE.set(id, { doc, at: Date.now() });
+    return doc;
+  } catch (e) { console.error('[topics] read failed: ' + e.message); return null; }
 }
-function refundFree(uid) { const k = uid + '|' + dayKey(), n = FREE_USED.get(k) || 0; if (n > 0) FREE_USED.set(k, n - 1); }
-function freeLeft(uid) { return Math.max(0, FREE_DAILY - (FREE_USED.get(uid + '|' + dayKey()) || 0)); }
-setInterval(() => { const d = dayKey(); for (const k of FREE_USED.keys()) if (!k.endsWith('|' + d)) FREE_USED.delete(k); }, 3600000).unref();
 let keyStart = 0; // round-robin so load is spread across keys
 // Models are tried in priority order: first one first. Set GEMINI_MODELS in Render, comma separated,
 // e.g. GEMINI_MODELS=gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.8-flash
@@ -443,7 +476,7 @@ const aiLimiter = createLimiter(20, 60000);
 const limited = key => aiLimiter.hit(key);
 // Add custom course: free students get a daily number of AI calls on their own questions and of photo reads (env CUSTOM_DAILY_AI, CUSTOM_DAILY_PHOTOS). With the parent's Gemini key there is no limit.
 const CUSTOM_DAILY_AI = Math.max(1, parseInt(process.env.CUSTOM_DAILY_AI || '40', 10) || 40), CUSTOM_DAILY_PHOTOS = Math.max(1, parseInt(process.env.CUSTOM_DAILY_PHOTOS || '8', 10) || 8);
-const CUSTOM_AI_QUOTA = CUSTOM.createDailyQuota(CUSTOM_DAILY_AI), CUSTOM_PHOTO_QUOTA = CUSTOM.createDailyQuota(CUSTOM_DAILY_PHOTOS);
+const CUSTOM_AI_QUOTA = LIMITS.createStoredQuota({ db: FSDB, kind: 'ai', max: CUSTOM_DAILY_AI }), CUSTOM_PHOTO_QUOTA = LIMITS.createStoredQuota({ db: FSDB, kind: 'photos', max: CUSTOM_DAILY_PHOTOS });
 setInterval(() => { CUSTOM_AI_QUOTA.prune(); CUSTOM_PHOTO_QUOTA.prune(); }, 3600000).unref();
 
 // ---- one place that talks to Gemini -------------------------------------
@@ -609,18 +642,18 @@ function guard(req, res) {
   if (!hit) { res.status(400).json({ error: 'Unknown question.' }); return null; }
   return hit;
 }
-function guardAI(req, res) {
+async function guardAI(req, res) {
   if (!KEYS.length && !userKeyOf(req)) { res.status(500).json({ error: 'Server mein GEMINI_API_KEY set nahi hai.' }); return false; }
   if (limited(rateKey(req))) { res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' }); return false; }
   if (req.customHit && !userKeyOf(req)) {   // own questions: daily limit; a failed AI call gives the use back
     const uid = req.user.uid;
-    if (!CUSTOM_AI_QUOTA.take(uid)) { res.status(429).json({ error: 'Aaj ki custom course AI limit (' + CUSTOM_DAILY_AI + ') poori ho gayi. Kal dobara try karo, ya Advanced AI Features me parent ki Gemini key lagwao.' }); return false; }
-    res.on('finish', () => { if (res.statusCode >= 400) CUSTOM_AI_QUOTA.refund(uid); });
+    if (!(await CUSTOM_AI_QUOTA.take(uid))) { res.status(429).json({ code: 'limit_reached', kind: 'ai', error: 'Aaj ki custom course AI limit (' + CUSTOM_DAILY_AI + ') poori ho gayi. Kal dobara try karo, ya Advanced AI Features me parent ki Gemini key lagwao.' }); return false; }
+    res.on('finish', () => { if (res.statusCode >= 400) Promise.resolve(CUSTOM_AI_QUOTA.refund(uid)).catch(() => {}); });
   }
   return true;
 }
 
-app.get('/api/ping', (req, res) => res.json({ ok: true, upload: process.env.VIDEO_UPLOAD === 'true' && !!B2 })); // wakes the sleeping Render server
+app.get('/api/ping', (req, res) => res.json({ ok: true, upload: process.env.VIDEO_UPLOAD === 'true' && !!B2, maxMb: Math.max(1, parseInt(process.env.VIDEO_MAX_MB || '300', 10) || 300) })); // wakes the sleeping Render server
 app.get('/api/questions', (req, res) => res.json(PUBLIC));
 
 // ---- parent-assisted BYOK: check a key the parent pasted. The key is used once and never stored or logged. ----
@@ -633,31 +666,166 @@ app.post('/api/byok/test', async (req, res) => {
   const s = r.status;
   res.status(s === 429 ? 429 : 400).json({ code: (s === 400 || s === 401 || s === 403) ? 'invalid' : s === 429 ? 'quota' : 'busy' });
 });
-app.get('/api/recall/quota', (req, res) => res.json({ left: freeLeft(req.user.uid) }));
+app.get('/api/recall/quota', async (req, res) => res.json({ left: await freeLeft(req.user.uid) }));
 
 // ---- Recall AI: the student explains a chapter from memory, Gemini scores it against the textbook text (recall-core.js). ----
 // The client sends only {course, ch, type, text}. Without the parent's key: 1 free evaluation per day. With it: no daily limit, the parent's key pays.
 // Only the typed text goes to Gemini. Nothing about the student (name, school, phone) is sent, and the text itself is not stored here.
 app.post('/api/recall/evaluate', async (req, res) => {
   const b = req.body || {}, uk = userKeyOf(req);
-  const hit = RECALL.findChapter(QUIZ, String(b.course || ''), b.ch);
-  if (!hit || !RECALL.WEIGHTS[b.type]) return res.status(400).json({ error: 'Topic ya sawaal ka type sahi nahi hai.' });
-  if (!RECALL.isReady(hit.ch)) return res.status(400).json({ error: 'Ye chapter abhi available nahi hai (coming soon). Koi aur chapter chuno.' });
-  let audio = null;
+  // Voice (a recording of the child) is only for accounts with a parent's key. Checked first: no audio is read, no free check is used, no AI call is made.
+  if (b.audio != null && !uk) return res.status(403).json({ code: 'voice_needs_key', error: 'Voice ke liye parent ki key chahiye. Abhi likh kar jawab do.' });
+  let hit;
+  if (b.custom != null) {   // a student's own chapter: its notes are the textbook reference (chapters without notes are refused)
+    if (!RECALL.WEIGHTS[b.type]) return res.status(400).json({ error: 'Topic ya sawaal ka type sahi nahi hai.' });
+    hit = CUSTOM.sanitizeRecallCustom(b.custom);
+    if (hit.error) return res.status(400).json({ error: hit.error });
+  } else {
+    hit = RECALL.findChapter(QUIZ, String(b.course || ''), b.ch);
+    if (!hit || !RECALL.WEIGHTS[b.type]) return res.status(400).json({ error: 'Topic ya sawaal ka type sahi nahi hai.' });
+    if (!RECALL.isReady(hit.ch)) return res.status(400).json({ error: 'Ye chapter abhi available nahi hai (coming soon). Koi aur chapter chuno.' });
+  }
+  let audio = null, photo = null;
   if (b.audio != null) { const a = RECALL.checkAudio(b.audio); if (!a.ok) return res.status(400).json({ error: a.error }); audio = a; }
+  if (b.photo != null) {   // a photo of the handwritten answer: read once by the AI, never stored. One source at a time: photo or voice.
+    if (audio) return res.status(400).json({ error: 'Ek baar mein photo ya voice, dono nahi.' });
+    photo = CUSTOM.validImage(b.photo && b.photo.data, b.photo && b.photo.mime);
+    if (!photo) return res.status(400).json({ error: 'Photo sahi nahi hai. Saaf photo (jpg ya png) lo.' });
+  }
   const text = String(b.text || '').trim(), lang = RECALL.LANGS[b.lang] ? b.lang : 'en';
-  if (!audio && text.length < RECALL.MIN_CHARS) return res.status(400).json({ error: 'Thoda aur likho ya bolo. Kam se kam ek do line explain karo.' });
+  if (!audio && !photo && text.length < RECALL.MIN_CHARS) return res.status(400).json({ error: 'Thoda aur likho ya bolo. Kam se kam ek do line explain karo.' });
   if (text.length > RECALL.MAX_CHARS) return res.status(400).json({ error: 'Jawab bahut lamba hai. ' + RECALL.MAX_CHARS + ' akshar tak likho.' });
-  if (!guardAI(req, res)) return;
+  if (!(await guardAI(req, res))) return;
   const uid = req.user.uid;
-  if (!uk && !takeFree(uid)) return res.status(429).json({ code: 'daily_limit', left: 0, error: 'Aaj ka free AI check ho chuka hai. Parent se Gemini key lagwayein ya kal aayein.' });
-  const r = await geminiFor(req, RECALL.SYSTEM, RECALL.buildPrompt(hit.course, hit.ch, text, { lang, audio: !!audio }), { json: true, temperature: 0.2, maxTokens: 1800, reqMs: audio ? 30000 : undefined, audio: audio ? { mime: audio.mime, data: audio.data } : undefined });
-  const out = r.text ? RECALL.parseResult(r.text, b.type) : null;
+  // Phase 6: with saved topics the AI also scores each topic; with b.topic the student revises ONLY that topic (Task 34).
+  const tdoc = b.custom != null ? null : await topicsOf(hit.course.id, hit.ch.no);   // a student's own chapter has no saved topics
+  const focus = tdoc && b.topic ? TOPICS.focusOf(tdoc, String(b.topic), hit.ch) : null;
+  if (b.topic && !focus) return res.status(400).json({ error: 'Ye topic abhi available nahi hai. Poora chapter chuno.' });
+  const topicIds = focus ? [focus.id] : tdoc ? tdoc.topics.map(t => t.id) : [];
+  if (!uk && !(await takeFree(uid))) return res.status(429).json({ code: 'limit_reached', kind: 'recall', left: 0, error: 'Aaj ka free AI check ho chuka hai. Parent se Gemini key lagwayein ya kal aayein.' });
+  if (photo && !uk && !(await CUSTOM_PHOTO_QUOTA.take(uid))) {   // a photo answer also counts in the daily photo limit
+    await refundFree(uid);
+    return res.status(429).json({ code: 'limit_reached', kind: 'photos', error: 'Aaj ki photo limit (' + CUSTOM_DAILY_PHOTOS + ') poori ho gayi. Kal dobara try karo, ya Advanced AI Features me parent ki Gemini key lagwao.' });
+  }
+  const back = async () => { if (!uk) { await refundFree(uid); if (photo) await CUSTOM_PHOTO_QUOTA.refund(uid); } };   // a failed check must not use up the free one
+  const r = await geminiFor(req, RECALL.SYSTEM, RECALL.buildPrompt(hit.course, hit.ch, text, { lang, audio: !!audio, photo: !!photo, topics: tdoc && tdoc.topics, focus, max: b.custom != null ? 12500 : undefined }), { json: true, temperature: 0.2, maxTokens: 1800, reqMs: photo ? 40000 : audio ? 30000 : undefined, audio: audio ? { mime: audio.mime, data: audio.data } : undefined, images: photo ? [photo] : undefined, fallback: photo ? [] : undefined });
+  const out = r.text ? RECALL.parseResult(r.text, b.type, topicIds) : null;
   if (!out) {
-    if (!uk) refundFree(uid);   // a failed check must not use up the free one
+    await back();
     return res.status(502).json({ error: r.text ? 'AI ka jawab samajh nahi aaya. Dobara try karo.' : failMsgFor(req, r.status) });
   }
-  res.json({ ...out, left: uk ? null : freeLeft(uid) });
+  res.json({ ...out, src: photo ? 'photo' : audio ? 'audio' : 'text', left: uk ? null : await freeLeft(uid) });
+});
+
+
+// ---- Phase 5: voice tutor. Reading check (Task 27), spoken Q&A (Task 30), AI voice (Task 29). Only for accounts with the parent's Gemini key (the parent pays the AI). ----
+function needParentKey(req, res) {
+  if (userKeyOf(req)) return true;
+  res.status(403).json({ code: 'need_parent_key', error: 'Voice tutor ke liye Advanced AI Features mein parent ki Gemini key lagani hogi.' });
+  return false;
+}
+// The chapter a voice screen works on: a built-in chapter (course id + number) or a student's own chapter (notes sent with the request).
+function voiceChapter(b) {
+  if (b.custom != null) { const h = CUSTOM.sanitizeRecallCustom(b.custom); return h.error ? { error: h.error } : { ...h, lang: h.lang }; }
+  const hit = RECALL.findChapter(QUIZ, String(b.course || ''), b.ch);
+  if (!hit) return { error: 'Chapter sahi nahi hai.' };
+  if (!RECALL.isReady(hit.ch)) return { error: 'Ye chapter abhi available nahi hai (coming soon). Koi aur chapter chuno.' };
+  return hit;
+}
+const voiceCtx = (hit, lang) => ({ cls: hit.course.class, subject: hit.course.subject, chapter: hit.ch.title, lang });
+
+app.post('/api/read/passage', (req, res) => {
+  const b = req.body || {};
+  if (!needParentKey(req, res)) return;
+  const hit = voiceChapter(b); if (hit.error) return res.status(400).json({ error: hit.error });
+  const p = VOICE.pickPassage(VOICE.readingText(hit.ch), b.n);
+  if (!p) return res.status(404).json({ error: 'Is chapter mein padhne laayak chhota paath nahi mila. Chapter ke notes jodo ya koi aur chapter chuno.' });
+  res.json(p);
+});
+
+app.post('/api/read/evaluate', async (req, res) => {
+  const b = req.body || {};
+  if (!needParentKey(req, res)) return;
+  const hit = voiceChapter(b); if (hit.error) return res.status(400).json({ error: hit.error });
+  const p = VOICE.pickPassage(VOICE.readingText(hit.ch), b.n);   // the passage is worked out here again: the browser cannot send its own text
+  if (!p) return res.status(404).json({ error: 'Is chapter mein padhne laayak chhota paath nahi mila.' });
+  const a = RECALL.checkAudio(b.audio); if (!a.ok) return res.status(400).json({ error: a.error });
+  const lang = VOICE.LANGS[b.lang] ? b.lang : 'en';
+  if (!(await guardAI(req, res))) return;
+  const r = await geminiFor(req, VOICE.READ_SYSTEM, VOICE.buildReadPrompt(voiceCtx(hit, lang), p.text), { json: true, temperature: 0.1, maxTokens: 1200, audio: { mime: a.mime, data: a.data }, reqMs: 30000, budgetMs: 50000 });
+  const out = r.text ? VOICE.parseRead(r.text, p.text) : null;
+  if (!out) return res.status(502).json({ error: r.text ? 'AI ka jawab samajh nahi aaya. Dobara padh kar try karo.' : failMsgFor(req, r.status) });
+  res.json({ ...out, passage: p.text });
+});
+
+app.post('/api/talk/turn', async (req, res) => {
+  const b = req.body || {};
+  if (!needParentKey(req, res)) return;
+  const hit = voiceChapter(b); if (hit.error) return res.status(400).json({ error: hit.error });
+  const st = VOICE.sanitizeTalk(b); if (!st) return res.status(400).json({ error: 'Baat-cheet ki detail sahi nahi hai. Dobara shuru karo.' });
+  let audio = null;
+  if (st.turn > 0) { const a = RECALL.checkAudio(b.audio); if (!a.ok) return res.status(400).json({ error: a.error }); audio = { mime: a.mime, data: a.data }; }
+  if (!(await guardAI(req, res))) return;
+  st.reference = RECALL.reference(hit.ch, 9000);
+  if (st.reference.length < 80) return res.status(400).json({ error: 'Is chapter ke notes bahut kam hain. Pehle notes jodo ya koi aur chapter chuno.' });
+  const r = await geminiFor(req, VOICE.TALK_SYSTEM, VOICE.buildTalkPrompt(voiceCtx(hit, st.lang), st), { json: true, temperature: 0.4, maxTokens: 1200, ...(audio ? { audio, reqMs: 30000, budgetMs: 50000 } : {}) });
+  const out = r.text ? VOICE.parseTalk(r.text, st) : null;
+  if (!out) return res.status(502).json({ error: r.text ? 'AI ka jawab samajh nahi aaya. Dobara try karo.' : failMsgFor(req, r.status) });
+  res.json({ ...out, turn: st.turn, total: st.total, done: st.finish });
+});
+
+app.post('/api/bolo/check', async (req, res) => {
+  const b = req.body || {};
+  if (!needParentKey(req, res)) return;
+  const o = VOICE.sanitizeBolo(b); if (!o) return res.status(400).json({ error: 'Bolo ki detail sahi nahi hai.' });
+  const a = RECALL.checkAudio(b.audio); if (!a.ok) return res.status(400).json({ error: a.error });
+  if (!(await guardAI(req, res))) return;
+  const r = await geminiFor(req, VOICE.BOLO_SYSTEM, VOICE.buildBoloPrompt(o), { json: true, temperature: 0.1, maxTokens: 300, audio: { mime: a.mime, data: a.data }, reqMs: 20000, budgetMs: 35000 });
+  const out = r.text ? VOICE.parseBolo(r.text) : null;
+  if (!out) return res.status(502).json({ error: r.text ? 'AI ka jawab samajh nahi aaya. Dobara bolo.' : failMsgFor(req, r.status) });
+  res.json(out);
+});
+
+// AI voice: Gemini text-to-speech, used when the phone has no voice for the language (Assamese is often missing). The parent's key pays.
+const TTS_MODEL = process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts';
+const TTS_VOICE = process.env.GEMINI_TTS_VOICE || 'Kore';
+app.post('/api/tts', async (req, res) => {
+  const b = req.body || {};
+  if (!needParentKey(req, res)) return;
+  const text = VOICE.cleanTtsText(b.text), lang = VOICE.LANGS[b.lang] ? b.lang : '';
+  if (!text || !lang) return res.status(400).json({ error: 'Sunane ke liye text ya bhasha sahi nahi hai.' });
+  if (aiLimiter.hit(rateKey(req))) return res.status(429).json({ error: 'Thoda ruko, bahut zyada requests. 1 minute baad try karo.' });   // same per-student limit as guardAI
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': userKeyOf(req) }, signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ contents: [{ parts: [{ text: VOICE.TTS_PROMPT[lang] + ' ' + text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICE } } } } })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { console.error('Gemini TTS error', r.status, TTS_MODEL, JSON.stringify(j).slice(0, 200)); return res.status(r.status === 401 || r.status === 403 ? 401 : 502).json({ error: r.status === 429 ? 'Parent ki key ki limit poori ho gayi. Thodi der baad try karo.' : r.status === 401 || r.status === 403 ? 'Parent ki Gemini key kaam nahi kar rahi.' : 'AI awaaz abhi nahi ban payi. Baad mein try karo.' }); }
+    const data = ((j.candidates || [])[0]?.content?.parts || []).find(p => p.inlineData && p.inlineData.data);
+    if (!data) return res.status(502).json({ error: 'AI awaaz abhi nahi ban payi. Baad mein try karo.' });
+    res.json({ mime: 'audio/wav', audio: VOICE.pcmToWav(Buffer.from(data.inlineData.data, 'base64')).toString('base64') });
+  } catch (e) { console.error('Gemini TTS failed', e.name); res.status(502).json({ error: 'AI awaaz abhi nahi ban payi. Baad mein try karo.' }); }
+});
+
+// ---- Task 31: admin splits a chapter into topics ONCE and saves it (chapterTopics). Already there = returned as is, no AI call, unless force. ----
+app.post('/api/topics/generate', async (req, res) => {
+  if (!isAdminReq(req)) return res.status(403).json({ error: 'Sirf admin topics bana sakta hai.' });
+  const b = req.body || {}, hit = RECALL.findChapter(QUIZ, String(b.course || ''), b.ch);
+  if (!hit || !RECALL.isReady(hit.ch)) return res.status(400).json({ error: 'Chapter nahi mila ya abhi available nahi hai.' });
+  if (!FSDB) return res.status(503).json({ error: 'Topics save karne ke liye Render par FIREBASE_SERVICE_ACCOUNT lagao.' });
+  const id = TOPICS.docId(hit.course.id, hit.ch.no);
+  if (!b.force) { const have = await topicsOf(hit.course.id, hit.ch.no); if (have) return res.json({ topics: have.topics, map: have.map, existing: true }); }
+  if (!(await guardAI(req, res))) return;
+  const qs = []; (hit.ch.sections || []).forEach(s => (s.questions || []).forEach(q => qs.push({ id: q.id, text: q.text })));
+  const r = await geminiFor(req, TOPICS.SYSTEM, TOPICS.buildPrompt(hit.course, hit.ch, RECALL.reference(hit.ch), qs), { json: true, temperature: 0.2, maxTokens: 3500, reqMs: 40000, budgetMs: 58000 });
+  if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
+  const parsed = TOPICS.parseTopics(r.text, qs.map(q => q.id));
+  if (!parsed) return res.status(502).json({ error: 'AI se topics sahi nahi bane. Dobara try karo.' });
+  try { await FSDB.collection('chapterTopics').doc(id).set(TOPICS.toDoc(hit.course, hit.ch.no, parsed)); }
+  catch (e) { console.error('[topics] save failed: ' + e.message); return res.status(500).json({ error: 'Topics save nahi hue. Service account ki permission dekho.' }); }
+  TOPIC_CACHE.set(id, { doc: TOPICS.toDoc(hit.course, hit.ch.no, parsed), at: Date.now() });
+  res.json({ topics: parsed.topics, map: parsed.map, existing: false });
 });
 
 // ---- Add custom course: read the questions from a photo of a textbook page ----
@@ -665,15 +833,62 @@ app.post('/api/recall/evaluate', async (req, res) => {
 app.post('/api/custom/extract', async (req, res) => {
   const b = req.body || {}, ctx = CUSTOM.sanitizeCtx(b), img = CUSTOM.validImage(b.image, b.mime);
   if (!ctx || !img) return res.status(400).json({ error: 'Photo ya course ki detail sahi nahi hai. Saaf photo (jpg ya png) lo.' });
-  if (!guardAI(req, res)) return;
+  if (!(await guardAI(req, res))) return;
   const uid = req.user.uid, uk = userKeyOf(req);
-  if (!uk && !CUSTOM_PHOTO_QUOTA.take(uid)) return res.status(429).json({ code: 'daily_limit', error: 'Aaj ki photo limit (' + CUSTOM_DAILY_PHOTOS + ') poori ho gayi. Kal dobara try karo, ya Advanced AI Features me parent ki Gemini key lagwao.' });
-  const back = () => { if (!uk) CUSTOM_PHOTO_QUOTA.refund(uid); };
+  if (!uk && !(await CUSTOM_PHOTO_QUOTA.take(uid))) return res.status(429).json({ code: 'limit_reached', kind: 'photos', error: 'Aaj ki photo limit (' + CUSTOM_DAILY_PHOTOS + ') poori ho gayi. Kal dobara try karo, ya Advanced AI Features me parent ki Gemini key lagwao.' });
+  const back = () => { if (!uk) Promise.resolve(CUSTOM_PHOTO_QUOTA.refund(uid)).catch(() => {}); };
+  if (b.mode === 'notes') {   // the whole reading text of the page (chapter notes). Same photo rule: read once, never stored; counts in the same daily photo limit.
+    const rn = await geminiFor(req, CUSTOM.NOTES_SYSTEM, CUSTOM.buildNotesPrompt(ctx), { json: true, temperature: 0.1, maxTokens: 8000, images: [img], fallback: [], reqMs: 45000, budgetMs: 58000 });
+    if (!rn.text) { back(); return res.status(502).json({ error: failMsgFor(req, rn.status) }); }
+    const text = CUSTOM.parseNotesExtract(rn.text);
+    if (text === null) { back(); return res.status(502).json({ error: 'Photo se paath samajh nahi aaya. Saaf, seedhi photo lekar dobara try karo.' }); }
+    return res.json({ text, left: uk ? null : await CUSTOM_PHOTO_QUOTA.left(uid) });
+  }
   const r = await geminiFor(req, CUSTOM.EXTRACT_SYSTEM, CUSTOM.buildExtractPrompt(ctx), { json: true, temperature: 0.1, maxTokens: 6000, images: [img], fallback: [], reqMs: 40000, budgetMs: 58000 });
   if (!r.text) { back(); return res.status(502).json({ error: failMsgFor(req, r.status) }); }
   const questions = CUSTOM.parseExtract(r.text);
   if (!questions) { back(); return res.status(502).json({ error: 'Photo se questions samajh nahi aaye. Saaf, seedhi photo lekar dobara try karo.' }); }
-  res.json({ questions, left: uk ? null : CUSTOM_PHOTO_QUOTA.left(uid) });
+  res.json({ questions, left: uk ? null : await CUSTOM_PHOTO_QUOTA.left(uid) });
+});
+
+// ---- Apna answer check karo: the student photographs the answer written by hand, the AI reads it and checks it against the question and the chapter notes ----
+// Works for built-in and custom questions alike (guard() gives the chapter's hidden notes in both cases). The photo is only read, never stored and not logged.
+// It counts as one photo read in the same daily photo limit as Add custom course (the parent's own key has no limit); a failed or unreadable photo gives the use back.
+app.post('/api/answer/check', async (req, res) => {
+  const b = req.body || {}, img = CUSTOM.validImage(b.image, b.mime);
+  if (!img) return res.status(400).json({ error: 'Photo sahi nahi hai. Kaapi ke page ki saaf photo (jpg ya png) lo.' });
+  const hit = guard(req, res); if (!hit) return;
+  if (!(await guardAI(req, res))) return;
+  const { q, course, ch } = hit, math = CHECK.isMath(course), uid = req.user.uid, uk = userKeyOf(req);
+  if (!uk && !(await CUSTOM_PHOTO_QUOTA.take(uid))) return res.status(429).json({ code: 'limit_reached', kind: 'photos', error: 'Aaj ki photo limit (' + CUSTOM_DAILY_PHOTOS + ') poori ho gayi. Kal dobara try karo, ya Advanced AI Features me parent ki Gemini key lagwao.' });
+  const back = () => { if (!uk) Promise.resolve(CUSTOM_PHOTO_QUOTA.refund(uid)).catch(() => {}); };
+  const r = await geminiFor(req, math ? CHECK.SYSTEM_MATH : CHECK.SYSTEM_THEORY, CHECK.buildPrompt(q, course, ch), { json: true, temperature: 0.2, maxTokens: math ? 3500 : 2200, images: [img], fallback: [], reqMs: 40000, budgetMs: 58000 });
+  if (!r.text) { back(); return res.status(502).json({ error: failMsgFor(req, r.status) }); }
+  const out = CHECK.parseCheck(r.text, math);
+  if (!out) { back(); return res.status(502).json({ error: 'AI ka jawab samajh nahi aaya. Dobara try karo.' }); }
+  if (out.unreadable) { back(); return res.status(422).json({ code: 'unreadable', error: 'Likha hua padh nahi paya. Roshni mein, seedhi aur saaf photo lo, sirf answer wala hissa.' }); }
+  res.json({ ...out, left: uk ? null : await CUSTOM_PHOTO_QUOTA.left(uid) });
+});
+
+// ---- Admin: AI multiple-choice quiz from a chapter's textbook notes (quiz-core.js) ----
+// Only the admin asks for it; the answer is a DRAFT. The admin edits it and saves it as pending or approved in Firestore `quizzes`, and
+// firestore.rules show only approved quizzes to students. Every question carries a phrase that really is in the notes (else it is dropped).
+// Built-in chapters only for now: a student's own chapter has no notes field yet.
+const QUIZ_ERR = {
+  bad_level: [400, 'Level easy, medium ya hard hona chahiye.'],
+  notes_short: [400, 'Is chapter ke notes bahut kam hain, isliye achhe sawaal nahi ban sakte.'],
+  bad_json: [502, 'AI ka jawab samajh nahi aaya. Dobara try karo.'],
+  too_few: [502, 'AI ke kaafi sawaal notes se match nahi hue. Dobara try karo.']
+};
+app.post('/api/quiz/generate', async (req, res) => {
+  if (!isAdminReq(req)) return res.status(403).json({ error: 'Sirf admin quiz bana sakta hai.' });
+  const b = req.body || {};
+  const hit = RECALL.findChapter(QUIZ, String(b.course || ''), b.ch);
+  if (!hit || !RECALL.isReady(hit.ch)) return res.status(400).json({ error: 'Ye chapter nahi mila ya abhi available nahi hai.' });
+  if (!(await guardAI(req, res))) return;
+  const r = await QZ.generate({ course: hit.course, ch: hit.ch, level: String(b.level || ''), n: b.n, ask: (system, prompt) => geminiFor(req, system, prompt, { json: true, temperature: 0.4, maxTokens: 4000, reqMs: 40000, budgetMs: 58000 }) });
+  if (!r.ok) { const e = QUIZ_ERR[r.code]; return e ? res.status(e[0]).json({ error: e[1], code: r.code }) : res.status(502).json({ error: failMsgFor(req, r.status), code: r.code }); }
+  res.json({ items: r.items, dropped: r.dropped });
 });
 
 // ---- answer ---------------------------------------------------------------
@@ -684,7 +899,7 @@ app.post('/api/answer', async (req, res) => {
   const key = id + '|en';
   if (fresh) for (const k of [...CACHE.keys()]) if (k.startsWith(id + '|')) CACHE.delete(k); // old translations/diagram are stale too
   if (!fresh && CACHE.has(key)) return res.json({ answer: CACHE.get(key), cached: true });
-  if (!guardAI(req, res)) return;
+  if (!(await guardAI(req, res))) return;
   const r = await geminiFor(req, P.answer, buildPrompt(q, course, ch));
   if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
@@ -722,7 +937,7 @@ app.post('/api/translate', async (req, res) => {
   if (!base) return res.status(400).json({ error: 'Pehle AI Answer banao, phir translate karo.' });
   const key = id + '|tr|' + to + '|' + style + '|' + hash(base);
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
-  if (!guardAI(req, res)) return;
+  if (!(await guardAI(req, res))) return;
   const r = await geminiFor(req, P.tr, ST[style](LANGS[to], base), { temperature: 0.2 });
   if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
@@ -740,7 +955,7 @@ app.post('/api/qtranslate', async (req, res) => {
   if (!base) return res.status(400).json({ error: 'Is question ka text nahi hai.' });
   const key = id + '|qtr|' + to;
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
-  if (!guardAI(req, res)) return;
+  if (!(await guardAI(req, res))) return;
   const r = await geminiFor(req, P.tr, stylesFor(course).para(LANGS[to], base), { temperature: 0.2 });
   if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
@@ -760,7 +975,7 @@ app.post('/api/lesson', async (req, res) => {
   const style = Object.prototype.hasOwnProperty.call(ST, req.body.style) ? req.body.style : 'para';
   const key = ['lesson', course, chNo, p, to, style].join('|');
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
-  if (!guardAI(req, res)) return;
+  if (!(await guardAI(req, res))) return;
   const r = await geminiFor(req, profileFor(hit.course).tr, ST[style](LANGS[to], text), { temperature: 0.2 });
   if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
@@ -776,7 +991,7 @@ app.post('/api/rules', async (req, res) => {
   if (!LANGS[to]) return res.status(400).json({ error: 'Language supported nahi hai.' });
   const key = ['rules', course, chNo, sec, to].join('|');
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
-  if (!guardAI(req, res)) return;
+  if (!(await guardAI(req, res))) return;
   const { kind, topic } = section.rules, cls = hit.course.class;
   const hindi = hit.course.subject === 'Hindi';
   const system = hindi ? `You are a friendly Hindi teacher for Class ${cls} students in Assam (English-medium school). You explain standard Hindi grammar rules in ${LANGS[to]}.
@@ -806,14 +1021,18 @@ app.post('/api/more', async (req, res) => {
   const hit = guard(req, res); if (!hit) return;
   const { q, course, ch } = hit, P = profileFor(course);
   const { id, kind } = req.body;
-  if (!Object.prototype.hasOwnProperty.call(P.kinds, kind)) return res.status(400).json({ error: 'Ye option supported nahi hai.' });
+  const extra = LEVELS.extraPrompt(kind, course.class);   // "Kahani" and "Example": worded for the student's class (levels-core.js)
+  if (!extra && !Object.prototype.hasOwnProperty.call(P.kinds, kind)) return res.status(400).json({ error: 'Ye option supported nahi hai.' });
+  // Kahani / Example are written by the admin and approved before students see them (public/aireview.js, firestore.rules `aicontent`); a student's own question stays private and is allowed
+  if (extra && !req.customHit && !isAdminReq(req)) return res.status(403).json({ error: 'Ye content admin check karke dikhata hai. Abhi taiyar nahi hai.' });
   const base = clientText(req.body.text) || CACHE.get(id + '|en');
   if (!base) return res.status(400).json({ error: 'Pehle AI Answer banao, phir ye option use karo.' });
-  const key = id + '|more|' + kind + '|' + hash(base);
+  // a story or example is kept per student, never shared through the server cache with other students
+  const key = id + '|more|' + kind + '|' + hash(base) + (extra ? '|' + req.user.uid : '');
   if (req.body.fresh) CACHE.delete(key);
   if (CACHE.has(key)) return res.json({ text: CACHE.get(key), cached: true });
-  if (!guardAI(req, res)) return;
-  const prompt = `${buildPrompt(q, course, ch)}\n\nHere is the answer:\n${base}\n\nExtra help kind: ${kind}.\n${P.kinds[kind]}` + (req.body.fresh ? '\nThe student wants a different version than before. Use new wording and a different example.' : '');
+  if (!(await guardAI(req, res))) return;
+  const prompt = `${buildPrompt(q, course, ch)}\n\nHere is the answer:\n${base}\n\nExtra help kind: ${kind}.\n${extra || P.kinds[kind]}` + (req.body.fresh ? '\nThe student wants a different version than before. Use new wording and a different example.' : '');
   const r = await geminiFor(req, P.more, prompt, { temperature: 0.5 });
   if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
@@ -821,15 +1040,7 @@ app.post('/api/more', async (req, res) => {
 });
 
 // ---- diagram (SVG) --------------------------------------------------------
-function cleanSvg(raw) {
-  const m = String(raw || '').match(/<svg[\s\S]*<\/svg>/i);
-  if (!m) return null;
-  let svg = m[0];
-  if (svg.length > 20000) return null;
-  if (/<script|<foreignObject|<iframe|<image|\son[a-z]+\s*=|javascript:/i.test(svg)) return null;
-  if (!/xmlns\s*=/.test(svg.slice(0, 200))) svg = svg.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
-  return svg;
-}
+const { cleanSvg } = require('./svg-core');   // checks the SVG (no scripts, no outside links); see svg-core.js
 app.post('/api/visual', async (req, res) => {
   const hit = guard(req, res); if (!hit) return;
   const { q, course, ch } = hit, P = profileFor(course);
@@ -839,7 +1050,7 @@ app.post('/api/visual', async (req, res) => {
   const key = id + '|vis|' + dtype + '|' + hash(base);
   if (fresh) CACHE.delete(key);
   if (CACHE.has(key)) return res.json({ svg: CACHE.get(key), cached: true });
-  if (!guardAI(req, res)) return;
+  if (!(await guardAI(req, res))) return;
   const prompt = buildPrompt(q, course, ch) + (base ? `\n\nHere is the answer to illustrate:\n${base}` : '') + '\n\nDraw ONE clear diagram for this.' + (DTYPES[dtype] ? '\n' + DTYPES[dtype] : '')
     + (fresh ? '\nThe student did not like the previous diagram. Use a clearly different layout and style.' : '');
   const r = await geminiFor(req, P.vis, prompt, { temperature: 0.4, maxTokens: 4096 });
@@ -1131,7 +1342,7 @@ app.post('/api/video', async (req, res) => {
 // ---- Admin: upload a video straight from the browser to Backblaze (switch on with VIDEO_UPLOAD=true) -----------
 // The server only signs a short-lived PUT link; the file itself never passes through Render. Only the admin Google accounts may ask for it.
 const isAdminReq = req => req.user && req.user.email_verified === true && MV_ADMINS.includes(String(req.user.email || '').toLowerCase());
-const VIDEO_MAX_MB = Math.max(1, parseInt(process.env.VIDEO_MAX_MB || '2000', 10) || 2000);
+const VIDEO_MAX_MB = Math.max(1, parseInt(process.env.VIDEO_MAX_MB || '300', 10) || 300);   // Backblaze's free tier is 10 GB in total, so one lesson video is kept small; raise it on Render if you need more
 app.post('/api/video/upload-url', async (req, res) => {
   if (!isAdminReq(req)) return res.status(403).json({ error: 'Sirf admin video upload kar sakta hai.' });
   if (process.env.VIDEO_UPLOAD !== 'true') return res.status(403).json({ error: 'Browser upload abhi off hai (Render mein VIDEO_UPLOAD=true karo).' });
@@ -1277,7 +1488,7 @@ async function mvLangs(plan, budgetMs, valOpts, userKey) {
 // so videos that were approved before this feature get the text too.
 app.post('/api/mathvideo/translate', async (req, res) => {
   if (!isAdminReq(req)) return res.status(403).json({ error: 'Sirf admin ye kar sakta hai.' });
-  if (!guardAI(req, res)) return;
+  if (!(await guardAI(req, res))) return;
   const plan = (req.body || {}).plan, v = MV.validate(plan);
   if (v.errors.length) return res.status(400).json({ error: 'Plan pehle valid hona chahiye: ' + v.errors.slice(0, 3).join(' | ') });
   const copy = JSON.parse(JSON.stringify(plan));
@@ -1522,7 +1733,7 @@ function mvKnown(text, subject) { return mvBank(subject).find(r => MV.linesMatch
 const MV_UNKNOWN_MSG = subject => `Is box me sirf app ke ${subject === 'Science' ? 'Science' : 'Maths'} ke questions chalte hain. Question ke bagal ke 3 dots me "Copy question" dabao aur yahan paste karo.`;
 
 app.post('/api/mathvideo/generate', async (req, res) => {
-  if (!guardAI(req, res)) return;
+  if (!(await guardAI(req, res))) return;
   const typed = String((req.body || {}).text || '').replace(/\s+/g, ' ').trim();
   if (typed.length < 8) return res.status(400).json({ error: 'Question thoda aur likho (kam se kam 8 akshar).' });
   if (typed.length > 400) return res.status(400).json({ error: 'Question bahut lamba hai. 400 akshar tak likho.' });
@@ -1538,7 +1749,7 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   if (!MV_ADMINS.includes(email) && !userKeyOf(req)) {   // a student with a parent's key pays with that key: no daily limit
     const u = MV_USE.get(req.user.uid), day = mvDay();
     const cur = u && u.day === day ? u : { day, n: 0 };
-    if (cur.n >= MV_DAILY) return res.status(429).json({ error: `Aaj ki video limit (${MV_DAILY}) poori ho gayi. Kal dobara try karo.` });
+    if (cur.n >= MV_DAILY) return res.status(429).json({ code: 'limit_reached', kind: 'video', error: `Aaj ki video limit (${MV_DAILY}) poori ho gayi. Kal dobara try karo.` });
     cur.n++; MV_USE.set(req.user.uid, cur);
   }
 
@@ -1640,7 +1851,7 @@ function sciQuality(plan) {
 }
 
 app.post('/api/sciencevideo/generate', async (req, res) => {
-  if (!guardAI(req, res)) return;
+  if (!(await guardAI(req, res))) return;
   const typed = String((req.body || {}).text || '').replace(/\s+/g, ' ').trim();
   if (typed.length < 8) return res.status(400).json({ error: 'Question thoda aur likho (kam se kam 8 akshar).' });
   if (typed.length > 700) return res.status(400).json({ error: 'Question bahut lamba hai.' });
@@ -1653,7 +1864,7 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
   if (!MV_ADMINS.includes(email) && !userKeyOf(req)) {   // a student with a parent's key pays with that key: no daily limit
     const u = MV_USE.get(req.user.uid), day = mvDay();
     const cur = u && u.day === day ? u : { day, n: 0 };
-    if (cur.n >= MV_DAILY) return res.status(429).json({ error: `Aaj ki video limit (${MV_DAILY}) poori ho gayi. Kal dobara try karo.` });
+    if (cur.n >= MV_DAILY) return res.status(429).json({ code: 'limit_reached', kind: 'video', error: `Aaj ki video limit (${MV_DAILY}) poori ho gayi. Kal dobara try karo.` });
     cur.n++; MV_USE.set(req.user.uid, cur);
   }
 

@@ -46,7 +46,7 @@
 
   function mount(box, store) {
     box.textContent = "";
-    var editing = null, uploadOn = false;
+    var editing = null, uploadOn = false, maxMb = 300;
     var inpStyle = "width:100%;padding:9px;margin-top:3px;box-sizing:border-box";
     var msg = h("div", { style: "white-space:pre-wrap;font-size:13px;margin:8px 0;min-height:20px" });
     function say(t, ok) { msg.textContent = t; msg.style.color = ok ? "#168653" : "#d74747"; }
@@ -69,6 +69,7 @@
     upBtn.onclick = function () {
       var f = file.files && file.files[0];
       if (!f) return upHint("Pehle ek .mp4 file chuno.");
+      if (f.size > maxMb * 1048576) return upHint("Video bahut badi hai (" + Math.round(f.size / 104857.6) / 10 + " MB). Limit " + maxMb + " MB hai.");
       upBtn.disabled = true; upHint("Link bana raha hoon...");
       api("/api/video/upload-url", { filename: f.name, size: f.size, contentType: "video/mp4" })
         .then(function (j) { return putFile(j.url, f, function (p) { upHint("Upload ho raha hai: " + p + "%"); }).then(function () { return j.key; }); })
@@ -82,7 +83,7 @@
       else upBox.appendChild(h("div", { text: "Browser upload abhi off hai. Backblaze website par file upload karo aur uska naam upar likho. (Render mein VIDEO_UPLOAD=true karne se ye option on hoga.)", style: "font-size:12px" }));
     }
     drawUpload();
-    fetch(base() + "/api/ping").then(function (r) { return r.json(); }).then(function (j) { uploadOn = !!(j && j.upload); drawUpload(); }, function () {});
+    fetch(base() + "/api/ping").then(function (r) { return r.json(); }).then(function (j) { uploadOn = !!(j && j.upload); if (j && j.maxMb > 0) maxMb = j.maxMb; drawUpload(); }, function () {});
 
     var saveBtn = h("button", { type: "button", text: "Save video", style: "padding:10px 14px;border-radius:10px;border:0;background:rgba(128,128,128,.28);color:inherit;cursor:pointer;font-weight:600" });
     var newBtn = h("button", { type: "button", text: "Naya form", style: "padding:10px 14px;border-radius:10px;border:0;background:rgba(128,128,128,.18);color:inherit;cursor:pointer" });

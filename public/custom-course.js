@@ -8,9 +8,24 @@
   'use strict';
   const doc = g.document;
   const KEY = 'orbit_custom_v1', PEND = 'orbit_cc_pending';
-  const MAX_COURSES = 15, MAX_CHAPTERS = 40, MAX_Q = 80, MAX_BYTES = 800000, MAX_PHOTOS = 3;
+  const MAX_COURSES = 15, MAX_CHAPTERS = 40, MAX_Q = 80, MAX_BYTES = 800000, MAX_PHOTOS = 10, WARN_AT = 0.8, NOTES_SEND = 14000;
   const MEDIUMS = ['English', 'Assamese'], LANGS = ['English', 'Hindi', 'Assamese'];
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Chapter notes -> the excerpt that travels with one AI request. Same rules as pickNotes() in custom-core.js on the server:
+  // notes that fit are sent as they are; longer notes keep the paragraphs that share the most words with the question, in book order.
+  const cleanNotes = v => String(v == null ? '' : v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  const wordsOf = t => (String(t).toLowerCase().match(/[\p{L}\p{M}\p{N}]{3,}/gu) || []);
+  function pickNotes(notes, query, max) {
+    const t = cleanNotes(notes);
+    if (t.length <= max) return t;
+    const qw = new Set(wordsOf(query));
+    const paras = t.split(/\n\s*\n|\n/).map(x => x.trim()).filter(Boolean).flatMap(x => { const o = []; for (let i = 0; i < x.length; i += 600) o.push(x.slice(i, i + 600)); return o; })
+      .map((text, i) => ({ text, i, score: wordsOf(text).reduce((n, w) => n + (qw.has(w) ? 1 : 0), 0) }));
+    const chosen = new Set(); let used = 0;
+    for (const p of [...paras].sort((a, b) => b.score - a.score || a.i - b.i)) { if (used + p.text.length + 1 > max) continue; chosen.add(p.i); used += p.text.length + 1; }
+    return paras.filter(p => chosen.has(p.i)).map(p => p.text).join('\n');
+  }
+  const notesFor = (notes, q) => pickNotes(String(notes || '').slice(0, 200000), q, NOTES_SEND);
   const CLOUD = () => g.CLOUD && g.CLOUD.custom;
   const redraw = force => {
     if (typeof g.draw !== 'function' || typeof DATA === 'undefined' || !DATA) return;
@@ -38,7 +53,7 @@
       id: 'cc-' + d.id, custom: true, own, docId: d.id, org: d.org, orgId: orgId(d.org), class: d.class, subject: d.subject, medium: d.medium, lang: d.lang,
       ...(d.lang && d.lang !== 'English' ? { sourceLang: d.lang } : {}),
       chapters: (d.chapters || []).map(ch => ({
-        no: ch.no, title: ch.title,
+        no: ch.no, title: ch.title, notes: ch.notes || '',
         sections: (ch.questions || []).length ? [{ title: 'Questions', questions: ch.questions.map((q, i) => ({ id: 'cq_' + d.id + '_' + q.k, no: i + 1, label: normLabel(q.label), text: q.text, parts: q.parts || [], options: q.options || [] })) }] : []
       }))
     };
@@ -121,12 +136,13 @@
   const rk = () => { const a = new Uint8Array(6); (g.crypto || {}).getRandomValues ? g.crypto.getRandomValues(a) : a.forEach((_, i) => { a[i] = Math.random() * 256; }); return [...a].map(x => (x % 36).toString(36)).join(''); };
   const errText = e => (e && e.code === 'permission-denied') ? 'Save nahi hua (permission). Dobara login karo ya thodi der baad try karo.' : (typeof errMsg === 'function' ? errMsg(e) : String((e && e.message) || e));
   // An edited or deleted question must not keep the old answer, translation or heart on this device.
-  function forget(id) {
+  // keepSaved: when only the chapter notes changed, the question is the same, so the student's Save/Pin stays; only the old AI answers go.
+  function forget(id, keepSaved) {
     try {
       delete ANS[id]; delete CACHE[id]; cachePersist(); delete TRC[id]; trPersist(); delete MRC[id]; mrPersist(); delete VIS[id]; delete OPEN[id];
       for (const t of Object.keys(TR)) if (t.startsWith(id + '|')) delete TR[t];
       for (const t of Object.keys(MR)) if (t.startsWith(id + '|')) delete MR[t];
-      if (SAVED[id]) { delete SAVED[id]; persist(); }
+      if (!keepSaved && SAVED[id]) { delete SAVED[id]; persist(); }
     } catch (e) { /* the app shell is not ready: nothing to forget */ }
   }
 
@@ -203,7 +219,7 @@
     if (!src) return;
     if (S.own.length >= MAX_COURSES) return say('Aap ' + MAX_COURSES + ' se zyada courses nahi bana sakte.', true);
     const d = { id: CLOUD().newId(), ownerId: S.uid, org: src.org, medium: src.medium, class: src.class, subject: src.subject, lang: src.lang || 'English', shared: false, updatedAt: Date.now(),
-      chapters: (src.chapters || []).map(ch => ({ no: ch.no, title: ch.title, questions: (ch.questions || []).map(q => ({ k: rk(), label: q.label || '', text: q.text, parts: q.parts || [], options: q.options || [] })) })) };
+      chapters: (src.chapters || []).map(ch => ({ no: ch.no, title: ch.title, ...(ch.notes ? { notes: ch.notes } : {}), questions: (ch.questions || []).map(q => ({ k: rk(), label: q.label || '', text: q.text, parts: q.parts || [], options: q.options || [] })) })) };
     S.busy = true; redraw(true);
     try { await put(d); S.own.unshift(d); S.incoming = null; S.cur = d.id; S.page = 'manage'; S.msg = 'Ye aapki apni copy hai. Ab ise edit kar sakte ho.'; apply(); }
     catch (e) { S.err = errText(e); }
@@ -220,14 +236,31 @@
   // ---- chapter editor (questions list + photo) ----
   function openChapter(no) {
     const d = cur(), ch = d && d.chapters.find(c => c.no === no); if (!ch) return;
-    S.work = { no, title: ch.title, qs: (ch.questions || []).map(q => ({ k: q.k, label: q.label || '', text: q.text, parts: [...(q.parts || [])], options: [...(q.options || [])], orig: JSON.stringify([q.text, q.parts || [], q.options || []]) })), dirty: false };
+    S.work = { no, title: ch.title, qs: (ch.questions || []).map(q => ({ k: q.k, label: q.label || '', text: q.text, parts: [...(q.parts || [])], options: [...(q.options || [])], orig: JSON.stringify([q.text, q.parts || [], q.options || []]) })), notes: ch.notes || '', notesOrig: ch.notes || '', dirty: false };
     S.page = 'chapter'; S.msg = ''; S.err = ''; redraw(true);
+  }
+  // ---- size of the course document (Firestore document limit, MAX_BYTES), counted with the unsaved questions and notes ----
+  function draftDoc(d, w, notes) {
+    const n = cleanNotes(notes);
+    return { ...d, chapters: d.chapters.map(c => { if (c.no !== w.no) return c; const { notes: _old, ...rest } = c; return { ...rest, ...(n ? { notes: n } : {}), questions: w.qs.map(q => ({ k: q.k || 'xxxxxx', label: String(q.label || '').slice(0, 12), text: String(q.text || '').slice(0, 700), parts: q.parts || [], options: q.options || [] })) }; }) };
+  }
+  function sizeOf(d, w, notes) {
+    const { id, ...data } = draftDoc(d, w, notes), bytes = bytesOf(data);
+    return { bytes, pct: bytes / MAX_BYTES, level: bytes > MAX_BYTES ? 'over' : bytes >= WARN_AT * MAX_BYTES ? 'warn' : 'ok' };
+  }
+  const kb = n => Math.max(1, Math.round(n / 1024)) + ' KB';
+  function sizeLine(z) {
+    return 'Course ka size: ' + kb(z.bytes) + ' / ' + kb(MAX_BYTES) + ' (' + Math.round(z.pct * 100) + '%)'
+      + (z.level === 'over' ? '. Notes bahut bade hain, kuch hissa hata do. Abhi save nahi hoga.' : z.level === 'warn' ? '. Limit ke paas ho, kuch hissa chhota rakho.' : '.');
   }
   async function saveWork() {
     const d = cur(), w = S.work; if (!d || !w) return;
     const qs = w.qs.map(q => ({ ...q, text: q.text.trim() })).filter(q => q.text.length >= 3);
     if (qs.length > MAX_Q) return say('Ek chapter me ' + MAX_Q + ' questions tak rakh sakte ho.', true);
     const dropped = w.qs.length - qs.length;
+    const notes = cleanNotes(w.notes), notesChanged = notes !== cleanNotes(w.notesOrig);
+    const z = sizeOf(d, { ...w, qs }, notes);
+    if (z.level === 'over') return say('Notes bahut bade hain, kuch hissa hata do. (Course ' + kb(z.bytes) + ' ho gaya, limit ' + kb(MAX_BYTES) + ' hai.) Save nahi hua.', true);
     const old = (d.chapters.find(c => c.no === w.no) || {}).questions || [];
     const keep = new Set(qs.filter(q => q.k).map(q => q.k));
     const changed = [];
@@ -237,10 +270,11 @@
       return { k, label: String(q.label || '').trim().slice(0, 12), text: q.text.slice(0, 700), parts: (q.parts || []).map(x => x.slice(0, 300)).slice(0, 8), options: (q.options || []).map(x => x.slice(0, 300)).slice(0, 6) };
     });
     const gone = old.filter(q => !keep.has(q.k)).map(q => q.k);
-    await save({ ...d, chapters: d.chapters.map(c => c.no === w.no ? { ...c, questions: out } : c) }, () => {
+    await save({ ...d, chapters: d.chapters.map(c => { if (c.no !== w.no) return c; const { notes: _old, ...rest } = c; return { ...rest, ...(notes ? { notes } : {}), questions: out }; }) }, () => {
       changed.concat(gone).forEach(k => forget('cq_' + d.id + '_' + k));
+      if (notesChanged) out.forEach(q => forget('cq_' + d.id + '_' + q.k, true));   // the AI answers were made with the old notes
       S.work = null; S.page = 'manage';
-      S.msg = out.length + ' questions save ho gaye' + (dropped ? ' (' + dropped + ' khaali question hata diye)' : '') + '. Ab "Open course" se AI Answer try karo.';
+      S.msg = out.length + ' questions' + (notes ? ' aur notes' : '') + ' save ho gaye' + (dropped ? ' (' + dropped + ' khaali question hata diye)' : '') + (notesChanged ? '. Purane AI answers hata diye, ab naye notes ke hisaab se banenge' : '') + '. Ab "Open course" se AI Answer try karo.';
     });
   }
   function shrink(file) {   // photo -> JPEG of at most 1600 px (about 0.4 MB), so it is quick to send on a phone connection
@@ -258,27 +292,47 @@
       img.src = url;
     });
   }
-  async function onFiles(files) {
+  // Read photos one after another. mode 'notes': the page's whole text is added to the chapter notes; otherwise the exercise questions are added.
+  // Everything read before a stop (daily limit, bad photo, size limit) stays in the editor, nothing already read is thrown away.
+  async function onFiles(files, mode) {
     const d = cur(), w = S.work; if (!d || !w || S.busy) return;
-    const list = [...files].filter(f => /^image\//.test(f.type)).slice(0, MAX_PHOTOS);
-    if (!list.length) return say('Photo chuno (jpg ya png).', true);
-    S.busy = true; S.err = ''; let added = 0, full = false;
+    const all = [...files].filter(f => /^image\//.test(f.type));
+    if (!all.length) return say('Photo chuno (jpg ya png).', true);
+    const list = all.slice(0, MAX_PHOTOS), skipped = all.length - list.length, asNotes = mode === 'notes';
+    S.busy = true; S.err = ''; let added = 0, full = false, over = false, done = 0, stopped = false;
     for (let i = 0; i < list.length; i++) {
-      S.msg = 'Photo ' + (i + 1) + '/' + list.length + ' padh raha hoon… (10 se 30 second lag sakte hain)'; redraw(true);
+      S.msg = 'Photo ' + (i + 1) + '/' + list.length + ' padh raha hoon… (10 se 30 second lag sakte hain)' + (skipped ? ' Sirf pehli ' + MAX_PHOTOS + ' photos li gayi.' : ''); redraw(true);
       try {
         const p = await (hooks.shrink || shrink)(list[i]);
-        const j = await g.api('/api/custom/extract', { ...p, cls: d.class, subject: d.subject, chapter: w.title, medium: d.medium, lang: d.lang || 'English' });
-        const have = new Set(w.qs.map(q => q.text.trim().toLowerCase()));
-        for (const q of j.questions || []) {
-          if (have.has(String(q.text).trim().toLowerCase())) continue;
-          if (w.qs.length >= MAX_Q) { full = true; break; }
-          w.qs.push({ k: '', label: q.label || '', text: q.text, parts: q.parts || [], options: q.options || [], isNew: true }); added++;
+        const j = await g.api('/api/custom/extract', { ...p, ...(asNotes ? { mode: 'notes' } : {}), cls: d.class, subject: d.subject, chapter: w.title, medium: d.medium, lang: d.lang || 'English' });
+        if (asNotes) {
+          const t = cleanNotes(j.text);
+          if (t) {
+            const next = w.notes ? String(w.notes).replace(/\s+$/, '') + '\n\n' + t : t;
+            if (sizeOf(d, w, next).level === 'over') { over = true; break; }   // this page would break the size limit: keep what is already in the notes
+            w.notes = next; added += t.length; w.dirty = true;
+          }
+        } else {
+          const have = new Set(w.qs.map(q => q.text.trim().toLowerCase()));
+          for (const q of j.questions || []) {
+            if (have.has(String(q.text).trim().toLowerCase())) continue;
+            if (w.qs.length >= MAX_Q) { full = true; break; }
+            w.qs.push({ k: '', label: q.label || '', text: q.text, parts: q.parts || [], options: q.options || [], isNew: true }); added++;
+          }
+          if (added) w.dirty = true;
         }
-        if (added) w.dirty = true;
-      } catch (e) { S.err = errText(e); break; }
+        done++;
+      } catch (e) { S.err = errText(e); stopped = true; break; }
     }
     S.busy = false;
-    S.msg = added ? added + ' naye questions mile (neeche "Naya" likha hai). Check karo, galti ho to sudharo, phir Save dabao.' + (full ? ' (Limit ' + MAX_Q + ' questions poori ho gayi.)' : '') : (S.err ? '' : 'Is photo me koi question nahi mila. Sirf exercise ke questions wala hissa saaf dikhao.');
+    const left = list.length - done;
+    const parts = [];
+    if (asNotes) parts.push(added ? added + ' akshar ka paath notes mein jud gaya (neeche Notes box mein dekho, galti ho to sudharo, phir Save dabao).' : (stopped || over ? '' : 'Is photo me padhne laayak paath nahi mila. Page ki saaf, seedhi photo lo.'));
+    else parts.push(added ? added + ' naye questions mile (neeche \"Naya\" likha hai). Check karo, galti ho to sudharo, phir Save dabao.' + (full ? ' (Limit ' + MAX_Q + ' questions poori ho gayi.)' : '') : (stopped ? '' : 'Is photo me koi question nahi mila. Sirf exercise ke questions wala hissa saaf dikhao.'));
+    if (over) parts.push('Notes bahut bade ho gaye, isliye photo ' + (done + 1) + ' ka paath nahi joda. Pehle ke notes bache hain. Kuch hissa hata do ya Save karke baaki ke liye alag chapter banao.');
+    if (stopped && done) parts.push(done + ' photo' + (done > 1 ? 's' : '') + ' padh li gayi, unka kaam bacha hua hai (Save dabao). ' + left + ' photo' + (left > 1 ? 's' : '') + ' nahi padh paaye, unhe baad me dobara chuno.');
+    if (skipped) parts.push('Sirf pehli ' + MAX_PHOTOS + ' photos li gayi, baaki ' + skipped + ' ke liye dobara dabao.');
+    S.msg = parts.filter(Boolean).join(' ');
     redraw(true);
   }
 
@@ -336,11 +390,19 @@
       <details ${(x.parts || []).length || (x.options || []).length ? 'open' : ''}><summary class="rsub">Parts (i, ii…) / Options (A, B…)</summary>
         <textarea data-ccq="${i}" data-ccf="parts" rows="2" placeholder="Parts: ek line me ek part" aria-label="Parts">${esc((x.parts || []).join('\n'))}</textarea>
         <textarea data-ccq="${i}" data-ccf="options" rows="2" placeholder="Options: ek line me ek option" aria-label="Options">${esc((x.options || []).join('\n'))}</textarea></details></div>`;
+    const z = sizeOf(d, w, w.notes);
     return back('manage', 'Chapters', w.dirty ? 'data-dirty="1"' : '') + h1('Chapter ' + w.no + ': ' + w.title) + `<div class="mut">${esc(d.subject)} · Class ${d.class}</div>
-      <p class="mut">Kitab ke questions wale page ki saaf photo lo (ek baar me 3 tak). AI questions padhega, aap check karke Save karo. Photo save nahi hoti, sirf padhi jaati hai.</p>
+      <h2 class="sec">Chapter ke notes</h2>
+      <p class="mut">Kitab ka paath yahan paste karo, type karo, ya page ki photo se lo. Notes bachhe ko screen par nahi dikhte, sirf AI ko jaate hain, taaki AI kitab ke hisaab se sahi jawab de.</p>
+      <textarea id="ccNotes" class="ccnotes" rows="8" aria-label="Chapter ke notes" placeholder="Chapter ka paath yahan paste karo…">${esc(w.notes)}</textarea>
+      <div id="ccNotesInfo" class="rsub ${z.level === 'ok' ? '' : 'err'}" role="status">${esc(sizeLine(z))}</div>
+      <div class="ccrow"><input id="ccFileN" type="file" accept="image/*" multiple hidden><button class="btn alt" data-cc="pickn" ${S.busy ? 'disabled' : ''}>📷 Photo se notes jodo</button></div>
+      <p class="mut" style="font-size:12.5px;margin:6px 0 0">Pages ko order me chuno (pehla page pehle). Ek baar me ${MAX_PHOTOS} photos tak. Photo save nahi hoti, sirf padhi jaati hai.</p>
+      <h2 class="sec">Questions</h2>
+      <p class="mut">Kitab ke questions wale page ki saaf photo lo (ek baar me ${MAX_PHOTOS} tak). AI questions padhega, aap check karke Save karo. Photo save nahi hoti, sirf padhi jaati hai.</p>
       <div class="ccrow"><input id="ccFile" type="file" accept="image/*" multiple hidden><button class="btn" data-cc="pick" ${S.busy ? 'disabled' : ''}>📷 Photo se questions jodo</button><button class="btn alt" data-cc="addq" ${S.busy ? 'disabled' : ''}>+ Khud likho</button></div>` + note()
       + (w.qs.length ? w.qs.map(q).join('') : '<p class="mut" style="margin-top:18px">Abhi koi question nahi. Photo lo ya khud likho.</p>')
-      + `<div class="ccbar"><button class="btn" data-cc="saveq" ${S.busy || !w.dirty ? 'disabled' : ''}>${S.busy ? 'Ho raha hai…' : 'Save (' + w.qs.length + ' questions)'}</button></div>`;
+      + `<div class="ccbar"><button class="btn" data-cc="saveq" ${S.busy || !w.dirty || z.level === 'over' ? 'disabled' : ''}>${S.busy ? 'Ho raha hai…' : 'Save (' + w.qs.length + ' questions' + (cleanNotes(w.notes) ? ' + notes' : '') + ')'}</button></div>`;
   }
   function incomingHTML() {
     const d = S.incoming; if (!d) return listHTML();
@@ -373,7 +435,8 @@
 .ccf .btn{margin-top:18px}.ccl{margin-top:10px;font-size:14px}
 .ccq{background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:12px;margin:12px 0}
 .ccq.isnew{border-color:var(--tx);border-width:2px}
-.ccq textarea{margin-top:8px;resize:vertical;min-height:64px}.ccq details{margin-top:8px}.ccq summary{cursor:pointer}
+.ccq textarea,.ccnotes{margin-top:8px;resize:vertical;min-height:64px}
+.ccnotes{width:100%;font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:10px 12px}.ccq details{margin-top:8px}.ccq summary{cursor:pointer}
 .ccsm{width:76px!important;padding:6px 10px!important;font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--ln);border-radius:10px}
 .ccrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}.ccrow .btn{margin-top:0}
 .btn.alt{background:transparent;color:var(--tx);border:1px solid var(--ln)}
@@ -390,6 +453,11 @@
       q[f] = (f === 'parts' || f === 'options') ? t.value.split('\n').map(x => x.trim()).filter(Boolean) : t.value;
       S.work.dirty = true;
       const b = doc.querySelector('[data-cc="saveq"]'); if (b && !S.busy) b.disabled = false;
+    } else if (t.id === 'ccNotes' && S.work) {
+      S.work.notes = t.value; S.work.dirty = true;
+      const d = cur(), z = d ? sizeOf(d, S.work, t.value) : null;
+      const info = doc.getElementById('ccNotesInfo'); if (info && z) { info.textContent = sizeLine(z); info.className = 'rsub' + (z.level === 'ok' ? '' : ' err'); }
+      const b = doc.querySelector('[data-cc="saveq"]'); if (b && !S.busy) b.disabled = !!z && z.level === 'over';
     } else if (t.id && FORM[t.id]) S.form[FORM[t.id]] = t.value;
     else if (t.id === 'ccNewCh') S.newCh = t.value;
   }
@@ -397,6 +465,7 @@
   doc.addEventListener('change', e => {
     onField(e);
     if (e.target && e.target.id === 'ccFile') { const fl = [...e.target.files]; e.target.value = ''; onFiles(fl); }
+    if (e.target && e.target.id === 'ccFileN') { const fl = [...e.target.files]; e.target.value = ''; onFiles(fl, 'notes'); }
   });
   doc.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-cc]'); if (!b || b.disabled) return;
@@ -414,6 +483,7 @@
     else if (a === 'delcourse') delCourse(id);
     else if (a === 'chapter') openChapter(+b.dataset.no);
     else if (a === 'pick') { const f = doc.getElementById('ccFile'); if (f) f.click(); }
+    else if (a === 'pickn') { const f = doc.getElementById('ccFileN'); if (f) f.click(); }
     else if (a === 'addq') { if (S.work) { if (S.work.qs.length >= MAX_Q) return say('Limit ' + MAX_Q + ' questions.', true); S.work.qs.push({ k: '', label: '', text: '', parts: [], options: [], isNew: true }); S.work.dirty = true; redraw(true); } }
     else if (a === 'delq') { if (S.work) { S.work.qs.splice(+b.dataset.i, 1); S.work.dirty = true; redraw(true); } }
     else if (a === 'saveq') saveWork();
@@ -425,5 +495,5 @@
     else if (a === 'cancelin') { S.incoming = null; show('list'); }
   });
 
-  g.CUSTOM = { hooks, viewHTML, homeHTML, courseBar, apply, start, stop, state: S, _t: { orgId, normLabel, toCourse } };
+  g.CUSTOM = { hooks, shrink, viewHTML, homeHTML, courseBar, apply, start, stop, state: S, notesFor, pickNotes, MIN_NOTES_RECALL: 200, _t: { orgId, normLabel, toCourse, sizeOf, pickNotes } };
 })(window);

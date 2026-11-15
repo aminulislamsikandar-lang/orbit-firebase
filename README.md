@@ -106,3 +106,29 @@ Menu > **My Courses** ya Home par **Add custom course**. Student apna School/Boa
 - Limits (free student, parent ki Gemini key lagi ho to koi limit nahi): `CUSTOM_DAILY_AI` (default 40 AI calls/din, custom questions par) aur `CUSTOM_DAILY_PHOTOS` (default 8 photos/din). Render env vars me badal sakte ho. Har student ke max 15 courses, 40 chapters, har chapter me 80 questions.
 - Deploy: `firebase deploy --only hosting,firestore:rules` (rules zaroori hain) aur Render par server redeploy (git push se hota hai).
 - Tests: `node tests/custom.test.js`.
+
+## Phase 2: roz ki limit Firestore mein, limit message, Recall tracker account mein
+**Task 13: roz ki limit Firestore mein.** Recall ka 1 free check, custom course ke AI calls (`CUSTOM_DAILY_AI`) aur photo reads (`CUSTOM_DAILY_PHOTOS`) ab Firestore `dailyUsage/<uid>_<IST din>` mein ginte hain (ek document, teen counters: `recall`, `ai`, `photos`). Render restart ya sleep ke baad ginti zero nahi hoti. Parent ki key wale accounts par ginti hoti hi nahi.
+- **Ek baar ka setup (zaroori):** server ko Firestore likhne ke liye service account chahiye. Firebase Console > Project settings > Service accounts > *Generate new private key* (JSON file). Render > orbit-firebase > Environment > naya variable `FIREBASE_SERVICE_ACCOUNT` = us JSON ka poora text (ya uska base64). Is key ko kabhi chat ya GitHub mein paste mat karna. Phir service restart karo. Variable na ho to server chalta rehta hai, par limit purani tarah memory mein rehti hai (log mein `[limits] ... kept in memory` dikhta hai). Firestore kabhi band/slow ho to bhi us call ke liye memory wali ginti chalti hai, app nahi rukta.
+- Firestore free tier: har limit wali call par 1 read + 1 write (ek transaction). 20,000 writes/din ke andar rehne ke liye approx 20,000 limit-wali calls/din. Purane din ke documents apne aap hatane ke liye (optional): Firebase Console > Firestore > TTL > collection `dailyUsage`, field `expireAt`.
+- `firestore.rules`: `dailyUsage` app ke liye band hai (`allow read, write: if false`), sirf server (Admin SDK) padhta/likhta hai, isliye student apni ginti kam nahi kar sakta. Deploy: `firebase deploy --only firestore:rules`.
+- Abhi Firestore mein nahi: Get Video ki `MV_DAILY` limit (memory mein hi hai, is task mein nahi li gayi).
+
+**Task 14: limit khatam hone par message.** Server `429` ke saath `code: "limit_reached"` aur `kind` (`recall`, `ai`, `photos`, `video`) bhejta hai. `public/limit-msg.js` ka message app mein dikhta hai (Assamese, Hindi, Bengali, English; bhasha = Settings ki default translation language). Purane `error` text ko purane app versions use karte hain.
+
+**Task 15: Recall tracker doosre phone par.** Score (typed text nahi) `users/<uid>/recall/tracker` mein bhi save hota hai. Login par phone aur account ka data milta hai (union, same attempt ek baar, naya rakhta hai, max 300). Chapter chunte hi tracker dikhta hai, naya attempt zaroori nahi. Rules: `users/{uid}/**` wala purana rule hi sirf owner ko padhne/likhne deta hai.
+- Tests: `node tests/limits.test.js`.
+
+## Phase 6: topic map (Tasks 31-34) + revision basics (16/17/19, simple Task 18)
+Phase 6 needed things the earlier phases were to build, so these were made at the smallest size that works. Recall scores a whole chapter explanation, so the unit is the TOPIC (not a single question).
+- **Task 31 topics:** Admin opens Recall, picks a chapter and taps *Topics banao (admin)*. The server asks Gemini once to split the chapter (using its hidden notes + questions) into 3-10 topics in English/Hindi/Assamese/Bengali and ties every question to a topic. Saved in Firestore `chapterTopics/<course>_<chapter>`; already saved = no AI call again. Needs `FIREBASE_SERVICE_ACCOUNT` (Phase 2). Custom courses have no topics (Recall does not support them).
+- **Scores:** when a chapter has topics, the normal Recall also returns a 0-100 score per topic. Each topic keeps its last 5 scores, a stage and `next` review date in `users/<uid>/recall/tracker.topics` (merged with the phone copy, newer wins). 60+ = right: next review after 1, 3, 7, then 30 days; wrong = one stage back, back tomorrow (`public/revision-core.js`).
+- **Task 33 map:** tiles for every topic: Pakka (80%+, green), Theek-thaak (50-79, yellow), Kamzor (below 50, red), Abhi nahi dekha (grey). Every tile also shows its word, not only the colour.
+- **Task 34 Revise karo:** on yellow/red tiles. Recall then asks only about that topic (its questions are shown) and updates only that topic.
+- **Home card:** "Aaj ka revision" counts due topics; the button opens Recall on the most overdue one.
+- Deploy: `firebase deploy --only hosting,firestore:rules` + redeploy the server. Tests: `node tests/phase6.test.js`.
+- **Task 18 flow:** the home card button starts Recall on the most overdue topic; after each answer *Agla revision (N baaki)* walks through the other topics that are still due (a topic already revised well is skipped).
+- **Task 20 chapter-wise haal:** the Recall chapter picker shows Pakka / Theek-thaak / Kamzor with the % (average of the last 5 Recall scores of that chapter), and a list "Chapter-wise haal" shows the tried chapters weakest first with a bar.
+- **Admin, whole course:** *Is course ke sabhi chapters ke topics banao* makes topics chapter by chapter (skips chapters that already have them, stops after 3 failures in a row). Each new chapter is 1 AI call on the server's Gemini key, so do one course at a time.
+- Note: without a parent key a student has 1 free Recall check a day (Task 13), so the revision queue is one topic a day for them; with a parent key there is no limit.
+- Not built: notes for custom courses (Tasks 7-11, so custom courses have no topics), question-level records (the unit is the topic), quiz-based scores (the quiz comes in a later phase).
