@@ -10,6 +10,8 @@
   const KEY = 'orbit_custom_v1', PEND = 'orbit_cc_pending';
   const MAX_COURSES = 15, MAX_CHAPTERS = 40, MAX_Q = 80, MAX_BYTES = 800000, MAX_PHOTOS = 10, WARN_AT = 0.8, NOTES_SEND = 14000;
   const MEDIUMS = ['English', 'Assamese'], LANGS = ['English', 'Hindi', 'Assamese'];
+  const MAX_CLASS = 18;   // 1-12 school, 13-18 college / university (see public/catalog.js)
+  const clsLabel = n => (typeof CATALOG !== 'undefined' && CATALOG.classLabel ? CATALOG.classLabel(n) : 'Class ' + n);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   // Chapter notes -> the excerpt that travels with one AI request. Same rules as pickNotes() in custom-core.js on the server:
   // notes that fit are sent as they are; longer notes keep the paragraphs that share the most words with the question, in book order.
@@ -62,6 +64,7 @@
   function apply() {
     if (typeof DATA === 'undefined' || !DATA || typeof CATALOG === 'undefined') return;
     DATA.courses = DATA.courses.filter(c => !c.custom);
+    if (typeof COURSE !== 'undefined' && COURSE && !COURSE.own) return;   // a student with a course lock sees only that course
     for (const id of Object.keys(IDX)) if (IDX[id].course && IDX[id].course.custom) delete IDX[id];
     CATALOG.groups = CATALOG.groups.filter(x => !x.custom);
     for (const o of Object.keys(CATALOG.content)) if (/^u-/.test(o)) { delete CATALOG.content[o]; delete CATALOG.classes[o]; }
@@ -149,9 +152,9 @@
   // ---- actions ----
   async function create() {
     const f = S.form, org = f.org.trim(), subject = f.subject.trim(), cls = parseInt(f.cls, 10);
-    if (org.length < 2) return say('School ya board ka naam likho (kam se kam 2 akshar).', true);
+    if (org.length < 2) return say('School, college ya board ka naam likho (kam se kam 2 akshar).', true);
     if (!MEDIUMS.includes(f.medium)) return say('Medium chuno.', true);
-    if (!(cls >= 1 && cls <= 12)) return say('Class chuno.', true);
+    if (!(cls >= 1 && cls <= MAX_CLASS)) return say('Class ya college year chuno.', true);
     if (subject.length < 2) return say('Subject ka naam likho.', true);
     if (S.own.length >= MAX_COURSES) return say('Aap ' + MAX_COURSES + ' se zyada courses nahi bana sakte. Pehle koi purana hata do.', true);
     if (S.own.some(d => d.org.toLowerCase() === org.toLowerCase() && d.class === cls && d.medium === f.medium && d.subject.toLowerCase() === subject.toLowerCase())) return say('Ye course (same school, class, medium, subject) pehle se hai.', true);
@@ -189,7 +192,7 @@
   }
   async function delCourse(id) {
     const d = S.own.find(x => x.id === id);
-    if (!d || !g.confirm('Poora course "' + d.subject + '" (Class ' + d.class + ') hata dein? Ye wapas nahi aayega' + (d.shared ? ' aur share link bhi band ho jayega.' : '.'))) return;
+    if (!d || !g.confirm('Poora course "' + d.subject + '" (' + clsLabel(d.class) + ') hata dein? Ye wapas nahi aayega' + (d.shared ? ' aur share link bhi band ho jayega.' : '.'))) return;
     S.busy = true; redraw(true);
     try {
       await CLOUD().del(id);
@@ -342,7 +345,7 @@
   const back = (cc, label, attrs) => `<button class="back" data-cc="${cc}" ${attrs || ''}>${typeof I !== 'undefined' ? I.back : '‹'}<span>${esc(label)}</span></button>`;
   const h1 = t => `<h1 style="font-size:26px;margin-top:10px">${esc(t)}</h1>`;
   const note = () => (S.err ? `<div class="err" role="alert">${esc(S.err)}</div>` : '') + (S.msg ? `<div class="mut" style="margin-top:10px" role="status">${esc(S.msg)}</div>` : '');
-  const title = d => `${d.org} · Class ${d.class} · ${d.subject}`;
+  const title = d => `${d.org} · ${clsLabel(d.class)} · ${d.subject}`;
   const sub = d => `${d.medium} medium · ${(d.chapters || []).length} chapters · ${nQ(d)} questions`;
 
   function listHTML() {
@@ -360,9 +363,9 @@
     const f = S.form, orgs = [...new Set(S.own.map(d => d.org))];
     const opt = (list, v) => list.map(x => `<option ${String(x) === String(v) ? 'selected' : ''}>${esc(x)}</option>`).join('');
     return back('list', 'My Courses') + h1('Add custom course') + `<div class="ccf">
-      <label for="ccOrg">School ya Board ka naam</label><input id="ccOrg" list="ccOrgs" maxlength="60" autocomplete="off" placeholder="jaise Nashib Ali Academy, SEBA" value="${esc(f.org)}"><datalist id="ccOrgs">${orgs.map(o => `<option value="${esc(o)}">`).join('')}</datalist>
+      <label for="ccOrg">School, College ya Board ka naam</label><input id="ccOrg" list="ccOrgs" maxlength="60" autocomplete="off" placeholder="jaise Nashib Ali Academy, SEBA, Cotton University" value="${esc(f.org)}"><datalist id="ccOrgs">${orgs.map(o => `<option value="${esc(o)}">`).join('')}</datalist>
       <label for="ccMed">Medium</label><select id="ccMed">${opt(MEDIUMS, f.medium)}</select>
-      <label for="ccCls">Class</label><select id="ccCls"><option value="">Class chuno</option>${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}" ${String(f.cls) === String(i + 1) ? 'selected' : ''}>Class ${i + 1}</option>`).join('')}</select>
+      <label for="ccCls">Class ya College year</label><select id="ccCls"><option value="">Chuno</option><optgroup label="School">${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}" ${String(f.cls) === String(i + 1) ? 'selected' : ''}>${clsLabel(i + 1)}</option>`).join('')}</optgroup><optgroup label="College / University">${Array.from({ length: 6 }, (_, i) => `<option value="${i + 13}" ${String(f.cls) === String(i + 13) ? 'selected' : ''}>${clsLabel(i + 13)}</option>`).join('')}</optgroup></select>
       <label for="ccSub">Subject</label><input id="ccSub" maxlength="40" autocomplete="off" placeholder="jaise Science, Maths, Geography" value="${esc(f.subject)}">
       <label for="ccLang">Kitab ki language (questions kis language me hain)</label><select id="ccLang">${opt(LANGS, f.lang)}</select>
       <button class="btn" data-cc="create" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Ban raha hai…' : 'Course banao'}</button></div>` + note();
@@ -370,7 +373,7 @@
   function manageHTML() {
     const d = cur(); if (!d) return back('list', 'My Courses') + '<p class="mut">Course nahi mila.</p>';
     const url = link(d);
-    return back('list', 'My Courses') + h1(d.subject) + `<div class="mut">${esc(d.org)} · Class ${d.class} · ${esc(d.medium)} medium</div>
+    return back('list', 'My Courses') + h1(d.subject) + `<div class="mut">${esc(d.org)} · ${clsLabel(d.class)} · ${esc(d.medium)} medium</div>
       <div class="ccrow"><button class="btn" data-cc="open" data-id="${d.id}">Open course</button></div>` + note()
       + `<h2 class="sec">Chapters</h2>`
       + ((d.chapters || []).length ? d.chapters.map(ch => `<div class="card"><div class="rtitle">Chapter ${ch.no}: ${esc(ch.title)}</div><div class="rsub">${(ch.questions || []).length} questions</div>
@@ -379,7 +382,7 @@
       + `<h2 class="sec">Share</h2><div class="card">` + (d.shared
         ? `<div class="mut">Sharing chalu hai. Link wale log ye course sirf dekh sakte hain ya apni copy bana sakte hain. Aapka course unse edit nahi hoga.</div>
            <input readonly class="ccl" value="${esc(url)}" aria-label="Share link" onclick="this.select()">
-           <div class="ccrow"><button class="btn alt" data-cc="copylink">Link copy karo</button><a class="btn alt" style="text-decoration:none;display:inline-block" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text=${encodeURIComponent('Orbit Tutorial par meri ' + d.subject + ' (Class ' + d.class + ') course dekho: ' + url)}">WhatsApp</a><button class="lnk" data-cc="shareoff">Sharing band karo</button></div>`
+           <div class="ccrow"><button class="btn alt" data-cc="copylink">Link copy karo</button><a class="btn alt" style="text-decoration:none;display:inline-block" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text=${encodeURIComponent('Orbit Tutorial par meri ' + d.subject + ' (' + clsLabel(d.class) + ') course dekho: ' + url)}">WhatsApp</a><button class="lnk" data-cc="shareoff">Sharing band karo</button></div>`
         : `<div class="mut">Abhi sirf aap ye course dekh sakte ho. Share karoge to link wala koi bhi student ise dekh sakta hai.</div><div class="ccrow"><button class="btn alt" data-cc="shareon" ${S.busy ? 'disabled' : ''}>Link se share karo</button></div>`)
       + `</div><div style="margin-top:26px"><button class="btn alt ccdel" data-cc="delcourse" data-id="${d.id}" ${S.busy ? 'disabled' : ''}>Ye poora course delete karo</button></div>`;
   }

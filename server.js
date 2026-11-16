@@ -48,9 +48,16 @@ let FSDB = null;
   }
   if (!FSDB) console.warn('[limits] FIREBASE_SERVICE_ACCOUNT is not set: daily limits are kept in memory and start again when Render restarts.');
 }
-const ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean);
+// Allowed browser origins (exact match). A trailing slash in ALLOWED_ORIGINS is ignored. If the variable is empty, the two default Orbit domains are used,
+// so a missing or mistyped env var can not block every request. A blocked origin is logged once, so Render logs show why a browser got a CORS error.
+const DEFAULT_ORIGINS = ['https://orbittutorial.web.app', 'https://orbittutorial.firebaseapp.com'];
+const ENV_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(x => x.trim().replace(/\/+$/, '')).filter(Boolean);
+const ORIGINS = ENV_ORIGINS.length ? ENV_ORIGINS : DEFAULT_ORIGINS;
+const BLOCKED_SEEN = new Set();
+console.log('[cors] allowed origins: ' + ORIGINS.join(', '));
 app.use('/api', (req, res, next) => {
   const o = req.headers.origin;
+  if (o && !ORIGINS.includes(o) && !BLOCKED_SEEN.has(o) && BLOCKED_SEEN.size < 50) { BLOCKED_SEEN.add(o); console.warn('[cors] blocked origin (add it to ALLOWED_ORIGINS): ' + o); }
   if (o && ORIGINS.includes(o)) {
     res.setHeader('Access-Control-Allow-Origin', o);
     res.setHeader('Vary', 'Origin');
@@ -61,12 +68,42 @@ app.use('/api', (req, res, next) => {
   next();
 });
 app.use('/api', async (req, res, next) => {
-  if (req.path === '/questions' || req.path === '/ping') return next();
+  if (req.path === '/questions' || req.path === '/ping' || req.path === '/study/tick') return next();   // /study/tick is for the free cron service: it has its own secret key
   const h = req.headers.authorization || '';
   const t = h.startsWith('Bearer ') ? h.slice(7) : '';
   if (!t) return res.status(401).json({ error: 'Pehle Google se log in karo.' });
   try { req.user = await admin.auth().verifyIdToken(t); next(); }
   catch (e) { res.status(401).json({ error: 'Login expire ho gaya. Dobara log in karo.' }); }
+});
+// ---- Course lock: a student may use only the one course they chose (Firestore studentCourse/<uid>, see course-lock-core.js) ----
+// Needs the service account (FIREBASE_SERVICE_ACCOUNT) to read that document. Without it the check is skipped and only the app screens are limited.
+const CATALOG = require('./public/catalog.js');
+const COURSELOCK = require('./course-lock-core.js');
+const COURSE_CACHE = new Map();   // uid -> { lock, at }. A course only changes when the admin edits it, so 10 minutes is safe.
+let courseWarned = false;
+async function lockOf(uid) {
+  const hit = COURSE_CACHE.get(uid);
+  if (hit && Date.now() - hit.at < 600000) return hit.lock;
+  const snap = await FSDB.collection('studentCourse').doc(uid).get();
+  const d = snap.exists ? snap.data() : null, lock = d ? (d.own === true ? { own: true } : { org: d.org, cls: d.cls, med: d.med }) : null;
+  if (!CATALOG.validLock(lock)) return null;   // "no course yet" is not cached, so choosing one works at once
+  COURSE_CACHE.set(uid, { lock, at: Date.now() });
+  return lock;
+}
+setInterval(() => { if (COURSE_CACHE.size > 5000) COURSE_CACHE.clear(); }, 3600000).unref();
+app.use('/api', async (req, res, next) => {
+  if (req.method !== 'POST' || !COURSELOCK.GATED.has(req.path)) return next();
+  try {
+    const adm = isAdminReq(req), canRead = !!FSDB;
+    if (!canRead && !courseWarned) { courseWarned = true; console.warn('[course] FIREBASE_SERVICE_ACCOUNT is not set: the course lock is not checked on the server.'); }
+    if (adm || !canRead) return next();
+    const b = req.body || {}, lock = await lockOf(req.user.uid);
+    const courseIds = COURSELOCK.courseIdsOf(b, { byId: id => BY_ID.get(id), isCourse: id => QUIZ.courses.some(c => c.id === id) });
+    if (req.path === '/video') { const vid = String(b.id || ''), v = VBY.get(vid) || await fsVideo(req, vid); if (v) courseIds.push(v.course || 'c10-science'); }
+    const r = COURSELOCK.decide({ admin: adm, canRead, lock, courseIds, custom: b.custom, ids: lock ? CATALOG.idsFor(lock, QUIZ.courses) : [] });
+    if (!r.ok) return res.status(r.status).json({ code: r.code, error: r.error });
+    next();
+  } catch (e) { console.error('[course] check failed: ' + e.message); next(); }   // a Firestore hiccup must not lock every student out
 });
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -1909,4 +1946,33 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// ---- "Padhai ka time" stage 2: parent link + alerts to the father's phone (study-core.js, study-routes.js, docs/STUDY-PUSH.md) ----
+// Needs Render env: FIREBASE_SERVICE_ACCOUNT (already used for limits), VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY (npx web-push generate-vapid-keys),
+// STUDY_CRON_KEY (any long secret) and a free cron service that opens /api/study/tick?key=... every minute (Render's free server sleeps, the cron wakes it).
+let STUDY_PUSH = null;
+try {
+  if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    STUDY_PUSH = require('web-push');
+    STUDY_PUSH.setVapidDetails(process.env.VAPID_SUBJECT || 'https://orbittutorial.web.app', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
+  }
+} catch (e) { console.error('[study] push is off: ' + e.message); STUDY_PUSH = null; }
+const STUDY = require('./study-routes').make({ db: FSDB, webpush: STUDY_PUSH, now: Date.now, env: { VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY, STUDY_CRON_KEY: process.env.STUDY_CRON_KEY } });
+const studyRoute = h => async (req, res) => {
+  try { const r = await h({ uid: req.user && req.user.uid, query: req.query || {}, body: req.body || {}, headers: req.headers }); res.status(r.status).json(r.body); }
+  catch (e) { console.error('[study] ' + (e && e.message)); res.status(500).json({ error: 'Kuch gadbad hui. Dobara try karo.' }); }
+};
+app.get('/api/study/config', studyRoute(STUDY.config));
+app.get('/api/study/plan', studyRoute(STUDY.planGet));
+app.post('/api/study/plan', studyRoute(STUDY.planSet));
+app.post('/api/study/link/new', studyRoute(STUDY.linkNew));
+app.post('/api/study/link/join', studyRoute(STUDY.linkJoin));
+app.post('/api/study/unlink', studyRoute(STUDY.unlink));
+app.get('/api/study/children', studyRoute(STUDY.children));
+app.post('/api/study/push/subscribe', studyRoute(STUDY.pushSubscribe));
+app.post('/api/study/push/unsubscribe', studyRoute(STUDY.pushUnsubscribe));
+app.post('/api/study/event', studyRoute(STUDY.event));
+app.get('/api/study/tick', studyRoute(STUDY.tick));
+if (FSDB && STUDY_PUSH) setInterval(() => STUDY.tickCore().catch(e => console.error('[study] tick ' + e.message)), 60000).unref();   // while the server is awake
+
 app.listen(PORT, () => console.log('Orbit AI tutor running on port ' + PORT));

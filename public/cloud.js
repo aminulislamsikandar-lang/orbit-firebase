@@ -262,6 +262,20 @@ window.CLOUD = {
   }
 };
 
+// The student's course lock (School/Board + Class + Medium): one document per account. The student can create it once; only the admin can change it (firestore.rules).
+window.CLOUD.course = {
+  async get() {
+    const u = auth.currentUser; if (!u) return null;
+    const s = await getDoc(doc(db, 'studentCourse', u.uid)), d = s.exists() ? s.data() : null;
+    if (d && d.own === true) return { own: true };
+    return d && typeof d.org === 'string' ? { org: d.org, cls: +d.cls, med: d.med } : null;
+  },
+  async set(c) {
+    const u = auth.currentUser; if (!u) throw new Error('login');
+    await setDoc(doc(db, 'studentCourse', u.uid), c.own ? { own: true, at: Date.now() } : { org: c.org, cls: +c.cls, med: c.med, at: Date.now() });   // fails if it already exists (update is admin-only)
+  }
+};
+
 onAuthStateChanged(auth, async user => {
   if (window.onCloudUser) window.onCloudUser(user ? { uid: user.uid, name: user.displayName, email: user.email, photo: user.photoURL } : null);
   if (user) { loadPeople(); loadVideos(); try { await load(user); } catch (e) { console.warn('cloud load failed', e); } }

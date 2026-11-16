@@ -159,6 +159,7 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 <div id="app"><h1 style="font-size:26px;margin-top:14px">Orbit Tutorial</h1><p class="mut">Free AI study helper for school students in Assam: textbook-style answers, diagrams and translations for Class 7, Class 8 and Class 10 (English, Mathematics, Science). Log in with Google to start.</p><p class="mut">Loading…</p></div>
 <footer class="mut" style="text-align:center;font-size:13px;padding:18px 12px 28px"><a href="/learn/" style="color:inherit">All classes and subjects</a> · <a href="/seba-class-10-notes/" style="color:inherit">SEBA Class 10 notes</a> · <a href="/notes/" style="color:inherit">Free notes</a></footer>
 <script src="/config.js"></script>
+<script src="/catalog.js"></script>
 <script src="/limit-msg.js"></script>
 <script src="/revision-core.js"></script>
 <script src="/custom-course.js"></script>
@@ -233,27 +234,15 @@ let IDX={};   // question id -> {course,ch,q}
 const isCustomOrg=o=>/^u-/.test(o||'');   // schools/boards made by students (Add custom course) have ids starting u-
 const courseOf=(cls,sub,med)=>DATA.courses.find(c=>c.class===cls&&c.subject===sub&&(!med||(c.medium||'English')===med)&&!!c.custom===isCustomOrg(NAV.org)&&(!c.custom||c.orgId===NAV.org));
 const isLocked=ch=>!!ch.locked||!(ch.sections&&ch.sections.length);
-const cLabel=c=>`Class ${c.class} ${c.subject}`;
+const cLabel=c=>`${clsLabel(c.class)} ${c.subject}`;
 const chOf=id=>(IDX[id]||{}).ch||{title:''};
 
 // Where the student is: classes -> subjects -> index (chapters) -> chapter. Remembered on this device.
 const NKEY='orbit_nav_v1',CHKEY='orbit_chapter_v1';
 // Home flow: Board or School -> Class + Medium -> Subjects -> Chapters -> Questions.
 // To add content later: put the course id into CATALOG.content[org][class]. Only English medium has content for now.
-const CATALOG={
- groups:[
-  {t:'Boards',items:[{id:'seba',name:'SEBA',sub:'Assam board'},{id:'cbse',name:'CBSE',sub:'Central board'}]},
-  {t:'Schools',items:[{id:'nashib',name:'Nashib Ali Academy'},{id:'popular',name:'Popular Academy'},{id:'halimon',name:'Halimon Nessa Academy'}]}
- ],
- classes:{seba:[9,10],cbse:[9,10],nashib:[2,6,7,8,9,10],popular:[6,7,8,9,10],halimon:[6,7,8,9,10]},
- content:{
-  seba:{10:[['c10-science','General Science'],['c10-maths','Mathematics'],['c10-social','Social Science'],['c10-science-as','General Science']]},
-  nashib:{2:[['c2-assamese','Assamese']],6:[['c6-english','English'],['c6-grammar','English Grammar'],['c6-social','Social Science'],['c6-science','General Science'],['c6-hindi','Hindi'],['c6-assamese','Assamese'],['c6-arabic','Arabic'],['c6-maths']],7:[['c7-english'],['c7-maths'],['c7-science']]},
-  popular:{7:[['c7-english'],['c7-maths'],['c7-science']]},
-  halimon:{7:[['c7-english'],['c7-maths'],['c7-science']],8:[['c8-english']]}
- }
-};
-const MEDIUMS=['Assamese','English'];
+const CATALOG=window.ORBIT_CATALOG,MEDIUMS=CATALOG.mediums;
+const clsLabel=n=>CATALOG.classLabel?CATALOG.classLabel(n):'Class '+n;   // Class 1-12, College Year 1-4, Master's Year 1-2   // one shared copy: public/catalog.js (the server uses the same file)
 const orgOf=id=>CATALOG.groups.flatMap(g=>g.items).find(o=>o.id===id);
 function pickList(org,cls,med){return((CATALOG.content[org]||{})[cls]||[]).map(([id,name])=>{const c=DATA&&DATA.courses.find(x=>x.id===id);return c&&(!med||(c.medium||'English')===med)?{c,name:name||c.subject}:null}).filter(Boolean)}
 const cTitle=c=>{for(const o in CATALOG.content)for(const k in CATALOG.content[o])for(const [id,n] of CATALOG.content[o][k])if(id===c.id&&n)return n;return c.subject};
@@ -264,13 +253,72 @@ try{
  else if(localStorage.getItem(CHKEY))NAV={page:'chapter',org:'seba',med:'English',cls:10,sub:'Science',ch:+localStorage.getItem(CHKEY)||1};
 }catch(e){}
 function navSave(){try{localStorage.setItem(NKEY,JSON.stringify(NAV))}catch(e){}}
+// ---- Course lock: one course per student (School/Board + Class + Medium). Saved in Firestore (studentCourse/<uid>), remembered per account on this device. ----
+// COURSE_STATE: 'wait' (loading) | 'none' (must choose) | 'err' (could not load) | 'set'. The server checks the same course on every AI request.
+let COURSE=null,COURSE_STATE='wait',RAWD=null,CS={org:'',cls:0,med:''},CSERR='',CSBUSY=false,PEEK=location.hash==='#study';   // PEEK: a parent opened "Padhai ka time" (from the course screen, or by tapping the alert): no course is needed for that one view
+const COURSEKEY=uid=>'orbit_course_v1_'+uid;
+const courseLabel=l=>CATALOG.labelOf(l);
+const lockedIds=()=>COURSE&&RAWD?CATALOG.idsFor(COURSE,RAWD.courses):null;
+function courseChanged(){if(RAWD)setData(RAWD);if(typeof mergeV==='function')mergeV()}
+async function loadCourse(u){
+ let c=null;
+ try{c=JSON.parse(localStorage.getItem(COURSEKEY(u.uid))||'null')}catch(e){}
+ if(c&&CATALOG.validLock(c)){COURSE=c;COURSE_STATE='set';courseChanged();draw()}   // last known course of this account: works offline
+ try{
+  const r=await window.CLOUD.course.get();
+  if(r&&CATALOG.validLock(r)){COURSE=r;COURSE_STATE='set';try{localStorage.setItem(COURSEKEY(u.uid),JSON.stringify(r))}catch(e){}}
+  else{COURSE=null;COURSE_STATE='none';try{localStorage.removeItem(COURSEKEY(u.uid))}catch(e){}}
+ }catch(e){console.warn('course load failed',e);if(!c){COURSE=null;COURSE_STATE='err'}}
+ courseChanged();draw();
+}
+async function saveCourse(){
+ if(CSBUSY||!USER||!CATALOG.validLock(CS))return;
+ CSBUSY=true;CSERR='';draw();
+ try{
+  await window.CLOUD.course.set(CS);
+  COURSE=CS.own?{own:true}:{org:CS.org,cls:CS.cls,med:CS.med};COURSE_STATE='set';
+  try{localStorage.setItem(COURSEKEY(USER.uid),JSON.stringify(COURSE))}catch(e){}
+  NAV={page:'home'};navSave();VIEW='home';courseChanged();
+ }catch(e){CSERR=e&&e.code==='permission-denied'?'Course save nahi hua: ye account ka course pehle se chuna hua hai. Badalna ho to admin se baat karo.':'Save nahi hua. Internet check karke dobara try karo.'}
+ CSBUSY=false;draw();
+}
+function courseGateHTML(){
+ const head=`<div style="max-width:420px;margin:0 auto;padding:18px 16px"><div class="logo" style="font-size:26px">${LOGO}Orbit Tutorial</div>`;
+ if(COURSE_STATE==='wait'||(COURSE_STATE==='none'&&!RAWD))return head+`<p class="mut" style="margin-top:24px">Tumhara course load ho raha hai…</p></div>`;
+ if(COURSE_STATE==='err')return head+`<p class="err" style="margin-top:24px">Course load nahi hua. Internet check karke dobara try karo.</p><button class="btn" data-act="csretry">Dobara try karo</button></div>`;
+ const chips=(list,cur,act,lab)=>`<div class="chips" role="group">${list.map(v=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${cur===v}">${lab(v)}</button>`).join('')}</div>`;
+ const ready=CATALOG.validLock(CS)&&!CS.own,n=ready?CATALOG.idsFor(CS,RAWD.courses).length:0;
+ return head+`<h1 style="font-size:26px;margin-top:16px">Apna course chuno</h1><p class="mut">Ek baar chunne ke baad badal nahi sakte, isliye dhyan se chuno.</p>`
+  +`<h2 class="sec">School ya Board</h2>`+chips(CATALOG.orgIds(),CS.org,'csorg',id=>esc(CATALOG.orgName(id)))
+  +`<div class="chips" role="group"><button class="chip" data-act="csown" aria-pressed="${!!CS.own}">Mera school ya college list mein nahi hai</button></div>`
+  +(CS.own?`<p class="mut" style="margin-top:14px">Tum apna school, college ya university khud jodoge (Add course). Class 1 se College aur Master's tak chalega.</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?'Save ho raha hai…':'Pakka karo'}</button>`:'')
+  +(CS.org&&!CS.own?`<h2 class="sec">Class</h2>`+chips(CATALOG.classes[CS.org]||[],CS.cls,'cscls',clsLabel):'')
+  +(CS.org&&CS.cls&&!CS.own?`<h2 class="sec">Medium</h2>`+chips(MEDIUMS,CS.med,'csmed',v=>v):'')
+  +(ready&&!CS.own?(n?`<p class="mut" style="margin-top:14px">${esc(courseLabel(CS))}: ${n} subjects</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?'Save ho raha hai…':'Pakka karo'}</button>`:`<p class="mut" style="margin-top:14px">${esc(courseLabel(CS))}: abhi content nahi hai (Coming soon). Koi aur chuno.</p>`):'')
+  +(CSERR?`<p class="err">${esc(CSERR)}</p>`:'')+`<p class="mut" style="margin-top:24px">Parent ho? <button class="chip" data-act="csparent">Padhai ka time (parent ke liye)</button></p></div>`;
+}
+function ownHomeHTML(){   // a student whose school or college is not in the list: only the courses they add themselves
+ const g=CATALOG.groups.find(x=>x.custom),ini=n=>esc(String(n).split(' ').map(w=>w[0]||'').join('').slice(0,2).toUpperCase());
+ return (window.CLASSROOM?CLASSROOM.homeHTML():'')+head1('Mere courses')+(window.RECALL&&RECALL.homeHTML?RECALL.homeHTML():'')
+  +(g?`<h2 class="sec">${esc(g.t)}</h2><div class="rows">${g.items.map(o=>rowHTML('org',`data-org="${o.id}"`,ini(o.name),esc(o.name),esc(o.sub||''),I.next)).join('')}</div>`:'')+(window.CUSTOM?CUSTOM.homeHTML():'');
+}
+function lockedHomeHTML(){
+ const L=pickList(COURSE.org,COURSE.cls,COURSE.med);
+ return (window.CLASSROOM?CLASSROOM.homeHTML():'')+head1(courseLabel(COURSE))+(window.RECALL&&RECALL.homeHTML?RECALL.homeHTML():'')+`<h2 class="sec">Subjects</h2><div class="rows">${L.map(x=>rowHTML('pg',`data-p="index" data-cls="${x.c.class}" data-sub="${esc(x.c.subject)}"`,esc(x.name.charAt(0)),x.name,`${x.c.chapters.length} chapters`,I.next)).join('')}</div>`;
+}
 function setData(d){
- DATA=d;IDX={};
- d.courses.forEach(c=>c.chapters.forEach(ch=>(ch.sections||[]).forEach(s=>s.questions.forEach(q=>{IDX[q.id]={course:c,ch,q}}))));
- if(window.CUSTOM)CUSTOM.apply();
+ RAWD=d;
+ const lid=lockedIds();   // with a course lock only that course's subjects exist: every screen and module reads DATA, so all of them are limited to it
+ DATA=lid?{...d,courses:d.courses.filter(c=>lid.includes(c.id))}:d;IDX={};
+ DATA.courses.forEach(c=>c.chapters.forEach(ch=>(ch.sections||[]).forEach(s=>s.questions.forEach(q=>{IDX[q.id]={course:c,ch,q}}))));
+ if(window.CUSTOM&&!(COURSE&&!COURSE.own))CUSTOM.apply();
  fixNav();
 }
 function fixNav(){
+ if(COURSE){   // a locked student never leaves their own school/class/medium (or, with own courses, their own custom courses)
+  if(COURSE.own){if(NAV.page!=='home'&&!isCustomOrg(NAV.org))NAV={page:'home'}}
+  else if(NAV.page==='pick'||(['index','chapter'].includes(NAV.page)&&(NAV.org!==COURSE.org||NAV.med!==COURSE.med||NAV.cls!==COURSE.cls)))NAV={page:'home'}
+ }
  if(NAV.page==='home')return;
  if(!['pick','index','chapter'].includes(NAV.page)||!orgOf(NAV.org)){NAV={page:'home'};return}
  if(NAV.page==='pick')return;
@@ -528,6 +576,8 @@ const backHTML=label=>`<button class="back" data-act="back">${I.back}<span>${esc
 const head1=t=>`<h1 style="font-size:26px;margin-top:10px">${esc(t)}</h1>`;
 function navHTML(){
  const d=DATA;
+ if(COURSE&&!COURSE.own&&(NAV.page==='home'||NAV.page==='pick'))return lockedHomeHTML();
+ if(COURSE&&COURSE.own&&NAV.page==='home')return ownHomeHTML();
  if(NAV.page==='home'){
   const ini=n=>esc(n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase());
   return (window.CLASSROOM?CLASSROOM.homeHTML():'')+head1('Apna board ya school chuno')+(window.RECALL&&RECALL.homeHTML?RECALL.homeHTML():'')+CATALOG.groups.map(g=>`<h2 class="sec">${g.t}</h2><div class="rows">${g.items.map(o=>rowHTML('org',`data-org="${o.id}"`,ini(o.name),o.name,o.sub||'',I.next)).join('')}</div>`).join('')+(window.CUSTOM?CUSTOM.homeHTML():'');
@@ -539,13 +589,13 @@ function navHTML(){
   else{
    const L=pickList(NAV.org,NAV.cls,NAV.med);
    res=L.length?`<h2 class="sec">Subjects</h2><div class="rows">${L.map(x=>rowHTML('pg',`data-p="index" data-cls="${x.c.class}" data-sub="${esc(x.c.subject)}"`,esc(x.name.charAt(0)),x.name,`${x.c.chapters.length} chapters`,I.next)).join('')}</div>`
-    :`<div class="soon" style="margin-top:28px">${I.lock}<p>Class ${NAV.cls} (${esc(NAV.med)} medium): Coming soon.</p></div>`;
+    :`<div class="soon" style="margin-top:28px">${I.lock}<p>${clsLabel(NAV.cls)} (${esc(NAV.med)} medium): Coming soon.</p></div>`;
   }
-  return backHTML('Home')+head1(o.name)+`<h2 class="sec">Class</h2>${chips(CATALOG.classes[NAV.org]||[],NAV.cls,'pcls',v=>'Class '+v)}<h2 class="sec">Medium</h2>${chips(MEDIUMS,NAV.med,'pmed',v=>v)}${res}`;
+  return backHTML('Home')+head1(o.name)+`<h2 class="sec">Class</h2>${chips(CATALOG.classes[NAV.org]||[],NAV.cls,'pcls',clsLabel)}<h2 class="sec">Medium</h2>${chips(MEDIUMS,NAV.med,'pmed',v=>v)}${res}`;
  }
  const c=courseOf(NAV.cls,NAV.sub,NAV.med);
  if(NAV.page==='index'){
-  return backHTML('Subjects')+head1(cTitle(c))+`<div class="mut">Class ${c.class} · Chapters</div>${window.CUSTOM?CUSTOM.courseBar(c):''}<div class="rows">${c.chapters.map(ch=>{
+  return backHTML('Subjects')+head1(cTitle(c))+`<div class="mut">${clsLabel(c.class)} · Chapters</div>${window.CUSTOM?CUSTOM.courseBar(c):''}<div class="rows">${c.chapters.map(ch=>{
    const sub=[ch.kind,ch.author].filter(Boolean).join(' · ');
    const lock=isLocked(ch);
    return rowHTML(lock?'lock':'pg',lock?`data-ch="${ch.no}"`:`data-p="chapter" data-ch="${ch.no}"`,(ch.no===0?'R':ch.no),ch.title,sub,lock?I.lock:I.next)
@@ -604,7 +654,7 @@ function syncSoon(){
  SYNCT=setTimeout(()=>window.CLOUD.push({saved:SAVED,pins:PINS,settings:ST}).catch(e=>console.warn('sync failed',e)),1500);
 }
 window.onCloudFail=e=>{CLOUDFAIL=String((e&&e.message)||e||'unknown');console.error('cloud.js failed',e);if(navigator.onLine&&!USER)draw()};
-window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(u&&FREE){FREE=false;FREE_ID=null;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u)}if(DATA||!u)draw()};
+window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(window.STUDY)window.STUDY.setUser(u);if(u&&FREE){FREE=false;FREE_ID=null;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';PEEK=false;COURSE=null;COURSE_STATE='wait';if(RAWD)courseChanged();if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u);loadCourse(u)}if(DATA||!u)draw()};
 // First login on a device: merge this device's data with the cloud. After that the cloud copy wins.
 window.onCloudData=cd=>{
  if(window.RECALL&&RECALL.sync)RECALL.sync();   // Recall tracker + topic records: phone <-> account
@@ -636,7 +686,7 @@ let VIDEOS=[],STATIC_V=[],CLOUD_V=[];const VID={};   // id -> {loading,url,err}
 function mergeV(){   // videos.js (deployed with the site) + videos added from the admin panel (Firestore); same id: the admin panel one wins
  const m=new Map();STATIC_V.forEach(v=>m.set(v.id,v));
  CLOUD_V.forEach(v=>{if(v&&v.id&&v.title&&Number.isInteger(v.chapter))m.set(v.id,{id:v.id,course:v.course||'c10-science',chapter:v.chapter,title:v.title,free:!!v.free,qid:typeof v.qid==='string'?v.qid:'',kind:(v.kind==='plan'||v.kind==='html')?v.kind:'mp4'})});
- VIDEOS=[...m.values()];if(DATA)draw()}
+ const lid=lockedIds();VIDEOS=[...m.values()].filter(v=>!lid||lid.includes(v.course||'c10-science'));if(DATA)draw()}
 window.onCloudVideos=list=>{CLOUD_V=Array.isArray(list)?list:[];mergeV()};
 function videosHTML(c,ch){
  const vs=VIDEOS.filter(v=>!v.qid&&(v.course||'c10-science')===c.id&&v.chapter===ch.no);if(!vs.length)return'';
@@ -708,7 +758,7 @@ fetch('/videos.json').then(r=>r.ok?r.json():[]).then(v=>{STATIC_V=v;mergeV()}).c
 let PVS=[];
 fetch('/publicvideos.json').then(r=>r.ok?r.json():[]).then(v=>{PVS=Array.isArray(v)?v:[];if(VIEW==='pubvideo'&&DATA)draw()}).catch(()=>{});
 function pvHTML(){
- const by={};PVS.forEach(v=>{(by[v.cls]=by[v.cls]||[]).push(v)});
+ const by={};PVS.filter(v=>!COURSE||COURSE.own||v.cls===COURSE.cls).forEach(v=>{(by[v.cls]=by[v.cls]||[]).push(v)});
  const cl=Object.keys(by).map(Number).sort((a,b)=>a-b);
  if(lowData())return head1('Public Videos')+`<p class="mut">${esc(L4(M_LOWDATA))}</p>`;
  return head1('Public Videos')+`<div class="mut">Sabke liye free videos. Play dabao, video poori screen par khulega.</div>`+
@@ -749,8 +799,10 @@ function draw(){
  if((AUTH_READY||(CLOUDFAIL&&navigator.onLine))&&!USER){openSide(false,true);$('#app').innerHTML=PARENT_LINK&&window.PARENT_KEY?`<div class="logo" style="margin:14px 0">${LOGO}Orbit Tutorial</div>`+PARENT_KEY.viewHTML():FREE?freeHTML():gateHTML();window.scrollTo(0,0);if(window.Analytics)window.Analytics.screen({name:FREE&&!(PARENT_LINK&&window.PARENT_KEY)?'free_notes':'login_gate'});return}
  if(!DATA)return;
  const d=DATA,y=window.scrollY;
+ const needCourse=!!USER&&COURSE_STATE!=='set'&&!(PEEK&&VIEW==='study');   // logged in but no course yet (or still loading it): only the course screen is shown
  let body;
- if(VIEW==='home')body=navHTML();
+ if(needCourse){openSide(false,true);body=courseGateHTML()}
+ else if(VIEW==='home')body=navHTML();
  else if(VIEW==='fav'||VIEW==='pins'){
   const fn=VIEW==='fav'?q=>isSaved(q.id):q=>isPinned(q.id);
   const empty=VIEW==='fav'?'Abhi koi answer save nahi hua. Kisi answer ke neeche heart dabao.':'Abhi koi question pin nahi hua. Question ke upar pin icon dabao.';
@@ -764,24 +816,26 @@ function draw(){
  else if(VIEW==='recall')body=window.RECALL?RECALL.viewHTML():'';
  else if(VIEW==='class')body=window.CLASSROOM?CLASSROOM.viewHTML():'';
  else if(VIEW==='report')body=window.WEEKLY?WEEKLY.viewHTML():'';
+ else if(VIEW==='study')body=window.STUDY?STUDY.viewHTML():'';
  else if(VIEW==='bolo')body=window.BOLO?BOLO.viewHTML():'';
  else if(VIEW==='read'||VIEW==='talk')body=window.VOICE?VOICE.viewHTML(VIEW):'';
  else if(VIEW==='custom')body=window.CUSTOM?CUSTOM.viewHTML():'';
  else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
- $('#app').innerHTML=`<div class="top"><button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button><div class="logo">${LOGO}Orbit Tutorial</div></div>${body}`;
+ $('#app').innerHTML=`<div class="top"${needCourse?' style="display:none"':''}><button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button><div class="logo">${LOGO}Orbit Tutorial</div></div>${body}`;
  drawSide();
  if(VIEW==='vlab'&&window.VLAB)VLAB.mount($('#app'));
  if(VIEW==='models3d'&&window.M3D)M3D.mount($('#app'));
  if(window.AVATAR)AVATAR.set(anySay());
+ if(window.STUDY)STUDY.sync();
  if(window.Analytics)window.Analytics.screen(screenInfo());
  window.scrollTo(0,y);
 }
 function drawSide(){
  const item=(v,ico,label,badge)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${item('custom','plus','My Courses')}${item('class','class','My Class')}${item('report','report','Weekly Report')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}${item('vlab','lab','Virtual Lab')}${item('models3d','cube','3D Models')}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo')}${item('read','mic','Padhne ki jaanch')}${item('talk','mic','Baat-cheet')}${item('ai','ai','Advanced AI Features')}
+ ${item('home','home','Home')}${COURSE&&!COURSE.own?'':item('custom','plus','My Courses')}${item('class','class','My Class')}${item('report','report','Weekly Report')}${item('study','recall','Padhai ka time')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}${item('vlab','lab','Virtual Lab')}${item('models3d','cube','3D Models')}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo')}${item('read','mic','Padhne ki jaanch')}${item('talk','mic','Baat-cheet')}${item('ai','ai','Advanced AI Features')}
  <div class="sline"></div>
  ${item('pyq','pyq','PYQ')}${item('pass','pass','Pass mark')}${item('topper','topper','Topper')}${item('faculty','fac','Faculty')}${item('dev','dev','Developer')}
  <div class="sgap"></div><div class="sline"></div>
@@ -816,7 +870,7 @@ function goBack(){
 function go(v){
  if(v==='home'){openSide(false,true);navTo({page:'home'});return}
  stopSay();
- VIEW=v;if(window.BOLO&&v!=='bolo')BOLO.leave();if(v==='class'&&window.CLASSROOM)CLASSROOM.refresh();if(window.VOICE&&v!=='read'&&v!=='talk')VOICE.leave();if(window.VLAB&&v!=='vlab')VLAB.leave();if(window.M3D&&v!=='models3d')M3D.leave();
+ VIEW=v;if(window.BOLO&&v!=='bolo')BOLO.leave();if(v==='class'&&window.CLASSROOM)CLASSROOM.refresh();if(window.VOICE&&v!=='read'&&v!=='talk')VOICE.leave();if(window.VLAB&&v!=='vlab')VLAB.leave();if(window.STUDY&&v!=='study')STUDY.leave();if(window.M3D&&v!=='models3d')M3D.leave();
  draw();openSide(false,true);window.scrollTo(0,0);
 }
 window.addEventListener('popstate',e=>{
@@ -1103,8 +1157,15 @@ document.addEventListener('click',e=>{
  else if(act==='tsty')setSty(id,b.dataset.s);
  else if(act==='tdef')setDef(id,b.dataset.s);
  else if(act==='org')navTo({page:'pick',org:b.dataset.org});
+ else if(act==='csorg'){CS={org:b.dataset.v,cls:0,med:''};CSERR='';draw()}
+ else if(act==='cscls'){CS.cls=+b.dataset.v;CS.med='';CSERR='';draw()}
+ else if(act==='csmed'){CS.med=b.dataset.v;CSERR='';draw()}
+ else if(act==='csparent'){PEEK=true;go('study')}
+ else if(act==='csown'){CS={own:true};CSERR='';draw()}
+ else if(act==='cssave')saveCourse();
+ else if(act==='csretry'){COURSE_STATE='wait';draw();if(USER)loadCourse(USER)}
  else if(act==='pcls'||act==='pmed'){if(act==='pcls')NAV.cls=+b.dataset.v;else NAV.med=b.dataset.v;navSave();try{history.replaceState({nav:NAV},'')}catch(e){}draw()}
- else if(act==='pg')navTo({page:b.dataset.p,org:NAV.org,med:NAV.med,cls:b.dataset.cls?+b.dataset.cls:NAV.cls,sub:b.dataset.sub||NAV.sub,ch:b.dataset.ch?+b.dataset.ch:null});
+ else if(act==='pg')navTo({page:b.dataset.p,org:COURSE&&!COURSE.own?COURSE.org:NAV.org,med:COURSE&&!COURSE.own?COURSE.med:NAV.med,cls:b.dataset.cls?+b.dataset.cls:NAV.cls,sub:b.dataset.sub||NAV.sub,ch:b.dataset.ch?+b.dataset.ch:null});
  else if(act==='back')goBack();
  else if(act==='lock'){LOCKED=+b.dataset.ch;draw()}
  else if(act==='setd'){ST.dtype=b.dataset.v;stSave();draw()}
@@ -1208,6 +1269,8 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/models3d.js"></script>
 <script src="/report.js"></script>
 <script src="/avatar.js"></script>
+<script src="/kidbank.js"></script>
+<script src="/studytime.js"></script>
 <script type="module">import('/cloud.js').catch(e=>window.onCloudFail&&window.onCloudFail(e))</script>
 </body>
 </html>

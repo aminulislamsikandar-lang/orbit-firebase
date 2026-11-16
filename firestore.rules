@@ -5,6 +5,21 @@ service cloud.firestore {
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
+    // Student's course lock (School/Board + Class + Medium). The student can create it once; after that only the admin can change or delete it.
+    // The server reads it on every AI request. Keep this org list in step with public/catalog.js (tests/course-lock.test.js checks it).
+    match /studentCourse/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow create: if request.auth != null && request.auth.uid == uid && (
+        (request.resource.data.keys().hasOnly(['org', 'cls', 'med', 'at'])
+          && request.resource.data.org in ['seba', 'cbse', 'nashib', 'popular', 'halimon']
+          && request.resource.data.cls is int && request.resource.data.cls >= 1 && request.resource.data.cls <= 12
+          && request.resource.data.med in ['Assamese', 'English']
+          && request.resource.data.at is number)
+        || (request.resource.data.keys().hasOnly(['own', 'at'])   // "my school or college is not in the list": the student adds their own courses
+          && request.resource.data.own == true
+          && request.resource.data.at is number));
+      allow update, delete: if isAdmin();
+    }
     // Faculty and Developer people. Any logged-in user can read; only the admin Google account(s) listed below can change.
     // >>> Replace ADMIN_EMAIL_HERE with your Google email (lowercase), e.g. 'name@gmail.com'. Add more emails separated by commas.
     function isAdmin() {
@@ -160,7 +175,7 @@ service cloud.firestore {
         && d.ownerId is string
         && d.org is string && d.org.size() >= 2 && d.org.size() <= 60
         && d.medium in ['English', 'Assamese']
-        && d['class'] is int && d['class'] >= 1 && d['class'] <= 12
+        && d['class'] is int && d['class'] >= 1 && d['class'] <= 18
         && d.subject is string && d.subject.size() >= 2 && d.subject.size() <= 40
         && d.lang in ['English', 'Hindi', 'Assamese']
         && d.chapters is list && d.chapters.size() <= 60

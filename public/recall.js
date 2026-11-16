@@ -278,7 +278,7 @@
 
   function form() {
     const cs = chapters(), blocked = !hasKey() && st.left === 0;
-    const opts = cs.map(c => `<optgroup label="${esc('Class ' + c.class + ' ' + c.subject)}">${(c.chapters || []).filter(ch => readyCh(ch, c)).map(ch => { const v = c.id + '|' + ch.no; return `<option value="${esc(v)}" ${v === st.key ? 'selected' : ''}>${esc('Ch ' + ch.no + ': ' + ch.title + chMark(v))}</option>`; }).join('')}</optgroup>`).join('').replace(/<optgroup[^>]*><\/optgroup>/g, '');
+    const opts = cs.map(c => `<optgroup label="${esc((window.ORBIT_CATALOG ? window.ORBIT_CATALOG.classLabel(c.class) : 'Class ' + c.class) + ' ' + c.subject)}">${(c.chapters || []).filter(ch => readyCh(ch, c)).map(ch => { const v = c.id + '|' + ch.no; return `<option value="${esc(v)}" ${v === st.key ? 'selected' : ''}>${esc('Ch ' + ch.no + ': ' + ch.title + chMark(v))}</option>`; }).join('')}</optgroup>`).join('').replace(/<optgroup[^>]*><\/optgroup>/g, '');
     const w = W[st.type], field = 'width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit';
     return `<div class="card"><h2 class="sec" style="margin-top:0">Test your knowledge</h2>
       <p class="mut" style="margin:0 0 10px">Book band karo. Jo yaad hai, apne words mein explain karo.</p>

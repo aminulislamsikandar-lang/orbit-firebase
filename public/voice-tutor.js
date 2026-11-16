@@ -164,7 +164,7 @@
     ? { custom: { cls: cur.c.class, subject: cur.c.subject, chapter: cur.ch.title, notes: g.CUSTOM && g.CUSTOM.pickNotes ? g.CUSTOM.pickNotes(cur.ch.notes, cur.ch.title, 14000) : String(cur.ch.notes || '').slice(0, 14000) } }
     : { course: cur.c.id, ch: cur.ch.no };
   function picker(S, busy) {
-    const opts = courses().map(c => `<optgroup label="${esc('Class ' + c.class + ' ' + c.subject)}">${(c.chapters || []).filter(ch => ready(ch, c)).map(ch => { const v = c.id + '|' + ch.no; return `<option value="${esc(v)}" ${v === S.key ? 'selected' : ''}>${esc('Ch ' + ch.no + ': ' + ch.title)}</option>`; }).join('')}</optgroup>`).join('').replace(/<optgroup[^>]*><\/optgroup>/g, '');
+    const opts = courses().map(c => `<optgroup label="${esc((window.ORBIT_CATALOG ? window.ORBIT_CATALOG.classLabel(c.class) : 'Class ' + c.class) + ' ' + c.subject)}">${(c.chapters || []).filter(ch => ready(ch, c)).map(ch => { const v = c.id + '|' + ch.no; return `<option value="${esc(v)}" ${v === S.key ? 'selected' : ''}>${esc('Ch ' + ch.no + ': ' + ch.title)}</option>`; }).join('')}</optgroup>`).join('').replace(/<optgroup[^>]*><\/optgroup>/g, '');
     return `<label class="rsub" for="vtTopic">Chapter</label>
       <select id="vtTopic" class="rsel" ${busy ? 'disabled' : ''}><option value="">Chapter chuno…</option>${opts}</select>
       <label class="rsub" for="vtLang" style="margin-top:8px">Bhasha</label>

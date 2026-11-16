@@ -18,7 +18,7 @@ t('another text, class, subject, chapter or language = another id', [{ text: 'Wh
 t('course object tells the normal routes it is custom', a.course.custom === true && a.course.class === 7 && a.course.subject === 'Science' && a.course.sourceLang === undefined && a.ch.title === 'Light');
 t('Hindi / Assamese courses carry sourceLang', C.sanitizeCq({ ...base, lang: 'Hindi' }).course.sourceLang === 'Hindi' && C.sanitizeCq({ ...base, lang: 'Assamese' }).course.sourceLang === 'Assamese');
 t('unknown language or medium falls back to English', C.sanitizeCq({ ...base, lang: 'Klingon', medium: 'x' }).course.medium === 'English' && C.sanitizeCq({ ...base, lang: 'Klingon' }).course.sourceLang === undefined);
-t('bad input is refused', [null, 'x', 5, {}, { ...base, text: 'hi' }, { ...base, text: '   ' }, { ...base, cls: 0 }, { ...base, cls: 13 }, { ...base, cls: 'abc' }, { ...base, cls: 7.5 }, { ...base, subject: '' }, { ...base, subject: 'x' }].every(x => C.sanitizeCq(x) === null));
+t('bad input is refused', [null, 'x', 5, {}, { ...base, text: 'hi' }, { ...base, text: '   ' }, { ...base, cls: 0 }, { ...base, cls: 19 }, { ...base, cls: 'abc' }, { ...base, cls: 7.5 }, { ...base, subject: '' }, { ...base, subject: 'x' }].every(x => C.sanitizeCq(x) === null));
 t('text is capped at 700 characters and control characters are removed', C.sanitizeCq({ ...base, text: 'a'.repeat(5000) }).q.text.length === 700 && C.sanitizeCq({ ...base, text: 'ab\u0000c\u0007d\u007f' }).q.text === 'abcd');
 t('parts and options are capped (8 and 6) and cleaned', (x => x.q.parts.length === 8 && x.q.options.length === 6 && x.q.parts.every(p => p.length <= 300))(C.sanitizeCq({ ...base, parts: Array(20).fill('p'.repeat(900)), options: Array(20).fill('o') })));
 t('non-array parts do not break it', same(C.sanitizeCq({ ...base, parts: 'x', options: { a: 1 } }).q.parts, []));
@@ -218,7 +218,7 @@ const okBody = { image: 'A'.repeat(500), mime: 'image/jpeg', cls: 7, subject: 'S
   // ================= index.html / cloud.js wiring =================
   const html = read('public/index.html'), cloud = read('public/cloud.js'), sw = read('public/sw.js');
   t('index.html loads custom-course.js before the main script (so saved courses are ready for the first draw)', html.indexOf('<script src="/custom-course.js"></script>') > 0 && html.indexOf('<script src="/custom-course.js"></script>') < html.indexOf('const $=s=>document.querySelector'));
-  t('index.html: setData adds the custom courses before the saved place is checked', /window\.CUSTOM\)CUSTOM\.apply\(\);\n fixNav\(\);/.test(html));
+  t('index.html: setData adds the custom courses before the saved place is checked', /window\.CUSTOM&&!\(COURSE&&!COURSE\.own\)\)CUSTOM\.apply\(\);\n fixNav\(\);/.test(html));
   t('index.html: a custom course is only found inside its own school/board', /const courseOf=.*!!c\.custom===isCustomOrg\(NAV\.org\)&&\(!c\.custom\|\|c\.orgId===NAV\.org\)/.test(html));
   t('index.html: sidebar, page, home and chapter-list hooks are there', /item\('custom','plus','My Courses'\)/.test(html) && /VIEW==='custom'\)body=window\.CUSTOM\?CUSTOM\.viewHTML\(\)/.test(html) && /CUSTOM\.homeHTML\(\)/.test(html) && /CUSTOM\.courseBar\(c\)/.test(html));
   t('index.html: login starts and logout stops the custom courses', /CUSTOM\.stop\(\)/.test(html) && /CUSTOM\.start\(u\)/.test(html));
@@ -284,7 +284,7 @@ async function clientTests() {
   b.click('[data-cc=new]'); await flush(b);
   t('new course: clicking it opens the form via go("custom")', b.w.eval('VIEW') === 'custom' && b.d.querySelector('#ccOrg') && b.d.querySelector('#ccCls') && b.d.querySelector('#ccLang'));
   b.click('[data-cc=create]'); await flush(b);
-  t('form: empty form is refused with a message and nothing is saved', /School ya board ka naam/.test(b.txt()) && Object.keys(store).length === 0);
+  t('form: empty form is refused with a message and nothing is saved', /School, college ya board ka naam/.test(b.txt()) && Object.keys(store).length === 0);
   b.type('#ccOrg', 'Nashib Ali Academy'); b.type('#ccCls', '7'); b.type('#ccSub', 'Science'); b.type('#ccMed', 'English');
   b.click('[data-cc=create]'); await flush(b);
   const id1 = Object.keys(store)[0], d1 = store[id1];

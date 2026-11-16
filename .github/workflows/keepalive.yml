@@ -1,0 +1,16 @@
+# Backup keep-alive for the free Render server (it falls asleep after about 15 minutes without a request, and the first AI answer then takes 30-60 seconds).
+# Main keep-alive: UptimeRobot (free, checks every 5 minutes). This workflow is only a second line. GitHub may delay scheduled runs, and pauses them
+# after 60 days without any commit, so do not rely on it alone.
+name: Keep Render awake
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping the server
+        run: curl -sS --max-time 90 --retry 2 --retry-delay 10 https://orbit-firebase.onrender.com/api/ping || echo "ping failed (the server may still be waking up)"

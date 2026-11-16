@@ -1,6 +1,7 @@
 // recall-core.js - pure helpers for Recall AI ("explain a chapter in your own words, get a score"). No network, easy to test.
 // The weights live ONLY here (server side): the client sends just the question type, never numbers.
 'use strict';
+const CAT = require('./public/catalog.js');
 
 const WEIGHTS = {
   concept: { c: 30, f: 25, t: 20, l: 15, m: 10 },
@@ -71,7 +72,7 @@ function buildPrompt(course, ch, text, opts) {
     tp = '\n\nTopics of this chapter (id: name):\n' + opts.topics.map(t => t.id + ': ' + String(t.en).replace(/"/g, "'")).join('\n') +
       '\nAdd to the JSON: "topics":{"<topic id>":<0-100, how well the student explained that topic; 0 if not mentioned>} for every topic above.';
   }
-  return `Class ${course.class || ''} ${course.subject || ''}\nChapter: ${ch.title}\n\nTextbook reference (the truth):\n${reference(ch, opts.max)}${tp}\n\n${spoke}${hand}${typed}`;
+  return `${course.class ? CAT.classLabel(+course.class) : 'Class'} ${course.subject || ''}\nChapter: ${ch.title}\n\nTextbook reference (the truth):\n${reference(ch, opts.max)}${tp}\n\n${spoke}${hand}${typed}`;
 }
 
 const clamp = n => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));

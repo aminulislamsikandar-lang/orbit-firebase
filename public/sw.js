@@ -1,16 +1,16 @@
 // Orbit service worker: keeps the app page, its scripts and the question lists so chapters open offline.
 // API calls (/api/*) are never cached here; answers are stored by the page itself.
 // robots.txt, sitemap.xml and the Google verification file are NOT touched: they always go to the server.
-const SHELL = 'orbit-shell-v33';
+const SHELL = 'orbit-shell-v34';
 const FONTS = 'orbit-fonts-v1';
 const ASSETS = 'orbit-assets-v1';
 
 // Same-origin files the app needs to run offline (JSON lists + scripts + icons).
 const CORE = [
-  '/config.js', '/custom-course.js', '/warp-loader.js', '/team.js', '/mathvideo-admin.js',
+  '/config.js', '/catalog.js', '/custom-course.js', '/warp-loader.js', '/team.js', '/mathvideo-admin.js',
   '/narration-sync.js', '/narration-sprites.js', '/mathvideo-player.js', '/narration-loader.js',
   '/voiceover.js', '/voiceover-admin.js', '/narration-admin.js', '/video-admin.js', '/qvideo.js',
-  '/analytics.js', '/parent-key.js', '/recall.js', '/bolo-core.js', '/bolo.js', '/vlab.js', '/models3d.js', '/report.js', '/avatar.js', '/cloud.js',
+  '/analytics.js', '/parent-key.js', '/recall.js', '/bolo-core.js', '/bolo.js', '/vlab.js', '/models3d.js', '/report.js', '/avatar.js', '/studytime.js', '/kidbank.js', '/cloud.js',
   '/limit-msg.js', '/revision-core.js', '/answer-check.js', '/quiz.js', '/aireview.js', '/classroom.js', '/weekly.js', '/voice-tutor.js',
   '/firebase-config.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png',
   '/questions.json', '/videos.json', '/publicvideos.json'
@@ -65,4 +65,22 @@ self.addEventListener('fetch', e => {
     // Firebase login/sync code, so the account still loads on a weak connection.
     e.respondWith(staleWhileRevalidate(ASSETS, r, r));
   }
+});
+
+// "Padhai ka time" alerts for a parent (Web Push). The server sends a small JSON {title, body, tag, url}; nothing else is shown.
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (x) { d = {}; }
+  const title = String(d.title || 'Orbit').slice(0, 80);
+  e.waitUntil(self.registration.showNotification(title, {
+    body: String(d.body || '').slice(0, 240), icon: '/icon-192.png', badge: '/icon-192.png',
+    tag: String(d.tag || 'orbit-study').slice(0, 40), renotify: true, data: { url: '/#study' }   // always the app's own page, never an address from the message
+  }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) { if (c.url.startsWith(self.location.origin) && 'focus' in c) { c.focus(); return 'navigate' in c ? c.navigate('/#study') : undefined; } }
+    return self.clients.openWindow('/#study');
+  }));
 });

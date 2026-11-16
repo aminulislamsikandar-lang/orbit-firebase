@@ -2,6 +2,7 @@
 // the AI reads it, compares it with the textbook question and the chapter notes, and says what is right and which step is wrong.
 // No network and no Express here, so tests/answer-check.test.js can run it directly. The photo is only read, never stored.
 'use strict';
+const CAT = require('./public/catalog.js');
 
 const MAX_STEPS = 12, MAX_ITEMS = 5, MAX_READ = 900, MAX_LINE = 240;
 
@@ -36,7 +37,7 @@ const list = (a, n) => (Array.isArray(a) ? a : []).map(x => str(x, MAX_LINE)).fi
 
 // The question (+ chapter notes) as text for the examiner. q/course/ch come from the server's guard() (built-in or custom alike).
 function buildPrompt(q, course, ch) {
-  const L = [`Class ${(course && course.class) || ''} ${(course && course.subject) || ''}`.trim()];
+  const L = [`${course && course.class ? CAT.classLabel(+course.class) : 'Class'} ${(course && course.subject) || ''}`.trim()];
   if (ch && ch.title) L.push('Chapter: ' + ch.title);
   L.push('', 'Textbook question:');
   L.push(((q.label || q.no) ? (q.label || q.no) + ' ' : '') + (q.text || ''));

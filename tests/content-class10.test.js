@@ -42,9 +42,10 @@ t('a locked chapter is found but refused', (h => !!h && !RECALL.isReady(h.ch))(R
 
 // ---- app: catalog, chapter-0 handling ----
 const idx = read('public/index.html');
-const cat = (idx.match(/seba:\{10:\[(.*?)\]\}/) || [])[1] || '';
+const catSrc = read('public/catalog.js');   // the catalog lives in public/catalog.js (shared with the server)
+const cat = (catSrc.match(/seba:\s*\{\s*10:\s*\[(.*?)\]\s*\}/) || [])[1] || '';
 t('SEBA Class 10 shows Science, Mathematics, Social Science and the Assamese Science', ['c10-science', 'c10-maths', 'c10-social', 'c10-science-as'].every(id => cat.includes("'" + id + "'")));
-t('every course in the catalog exists in the question data', [...idx.matchAll(/\['(c\d+-[a-z-]+)'/g)].every(x => !!course(x[1])));
+t('every course in the catalog exists in the question data', [...catSrc.matchAll(/\['(c\d+-[a-z-]+)'/g)].every(x => !!course(x[1])));
 const courseOfSrc = (idx.match(/^const courseOf=.*$/m) || [''])[0];
 const courseOf = new Function('DATA', 'isCustomOrg', 'NAV', courseOfSrc + '\nreturn courseOf;')(QUIZ, () => false, { org: 'seba' });
 t('app: the course page picks the right course by class + subject + medium (it runs the real courseOf of index.html)', !!courseOfSrc && (courseOf(10, 'Science', 'Assamese') || {}).id === 'c10-science-as' && (courseOf(10, 'Science', 'English') || {}).id === 'c10-science' && (courseOf(10, 'Mathematics', 'Assamese') || {}).id === 'c10-maths' && (courseOf(10, 'Social Science', 'Assamese') || {}).id === 'c10-social' && !courseOf(10, 'Mathematics', 'English'));
