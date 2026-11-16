@@ -259,12 +259,13 @@ try{
 function navSave(){try{localStorage.setItem(NKEY,JSON.stringify(NAV))}catch(e){}}
 // ---- Course lock: one course per student (School/Board + Class + Medium). Saved in Firestore (studentCourse/<uid>), remembered per account on this device. ----
 // COURSE_STATE: 'wait' (loading) | 'none' (must choose) | 'err' (could not load) | 'set'. The server checks the same course on every AI request.
-let COURSE=null,COURSE_STATE='wait',RAWD=null,CS={org:'',cls:0,med:''},CSERR='',CSBUSY=false,PEEK=location.hash==='#study';   // PEEK: a parent opened "Padhai ka time" (from the course screen, or by tapping the alert): no course is needed for that one view
+let OWN_PENDING=false,COURSE=null,COURSE_STATE='wait',RAWD=null,CS={org:'',cls:0,med:''},CSERR='',CSBUSY=false,PEEK=location.hash==='#study';   // PEEK: a parent opened "Padhai ka time" (from the course screen, or by tapping the alert): no course is needed for that one view
 const COURSEKEY=uid=>'orbit_course_v1_'+uid;
 const courseLabel=l=>CATALOG.labelOf(l);
 const lockedIds=()=>COURSE&&RAWD?CATALOG.idsFor(COURSE,RAWD.courses):null;
 function courseChanged(){if(RAWD)setData(RAWD);if(typeof mergeV==='function')mergeV()}
 async function loadCourse(u){
+ OWN_PENDING=false;
  let c=null;
  try{c=JSON.parse(localStorage.getItem(COURSEKEY(u.uid))||'null')}catch(e){}
  if(c&&CATALOG.validLock(c)){COURSE=c;COURSE_STATE='set';courseChanged();draw()}   // last known course of this account: works offline
@@ -279,11 +280,35 @@ async function saveCourse(){
  if(CSBUSY||!USER||!CATALOG.validLock(CS))return;
  CSBUSY=true;CSERR='';draw();
  try{
-  await window.CLOUD.course.set(CS);
-  COURSE=CS.own?{own:true}:{org:CS.org,cls:CS.cls,med:CS.med};COURSE_STATE='set';
-  try{localStorage.setItem(COURSEKEY(USER.uid),JSON.stringify(COURSE))}catch(e){}
+  if(CS.own){COURSE={own:true};COURSE_STATE='set';OWN_PENDING=true}   // "my own courses": nothing is locked yet, the lock is saved when the first custom course is made (ensureOwnLock)
+  else{
+   await window.CLOUD.course.set(CS);
+   COURSE={org:CS.org,cls:CS.cls,med:CS.med};COURSE_STATE='set';OWN_PENDING=false;
+   try{localStorage.setItem(COURSEKEY(USER.uid),JSON.stringify(COURSE))}catch(e){}
+  }
   NAV={page:'home'};navSave();VIEW='home';courseChanged();
  }catch(e){CSERR=e&&e.code==='permission-denied'?'Course save nahi hua: ye account ka course pehle se chuna hua hai. Badalna ho to admin se baat karo.':'Save nahi hua. Internet check karke dobara try karo.'}
+ CSBUSY=false;draw();
+}
+// First custom course (or first saved shared course) made: only now is the "own courses" choice saved as the lock.
+window.ensureOwnLock=async function(){
+ if(!OWN_PENDING||!USER)return;
+ try{await window.CLOUD.course.set({own:true})}
+ catch(e){const r=await window.CLOUD.course.get().catch(()=>null);if(!(r&&r.own))throw e}   // already saved from another device: fine
+ OWN_PENDING=false;
+ try{localStorage.setItem(COURSEKEY(USER.uid),JSON.stringify({own:true}))}catch(e){}
+};
+// Back to the course chooser. Only for an "own courses" student with no course left; the saved lock (if any) is removed.
+async function releaseOwn(){
+ if(CSBUSY||!USER||!COURSE||!COURSE.own)return;
+ if(window.CUSTOM&&CUSTOM.count()>0)return;
+ CSBUSY=true;CSERR='';draw();
+ try{
+  if(!OWN_PENDING){await window.CLOUD.course.clear();try{await api('/course/reset',{})}catch(e){console.warn('course reset',e)}}
+  COURSE=null;COURSE_STATE='none';OWN_PENDING=false;CS={org:'',cls:0,med:''};
+  try{localStorage.removeItem(COURSEKEY(USER.uid))}catch(e){}
+  NAV={page:'home'};navSave();VIEW='home';courseChanged();
+ }catch(e){CSERR='Course badal nahi paye. Internet check karke dobara try karo.'}
  CSBUSY=false;draw();
 }
 function courseGateHTML(){
@@ -303,7 +328,8 @@ function courseGateHTML(){
 }
 function ownHomeHTML(){   // a student whose school or college is not in the list: only the courses they add themselves
  const g=CATALOG.groups.find(x=>x.custom),ini=n=>esc(String(n).split(' ').map(w=>w[0]||'').join('').slice(0,2).toUpperCase());
- return (window.CLASSROOM?CLASSROOM.homeHTML():'')+head1('Mere courses')+(window.RECALL&&RECALL.homeHTML?RECALL.homeHTML():'')
+ const back=window.CUSTOM&&CUSTOM.ready()&&CUSTOM.count()===0?`<div class="chips" style="margin:10px 0"><button class="chip" data-act="csback" ${CSBUSY?'disabled':''}>← Course chuno / badlo</button></div>${CSERR?`<p class="err">${esc(CSERR)}</p>`:''}`:'';
+ return (window.CLASSROOM?CLASSROOM.homeHTML():'')+head1('Mere courses')+back+(window.RECALL&&RECALL.homeHTML?RECALL.homeHTML():'')
   +(g?`<h2 class="sec">${esc(g.t)}</h2><div class="rows">${g.items.map(o=>rowHTML('org',`data-org="${o.id}"`,ini(o.name),esc(o.name),esc(o.sub||''),I.next)).join('')}</div>`:'')+(window.CUSTOM?CUSTOM.homeHTML():'');
 }
 function lockedHomeHTML(){
@@ -1180,6 +1206,7 @@ document.addEventListener('click',e=>{
  else if(act==='csparent'){PEEK=true;go('study')}
  else if(act==='csown'){CS={own:true};CSERR='';draw()}
  else if(act==='cssave')saveCourse();
+ else if(act==='csback')releaseOwn();
  else if(act==='csretry'){COURSE_STATE='wait';draw();if(USER)loadCourse(USER)}
  else if(act==='pcls'||act==='pmed'){if(act==='pcls')NAV.cls=+b.dataset.v;else NAV.med=b.dataset.v;navSave();try{history.replaceState({nav:NAV},'')}catch(e){}draw()}
  else if(act==='pg')navTo({page:b.dataset.p,org:COURSE&&!COURSE.own?COURSE.org:NAV.org,med:COURSE&&!COURSE.own?COURSE.med:NAV.med,cls:b.dataset.cls?+b.dataset.cls:NAV.cls,sub:b.dataset.sub||NAV.sub,ch:b.dataset.ch?+b.dataset.ch:null});

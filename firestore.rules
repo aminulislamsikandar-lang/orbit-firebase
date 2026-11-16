@@ -18,7 +18,9 @@ service cloud.firestore {
         || (request.resource.data.keys().hasOnly(['own', 'at'])   // "my school or college is not in the list": the student adds their own courses
           && request.resource.data.own == true
           && request.resource.data.at is number));
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin();
+      // The student may remove only the "own courses" lock (to go back to the chooser when they have no course); a textbook course lock stays admin-only.
+      allow delete: if isAdmin() || (request.auth != null && request.auth.uid == uid && resource.data.get('own', false) == true);
     }
     // Faculty and Developer people. Any logged-in user can read; only the admin Google account(s) listed below can change.
     // >>> Replace ADMIN_EMAIL_HERE with your Google email (lowercase), e.g. 'name@gmail.com'. Add more emails separated by commas.

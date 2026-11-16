@@ -105,6 +105,8 @@ app.use('/api', async (req, res, next) => {
     next();
   } catch (e) { console.error('[course] check failed: ' + e.message); next(); }   // a Firestore hiccup must not lock every student out
 });
+// The student left the "own courses" choice (lock deleted in Firestore): forget the cached lock at once so the next course works immediately.
+app.post('/api/course/reset', (req, res) => { COURSE_CACHE.delete(req.user.uid); res.json({ ok: true }); });
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Add more free keys (each from a DIFFERENT Google project) in Render as GEMINI_API_KEYS=key1,key2,key3

@@ -273,6 +273,10 @@ window.CLOUD.course = {
   async set(c) {
     const u = auth.currentUser; if (!u) throw new Error('login');
     await setDoc(doc(db, 'studentCourse', u.uid), c.own ? { own: true, at: Date.now() } : { org: c.org, cls: +c.cls, med: c.med, at: Date.now() });   // fails if it already exists (update is admin-only)
+  },
+  async clear() {   // only an "own courses" lock can be removed by the student (firestore.rules); a textbook course lock stays admin-only
+    const u = auth.currentUser; if (!u) throw new Error('login');
+    await deleteDoc(doc(db, 'studentCourse', u.uid));
   }
 };
 

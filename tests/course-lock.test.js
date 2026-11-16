@@ -74,7 +74,8 @@ const rules = read('firestore.rules');
 const m = /match \/studentCourse\/\{uid\}[\s\S]*?request\.resource\.data\.org in \[([^\]]*)\]/.exec(rules);
 ok(!!m, 'firestore.rules has a studentCourse rule');
 if (m) eq(m[1].split(',').map(x => x.trim().replace(/'/g, '')).sort(), CAT.orgIds().sort(), 'rules org list = catalog orgs');
-ok(/match \/studentCourse\/\{uid\}[\s\S]*?allow update, delete: if isAdmin\(\)/.test(rules), 'only the admin can change or delete a course');
+ok(/match \/studentCourse\/\{uid\}[\s\S]*?allow update: if isAdmin\(\);/.test(rules), 'only the admin can change a course');
+ok(/match \/studentCourse\/\{uid\}[\s\S]*?allow delete: if isAdmin\(\) \|\| \(request\.auth != null && request\.auth\.uid == uid && resource\.data\.get\('own', false\) == true\)/.test(rules), 'only the admin can delete a textbook course lock; the student can delete only an own-courses lock');
 ok(/keys\(\)\.hasOnly\(\['own', 'at'\]\)[\s\S]*?data\.own == true/.test(rules), 'rules allow the own-courses lock (own: true, at)');
 
 // 7. App wiring

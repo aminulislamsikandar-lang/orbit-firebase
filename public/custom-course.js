@@ -36,7 +36,7 @@
   };
 
   const hooks = {};   // tests replace the photo shrinker (jsdom has no canvas)
-  const S = { page: 'list', uid: '', own: [], shared: [], gone: [], loading: false, err: '', msg: '', cur: '', work: null, busy: false, incoming: null, newCh: '', form: { org: '', medium: 'English', cls: '', subject: '', lang: 'English' } };
+  const S = { loaded: false, page: 'list', uid: '', own: [], shared: [], gone: [], loading: false, err: '', msg: '', cur: '', work: null, busy: false, incoming: null, newCh: '', form: { org: '', medium: 'English', cls: '', subject: '', lang: 'English' } };
 
   // ---- the copy kept on this device ----
   function cacheLoad() {
@@ -99,7 +99,7 @@
       S.own = own.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       S.shared = docs.filter(d => d && d.ownerId !== S.uid);
       S.gone = ids.filter((id, i) => !docs[i]);
-      cacheSave();
+      S.loaded = true; cacheSave();
     } catch (e) { S.err = 'Courses cloud se load nahi hue. Internet check karo (purane courses dikh rahe hain).'; }
     S.loading = false; apply(); redraw();
   }
@@ -111,7 +111,7 @@
     checkIncoming();
   }
   function stop() {
-    S.uid = ''; S.own = []; S.shared = []; S.gone = []; S.page = 'list'; S.work = null; S.cur = '';
+    S.uid = ''; S.loaded = false; S.own = []; S.shared = []; S.gone = []; S.page = 'list'; S.work = null; S.cur = '';
     try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
     apply();
   }
@@ -132,6 +132,7 @@
     d.updatedAt = Date.now();
     const { id, ...data } = d;
     if (bytesOf(data) > MAX_BYTES) throw new Error('Ye course bahut bada ho gaya. Kuch questions ya chapters kam karo.');
+    if (g.ensureOwnLock) await g.ensureOwnLock();   // the "own courses" lock is saved only now, with the first course
     await CLOUD().set(id, data);
     cacheSave();
   }
@@ -215,7 +216,7 @@
   }
   async function saveIncoming() {
     const d = S.incoming; if (!d) return;
-    try { await CLOUD().saveRef(d.id); S.shared.unshift(d); S.incoming = null; S.page = 'list'; S.msg = 'Course save ho gaya (sirf dekh sakte ho). Edit karna ho to "Meri copy banao" dabao.'; cacheSave(); apply(); }
+    try { if (g.ensureOwnLock) await g.ensureOwnLock(); await CLOUD().saveRef(d.id); S.shared.unshift(d); S.incoming = null; S.page = 'list'; S.msg = 'Course save ho gaya (sirf dekh sakte ho). Edit karna ho to "Meri copy banao" dabao.'; cacheSave(); apply(); }
     catch (e) { S.err = errText(e); }
     redraw(true);
   }
@@ -499,5 +500,5 @@
     else if (a === 'cancelin') { S.incoming = null; show('list'); }
   });
 
-  g.CUSTOM = { hooks, shrink, viewHTML, homeHTML, courseBar, apply, start, stop, state: S, notesFor, pickNotes, MIN_NOTES_RECALL: 200, _t: { orgId, normLabel, toCourse, sizeOf, pickNotes } };
+  g.CUSTOM = { hooks, shrink, count: () => S.own.length + S.shared.length, ready: () => S.loaded && !S.loading, viewHTML, homeHTML, courseBar, apply, start, stop, state: S, notesFor, pickNotes, MIN_NOTES_RECALL: 200, _t: { orgId, normLabel, toCourse, sizeOf, pickNotes } };
 })(window);

@@ -11,7 +11,7 @@ const t = (n, ok, extra) => { if (ok) pass++; else { fail++; console.log('FAIL  
 const tick = (ms = 30) => new Promise(r => setTimeout(r, ms));
 
 async function boot({ stored, cache, getFails, hash = '', uid = 'u1' }) {
-  const box = { stored: stored || null, setCalls: 0 };
+  const box = { stored: stored || null, setCalls: 0, clearCalls: 0 };
   const dom = new JSDOM(html, {
     runScripts: 'dangerously', url: 'https://orbittutorial.web.app/' + hash, pretendToBeVisual: true,
     beforeParse(w) {
@@ -21,7 +21,7 @@ async function boot({ stored, cache, getFails, hash = '', uid = 'u1' }) {
       w.fetch = async url => /questions\.json$/.test(url) ? { ok: true, json: async () => QDATA } : { ok: false, json: async () => ({}) };
       if (cache) w.localStorage.setItem('orbit_course_v1_' + uid, JSON.stringify(cache));
       w.CLOUD = { token: async () => 't', push: async () => {}, login: async () => {}, logout: async () => {},
-        course: { get: async () => { if (getFails) throw new Error('offline'); return box.stored; }, set: async c => { box.setCalls++; if (box.stored) { const e = new Error('denied'); e.code = 'permission-denied'; throw e; } box.stored = c.own ? { own: true } : { org: c.org, cls: +c.cls, med: c.med }; } } };
+        course: { get: async () => { if (getFails) throw new Error('offline'); return box.stored; }, set: async c => { box.setCalls++; if (box.stored) { const e = new Error('denied'); e.code = 'permission-denied'; throw e; } box.stored = c.own ? { own: true } : { org: c.org, cls: +c.cls, med: c.med }; }, clear: async () => { box.clearCalls++; box.stored = null; } } };
     }
   });
   const w = dom.window;
@@ -91,9 +91,34 @@ async function boot({ stored, cache, getFails, hash = '', uid = 'u1' }) {
   s.click('[data-act=csown]');
   t('own option explains Add course and shows Pakka karo', /Add course/.test(s.app()) && /Master's/.test(s.app()) && /Pakka karo/.test(s.app()) && !/Class\b.*Medium/.test(s.app()));
   s.click('[data-act=cssave]'); await tick(80);
-  t('own lock is saved as { own: true }', JSON.stringify(s.box.stored) === '{"own":true}', JSON.stringify(s.box.stored));
-  t('own lock: no textbook subjects, only "Mere courses"', /Mere courses/.test(s.app()) && s.ids().length === 0 && !/Mathematics/.test(s.app()));
-  t('own lock keeps "My Courses" in the menu', /My Courses/.test(s.w.document.querySelector('#side').textContent));
+  t('own choice is NOT locked yet: nothing saved before a course exists', s.box.stored === null && s.box.setCalls === 0, JSON.stringify(s.box.stored));
+  t('own choice: no textbook subjects, only "Mere courses"', /Mere courses/.test(s.app()) && s.ids().length === 0 && !/Mathematics/.test(s.app()));
+  t('own choice keeps "My Courses" in the menu', /My Courses/.test(s.w.document.querySelector('#side').textContent));
+  // no course yet: a back button returns to the chooser (needs the custom-course module, so it is faked here)
+  s.w.CUSTOM = { count: () => 0, ready: () => true, homeHTML: () => '', apply() {}, start() {}, stop() {}, hooks: {} };
+  s.w.eval('draw()');
+  t('no course yet: "Course chuno / badlo" button is shown', /Course chuno \/ badlo/.test(s.app()));
+  s.click('[data-act=csback]'); await tick(80);
+  t('back button returns to the course picker, nothing saved', /Apna course chuno/.test(s.app()) && s.box.stored === null && s.box.clearCalls === 0);
+  s.click('[data-act=csown]'); s.click('[data-act=cssave]'); await tick(80);
+  // the first custom course (or saved shared course) saves the lock
+  await s.w.eval('ensureOwnLock()');
+  t('first custom course saves the lock { own: true }', JSON.stringify(s.box.stored) === '{"own":true}', JSON.stringify(s.box.stored));
+  await s.w.eval('ensureOwnLock()');
+  t('ensureOwnLock saves only once', s.box.setCalls === 1, String(s.box.setCalls));
+  s.w.close();
+  // a course exists: no back button; the lock stays
+  s = await boot({ stored: { own: true } });
+  s.w.CUSTOM = { count: () => 1, ready: () => true, homeHTML: () => '', apply() {}, start() {}, stop() {}, hooks: {} };
+  s.w.eval('draw()');
+  t('a course exists: no back button', !/Course chuno \/ badlo/.test(s.app()));
+  s.w.close();
+  // stuck account: lock saved earlier but no course made -> back button removes the lock
+  s = await boot({ stored: { own: true } });
+  s.w.CUSTOM = { count: () => 0, ready: () => true, homeHTML: () => '', apply() {}, start() {}, stop() {}, hooks: {} };
+  s.w.eval('draw()');
+  s.click('[data-act=csback]'); await tick(80);
+  t('saved lock without any course: back button deletes it and shows the picker', /Apna course chuno/.test(s.app()) && s.box.stored === null && s.box.clearCalls === 1);
   s.w.close();
   s = await boot({ stored: { own: true } });
   t('own lock: returning student goes straight to Mere courses', /Mere courses/.test(s.app()) && !/Apna course chuno/.test(s.app()));

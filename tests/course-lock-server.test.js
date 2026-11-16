@@ -64,6 +64,16 @@ const blocked = r => r.status === 403 && (r.code === 'no_course' || r.code === '
   docs.set('studentCourse/newuser', { org: 'seba', cls: 10, med: 'Assamese' });
   r = await post('/answer', 'newuser', { id: Q10 });
   t('choosing a course works at once (no stale "no course" cache)', !blocked(r), JSON.stringify(r));
+  // The student leaves the own-courses choice and picks a textbook course: /course/reset drops the cached own lock at once.
+  docs.set('studentCourse/owner', { org: 'seba', cls: 10, med: 'Assamese' });
+  r = await post('/answer', 'owner', { id: Q10 });
+  t('own lock is cached: the new textbook course is still refused until reset', r.code === 'wrong_course', JSON.stringify(r));
+  r = await post('/course/reset', 'owner', {});
+  t('/course/reset answers ok', r.status === 200, JSON.stringify(r));
+  r = await post('/answer', 'owner', { id: Q10 });
+  t('after /course/reset the new course works at once', !blocked(r), JSON.stringify(r));
+  r = await post('/course/reset', '', {});
+  t('/course/reset needs login', r.status === 401, JSON.stringify(r));
   console.log(pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.log('FAIL  crashed: ' + e.stack); process.exit(1); });
