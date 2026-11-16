@@ -107,6 +107,10 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .sbadge{margin-left:auto;color:var(--mut);font-size:13px}
 .sgap{flex:1;min-height:12px}
 .sline{border-top:1px solid var(--ln);margin:6px 4px}
+.sgrp{display:flex;align-items:center;justify-content:space-between;width:100%;border:0;background:transparent;color:var(--mut);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:12px 12px 4px;text-align:left}
+.sgrp::after{content:'';width:7px;height:7px;border-right:2px solid var(--mut);border-bottom:2px solid var(--mut);transform:rotate(45deg);margin-right:3px;transition:transform .15s}
+.sgrp[aria-expanded=false]::after{transform:rotate(-45deg)}
+.sitems[hidden]{display:none}
 .soon{margin-top:40px;text-align:center;color:var(--mut)}
 .soon svg{width:44px;height:44px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .soon p{margin:10px 0 0;font-size:18px}
@@ -823,6 +827,7 @@ function draw(){
  else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
+ if(VIEW!=='home'&&!needCourse&&body.indexOf('class="back"')<0)body=`<button class="back" data-act="nav" data-v="home">${I.back}<span>Home</span></button>`+body;
  $('#app').innerHTML=`<div class="top"${needCourse?' style="display:none"':''}><button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button><div class="logo">${LOGO}Orbit Tutorial</div></div>${body}`;
  drawSide();
  if(VIEW==='vlab'&&window.VLAB)VLAB.mount($('#app'));
@@ -832,12 +837,20 @@ function draw(){
  if(window.Analytics)window.Analytics.screen(screenInfo());
  window.scrollTo(0,y);
 }
+const SGKEY='orbit_side_groups';
+function sideState(){try{return JSON.parse(localStorage.getItem(SGKEY))||{}}catch(e){return{}}}
+function toggleGroup(k){const st=sideState(),was=document.querySelector('.sgrp[data-g="'+k+'"]');st[k]=!(was&&was.getAttribute('aria-expanded')==='true');try{localStorage.setItem(SGKEY,JSON.stringify(st))}catch(e){}drawSide()}
 function drawSide(){
+ const sst=sideState();
+ // A menu group is open if it holds the page you are on, otherwise as you last left it (default: open, except 'Aur').
+ const grp=(key,label,views,inner,defOpen)=>{const open=views.includes(VIEW)||(sst[key]!==undefined?!!sst[key]:defOpen);return `<button class="sgrp" data-act="sgrp" data-g="${key}" aria-expanded="${open}">${label}</button><div class="sitems"${open?'':' hidden'}>${inner}</div>`};
  const item=(v,ico,label,badge)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${COURSE&&!COURSE.own?'':item('custom','plus','My Courses')}${item('class','class','My Class')}${item('report','report','Weekly Report')}${item('study','recall','Padhai ka time')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}${item('getvideo','vid','Get Video')}${item('pubvideo','vid','Public Videos')}${item('vlab','lab','Virtual Lab')}${item('models3d','cube','3D Models')}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo')}${item('read','mic','Padhne ki jaanch')}${item('talk','mic','Baat-cheet')}${item('ai','ai','Advanced AI Features')}
- <div class="sline"></div>
- ${item('pyq','pyq','PYQ')}${item('pass','pass','Pass mark')}${item('topper','topper','Topper')}${item('faculty','fac','Faculty')}${item('dev','dev','Developer')}
+ ${item('home','home','Home')}${COURSE&&!COURSE.own?'':item('custom','plus','My Courses')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}
+ ${grp('learn','Seekho',['getvideo','pubvideo','vlab','models3d'],item('getvideo','vid','Get Video')+item('pubvideo','vid','Public Videos')+item('vlab','lab','Virtual Lab')+item('models3d','cube','3D Models'),true)}
+ ${grp('practice','Practice',['recall','bolo','read','talk','ai'],item('recall','recall','Recall AI')+item('bolo','mic','Bolo')+item('read','mic','Padhne ki jaanch')+item('talk','mic','Baat-cheet')+item('ai','ai','Advanced AI Features'),true)}
+ ${grp('me','Meri progress',['class','report','study'],item('class','class','My Class')+item('report','report','Weekly Report')+item('study','recall','Padhai ka time'),true)}
+ ${grp('more','Aur',['pyq','pass','topper','faculty','dev'],item('pyq','pyq','PYQ')+item('pass','pass','Pass mark')+item('topper','topper','Topper')+item('faculty','fac','Faculty')+item('dev','dev','Developer'),false)}
  <div class="sgap"></div><div class="sline"></div>
  ${item('settings','set','Settings')}${item('login','login',USER?'Account':'Log in')}`;
 }
@@ -845,7 +858,7 @@ function openSide(on,noFocus){
  const sd=$('#side'),sc=$('#scrim');
  sd.classList.toggle('open',on);sc.classList.toggle('open',on);
  sd.setAttribute('aria-hidden',String(!on));
- if(on){sd.removeAttribute('inert');const f=sd.querySelector('[data-act=close]');if(f&&!noFocus)f.focus()}
+ if(on){sd.removeAttribute('inert');const f=sd.querySelector('[data-act=close]');if(f&&!noFocus)f.focus();const cur=sd.querySelector('[aria-current=page]');if(cur&&cur.scrollIntoView)cur.scrollIntoView({block:'nearest'})}
  else{sd.setAttribute('inert','');const m=document.querySelector('[data-act=menu]');if(m&&!noFocus)m.focus()}
  const m=document.querySelector('[data-act=menu]');if(m)m.setAttribute('aria-expanded',String(on));
 }
@@ -872,10 +885,13 @@ function go(v){
  stopSay();
  VIEW=v;if(window.BOLO&&v!=='bolo')BOLO.leave();if(v==='class'&&window.CLASSROOM)CLASSROOM.refresh();if(window.VOICE&&v!=='read'&&v!=='talk')VOICE.leave();if(window.VLAB&&v!=='vlab')VLAB.leave();if(window.STUDY&&v!=='study')STUDY.leave();if(window.M3D&&v!=='models3d')M3D.leave();
  draw();openSide(false,true);window.scrollTo(0,0);
+ try{if(!(history.state&&history.state.view===v))history.pushState({nav:NAV,view:v},'')}catch(e){}
 }
 window.addEventListener('popstate',e=>{
  if(!(e.state&&e.state.nav)||!DATA)return;
- if(window.BOLO)BOLO.leave();if(window.VOICE)VOICE.leave();NAV=e.state.nav;LOCKED=null;VIEW='home';fixNav();navSave();draw();window.scrollTo(0,0);
+ const v=e.state.view||'home';
+ stopSay();
+ if(window.BOLO&&v!=='bolo')BOLO.leave();if(window.VLAB&&v!=='vlab')VLAB.leave();if(window.STUDY&&v!=='study')STUDY.leave();if(window.M3D&&v!=='models3d')M3D.leave();if(window.VOICE&&v!=='read'&&v!=='talk')VOICE.leave();NAV=e.state.nav;LOCKED=null;VIEW=v;fixNav();navSave();if(v==='class'&&window.CLASSROOM)CLASSROOM.refresh();draw();openSide(false,true);window.scrollTo(0,0);
 });
 try{history.replaceState({nav:NAV},'')}catch(e){}
 function pin(id){if(PINS[id])delete PINS[id];else PINS[id]=Date.now();pinPersist();draw()}
@@ -1138,6 +1154,7 @@ document.addEventListener('click',e=>{
  else if(act==='lsall'){const x=curCh();if(x)lessonAll(x.c,x.ch)}
  else if(act==='rul'){const x=curCh();if(x)rulesGo(x.c,x.ch,+b.dataset.si)}
  else if(act==='nav')go(b.dataset.v);
+ else if(act==='sgrp')toggleGroup(b.dataset.g);
  else if(act==='pvopen')openPV(id);
  else if(act==='pvclose')closePV();
  else if(act==='gvgo')gvRun();
