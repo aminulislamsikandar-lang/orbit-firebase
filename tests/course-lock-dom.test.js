@@ -126,6 +126,15 @@ async function boot({ stored, cache, getFails, hash = '', uid = 'u1' }) {
   t('college and master years have readable labels in the app', s.w.eval("clsLabel(13)+'|'+clsLabel(17)+'|'+clsLabel(10)") === "College Year 1|Master's Year 1|Class 10");
   s.w.close();
 
+  // 6b. Course badlo: a student can delete their textbook course lock; it stays locked until they do
+  s = await boot({ stored: { org: 'seba', cls: 10, med: 'English' } });
+  t('locked student sees the Course badlo button', !!s.w.document.querySelector('[data-act=csback]') && /Course badlo/.test(s.app()));
+  s.w.confirm = () => false; s.click('[data-act=csback]'); await tick(80);
+  t('Course badlo cancelled: the lock stays', JSON.stringify(s.box.stored) === '{"org":"seba","cls":10,"med":"English"}' && s.box.clearCalls === 0 && !/Apna course chuno/.test(s.app()));
+  s.w.confirm = () => true; s.click('[data-act=csback]'); await tick(80);
+  t('Course badlo confirmed: lock deleted and the picker is back', s.box.stored === null && s.box.clearCalls === 1 && /Apna course chuno/.test(s.app()));
+  s.w.close();
+
   // 7. A parent (father's phone) can open "Padhai ka time" without choosing a course; every other view still needs one.
   s = await boot({});
   t('the course screen has a door for parents', /Padhai ka time \(parent ke liye\)/.test(s.app()));

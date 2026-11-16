@@ -287,7 +287,7 @@ async function saveCourse(){
    try{localStorage.setItem(COURSEKEY(USER.uid),JSON.stringify(COURSE))}catch(e){}
   }
   NAV={page:'home'};navSave();VIEW='home';courseChanged();
- }catch(e){CSERR=e&&e.code==='permission-denied'?'Course save nahi hua: ye account ka course pehle se chuna hua hai. Badalna ho to admin se baat karo.':'Save nahi hua. Internet check karke dobara try karo.'}
+ }catch(e){CSERR=e&&e.code==='permission-denied'?'Course save nahi hua: is account ka course pehle se chuna hua hai. Pehle "Course badlo" se use hatao.':'Save nahi hua. Internet check karke dobara try karo.'}
  CSBUSY=false;draw();
 }
 // First custom course (or first saved shared course) made: only now is the "own courses" choice saved as the lock.
@@ -298,10 +298,13 @@ window.ensureOwnLock=async function(){
  OWN_PENDING=false;
  try{localStorage.setItem(COURSEKEY(USER.uid),JSON.stringify({own:true}))}catch(e){}
 };
-// Back to the course chooser. Only for an "own courses" student with no course left; the saved lock (if any) is removed.
-async function releaseOwn(){
- if(CSBUSY||!USER||!COURSE||!COURSE.own)return;
- if(window.CUSTOM&&CUSTOM.count()>0)return;
+// Course badlo: the student removes their course lock and goes back to the chooser. The lock stays until they do this.
+// An "own courses" student must first delete every course they made (so nothing is left behind).
+async function releaseCourse(){
+ if(CSBUSY||!USER||!COURSE)return;
+ if(COURSE.own&&window.CUSTOM&&CUSTOM.count()>0)return;
+ const empty=COURSE.own&&(OWN_PENDING||(window.CUSTOM&&CUSTOM.count()===0));
+ if(!empty&&!confirm('Course badlo? Tumhara abhi ka course hat jayega aur tum naya course chun sakoge. Jab tak tum ise nahi hataoge, ye lock rahega.'))return;
  CSBUSY=true;CSERR='';draw();
  try{
   if(!OWN_PENDING){await window.CLOUD.course.clear();try{await api('/course/reset',{})}catch(e){console.warn('course reset',e)}}
@@ -317,7 +320,7 @@ function courseGateHTML(){
  if(COURSE_STATE==='err')return head+`<p class="err" style="margin-top:24px">Course load nahi hua. Internet check karke dobara try karo.</p><button class="btn" data-act="csretry">Dobara try karo</button></div>`;
  const chips=(list,cur,act,lab)=>`<div class="chips" role="group">${list.map(v=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${cur===v}">${lab(v)}</button>`).join('')}</div>`;
  const ready=CATALOG.validLock(CS)&&!CS.own,n=ready?CATALOG.idsFor(CS,RAWD.courses).length:0;
- return head+`<h1 style="font-size:26px;margin-top:16px">Apna course chuno</h1><p class="mut">Ek baar chunne ke baad badal nahi sakte, isliye dhyan se chuno.</p>`
+ return head+`<h1 style="font-size:26px;margin-top:16px">Apna course chuno</h1><p class="mut">Ye course tab tak lock rahega jab tak tum use hata nahi dete (Course badlo).</p>`
   +`<h2 class="sec">School ya Board</h2>`+chips(CATALOG.orgIds(),CS.org,'csorg',id=>esc(CATALOG.orgName(id)))
   +`<div class="chips" role="group"><button class="chip" data-act="csown" aria-pressed="${!!CS.own}">Mera school ya college list mein nahi hai</button></div>`
   +(CS.own?`<p class="mut" style="margin-top:14px">Tum apna school, college ya university khud jodoge (Add course). Class 1 se College aur Master's tak chalega.</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?'Save ho raha hai…':'Pakka karo'}</button>`:'')
@@ -334,7 +337,7 @@ function ownHomeHTML(){   // a student whose school or college is not in the lis
 }
 function lockedHomeHTML(){
  const L=pickList(COURSE.org,COURSE.cls,COURSE.med);
- return (window.CLASSROOM?CLASSROOM.homeHTML():'')+head1(courseLabel(COURSE))+(window.RECALL&&RECALL.homeHTML?RECALL.homeHTML():'')+`<h2 class="sec">Subjects</h2><div class="rows">${L.map(x=>rowHTML('pg',`data-p="index" data-cls="${x.c.class}" data-sub="${esc(x.c.subject)}"`,esc(x.name.charAt(0)),x.name,`${x.c.chapters.length} chapters`,I.next)).join('')}</div>`;
+ return (window.CLASSROOM?CLASSROOM.homeHTML():'')+head1(courseLabel(COURSE))+(window.RECALL&&RECALL.homeHTML?RECALL.homeHTML():'')+`<h2 class="sec">Subjects</h2><div class="rows">${L.map(x=>rowHTML('pg',`data-p="index" data-cls="${x.c.class}" data-sub="${esc(x.c.subject)}"`,esc(x.name.charAt(0)),x.name,`${x.c.chapters.length} chapters`,I.next)).join('')}</div>`+`<div class="chips" style="margin-top:22px"><button class="chip" data-act="csback" ${CSBUSY?'disabled':''}>Course badlo</button></div>${CSERR?`<p class="err">${esc(CSERR)}</p>`:''}`;
 }
 function setData(d){
  RAWD=d;
@@ -1206,7 +1209,7 @@ document.addEventListener('click',e=>{
  else if(act==='csparent'){PEEK=true;go('study')}
  else if(act==='csown'){CS={own:true};CSERR='';draw()}
  else if(act==='cssave')saveCourse();
- else if(act==='csback')releaseOwn();
+ else if(act==='csback')releaseCourse();
  else if(act==='csretry'){COURSE_STATE='wait';draw();if(USER)loadCourse(USER)}
  else if(act==='pcls'||act==='pmed'){if(act==='pcls')NAV.cls=+b.dataset.v;else NAV.med=b.dataset.v;navSave();try{history.replaceState({nav:NAV},'')}catch(e){}draw()}
  else if(act==='pg')navTo({page:b.dataset.p,org:COURSE&&!COURSE.own?COURSE.org:NAV.org,med:COURSE&&!COURSE.own?COURSE.med:NAV.med,cls:b.dataset.cls?+b.dataset.cls:NAV.cls,sub:b.dataset.sub||NAV.sub,ch:b.dataset.ch?+b.dataset.ch:null});
