@@ -172,14 +172,17 @@
   });
   g.document.addEventListener('input', e => { const t = e.target; if (t && t.dataset && t.dataset.klLim) { const l = g.document.getElementById('klLimV-' + t.dataset.klLim); if (l) l.textContent = t.value + ' min'; } });
   // every 30 s: the child's phone reads the parent's settings, the parent's phone refreshes the child's day
-  setInterval(() => {
+  // The parent's screen is not redrawn while a code is being typed or a slider is being used (a redraw would wipe it).
+  const editing = () => { const a = g.document.activeElement, c = g.document.getElementById('klCode'); return !!((c && c.value) || (a && (a.id === 'klCode' || (a.dataset && (a.dataset.klLim || a.dataset.klMic))))); };
+  function tick() {
     if (!S.uid || (g.document.visibilityState && g.document.visibilityState !== 'visible')) return;
-    if (role() === 'kid') pull(); else if (role() === 'parent') parLoad(true);
-  }, TICK_MS);
+    if (role() === 'kid') pull(); else if (role() === 'parent' && !editing()) parLoad(true);
+  }
+  setInterval(tick, TICK_MS);
 
   g.KIDLINK = {
     normCode, goodCode, fmt, joinCode, kidPanelHTML, parentHTML, touch,
     setUser(u) { const id = u && u.uid ? u.uid : ''; if (id === S.uid) return; S.uid = id; S.kid = { loaded: false, busy: false, err: '', msg: '', link: null, parents: 0 }; S.par = { loaded: false, busy: false, err: '', msg: '', kids: [] }; },
-    _state: S, _pull: pull, _push: push
+    _state: S, _pull: pull, _push: push, _tick: tick
   };
 })(window);

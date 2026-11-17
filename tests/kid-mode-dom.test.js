@@ -103,6 +103,10 @@ async function boot(db, uid, { role } = {}) {
   par.click('[data-kl=refresh]'); await tick(150);
   t('the parent screen shows the summary', /Aaj sahi/.test(par.app()) && /Ab tak sahi/.test(par.app()));
 
+  par.d.getElementById('klCode').value = 'ABCD-2'; par.w.KIDLINK._tick(); await tick(150);
+  t('the 30-second refresh does not wipe a code that is being typed', par.d.getElementById('klCode').value === 'ABCD-2');
+  par.d.getElementById('klCode').value = '';
+
   // 6. The parent sets the limit and the mic; the child's phone takes it.
   const lim = par.d.querySelector('[data-kl-lim]'); lim.value = '20'; lim.dispatchEvent(new par.w.Event('change', { bubbles: true })); await tick(100);
   t('the parent\'s limit is saved for the child', db.sets[code.replace('-', '')] && db.sets[code.replace('-', '')].limit === 20 && db.sets[code.replace('-', '')].mic === true);
