@@ -259,11 +259,19 @@ try{
 function navSave(){try{localStorage.setItem(NKEY,JSON.stringify(NAV))}catch(e){}}
 // ---- Course lock: one course per student (School/Board + Class + Medium). Saved in Firestore (studentCourse/<uid>), remembered per account on this device. ----
 // COURSE_STATE: 'wait' (loading) | 'none' (must choose) | 'err' (could not load) | 'set'. The server checks the same course on every AI request.
-let OWN_PENDING=false,COURSE=null,COURSE_STATE='wait',RAWD=null,CS={org:'',cls:0,med:''},CSERR='',CSBUSY=false,PEEK=location.hash==='#study';   // PEEK: a parent opened "Padhai ka time" (from the course screen, or by tapping the alert): no course is needed for that one view
+let KIDROLE='',KID_STEP='',KID_CODE='',OWN_PENDING=false,COURSE=null,COURSE_STATE='wait',RAWD=null,CS={org:'',cls:0,med:''},CSERR='',CSBUSY=false,PEEK=location.hash==='#study';   // PEEK: a parent opened "Padhai ka time" (from the course screen, or by tapping the alert): no course is needed for that one view
 const COURSEKEY=uid=>'orbit_course_v1_'+uid;
 const courseLabel=l=>CATALOG.labelOf(l);
 const lockedIds=()=>COURSE&&RAWD?CATALOG.idsFor(COURSE,RAWD.courses):null;
-function courseChanged(){if(RAWD)setData(RAWD);if(typeof mergeV==='function')mergeV()}
+// Kid mode: the account lock is { kid: true }; whether THIS phone is the child's or the parent's is kept on this phone (so one Google account can be used on both).
+const KIDROLEKEY=uid=>'orbit_kidrole_v1_'+uid;
+const kidOn=()=>!!(USER&&COURSE_STATE==='set'&&COURSE&&COURSE.kid===true&&KIDROLE);
+function kidRoleSync(){
+ if(!(COURSE&&COURSE.kid===true)){KIDROLE='';return}
+ if(!KIDROLE&&USER){try{const v=localStorage.getItem(KIDROLEKEY(USER.uid));KIDROLE=v==='kid'||v==='parent'?v:''}catch(e){}}
+}
+function setKidRole(r){KIDROLE=r;try{if(USER)localStorage.setItem(KIDROLEKEY(USER.uid),r)}catch(e){}}
+function courseChanged(){kidRoleSync();if(RAWD)setData(RAWD);if(typeof mergeV==='function')mergeV()}
 async function loadCourse(u){
  OWN_PENDING=false;
  let c=null;
@@ -290,6 +298,29 @@ async function saveCourse(){
  }catch(e){CSERR=e&&e.code==='permission-denied'?'Course save nahi hua: is account ka course pehle se chuna hua hai. Pehle "Course badlo" se use hatao.':'Save nahi hua. Internet check karke dobara try karo.'}
  CSBUSY=false;draw();
 }
+async function saveKid(role){
+ if(CSBUSY||!USER)return;
+ CSBUSY=true;CSERR='';draw();
+ try{
+  if(!(COURSE&&COURSE.kid)){
+   await window.CLOUD.course.set({kid:true});
+   COURSE={kid:true};COURSE_STATE='set';
+   try{localStorage.setItem(COURSEKEY(USER.uid),JSON.stringify(COURSE))}catch(e){}
+  }
+  setKidRole(role);KID_STEP='';NAV={page:'home'};navSave();courseChanged();
+ }catch(e){CSERR=e&&e.code==='permission-denied'?'Kid mode save nahi hua: is account ka course pehle se chuna hua hai. Pehle \"Course badlo\" se use hatao.':'Save nahi hua. Internet check karke dobara try karo.'}
+ CSBUSY=false;draw();
+}
+async function kidJoin(){
+ if(CSBUSY||!USER)return;
+ const el=document.getElementById('kidCode');KID_CODE=el?el.value:'';
+ if(!window.KIDLINK){CSERR='Parent ka feature load nahi hua. Page refresh karo.';draw();return}
+ CSBUSY=true;CSERR='';draw();
+ const res=await window.KIDLINK.joinCode(KID_CODE);
+ CSBUSY=false;
+ if(res.err){CSERR=res.err;draw();return}
+ KID_CODE='';await saveKid('parent');
+}
 // First custom course (or first saved shared course) made: only now is the "own courses" choice saved as the lock.
 window.ensureOwnLock=async function(){
  if(!OWN_PENDING||!USER)return;
@@ -304,25 +335,42 @@ async function releaseCourse(){
  if(CSBUSY||!USER||!COURSE)return;
  if(COURSE.own&&window.CUSTOM&&CUSTOM.count()>0)return;
  const empty=COURSE.own&&(OWN_PENDING||(window.CUSTOM&&CUSTOM.count()===0));
- if(!empty&&!confirm('Course badlo? Tumhara abhi ka course hat jayega aur tum naya course chun sakoge. Jab tak tum ise nahi hataoge, ye lock rahega.'))return;
+ if(!empty&&!confirm(COURSE.kid?'Kid mode band karoge? Phir poora Orbit khulega aur tum naya course chun sakoge.':'Course badlo? Tumhara abhi ka course hat jayega aur tum naya course chun sakoge. Jab tak tum ise nahi hataoge, ye lock rahega.'))return;
  CSBUSY=true;CSERR='';draw();
  try{
   if(!OWN_PENDING){await window.CLOUD.course.clear();try{await api('/course/reset',{})}catch(e){console.warn('course reset',e)}}
-  COURSE=null;COURSE_STATE='none';OWN_PENDING=false;CS={org:'',cls:0,med:''};
-  try{localStorage.removeItem(COURSEKEY(USER.uid))}catch(e){}
+  COURSE=null;COURSE_STATE='none';OWN_PENDING=false;CS={org:'',cls:0,med:''};KIDROLE='';KID_STEP='';
+  try{localStorage.removeItem(COURSEKEY(USER.uid));localStorage.removeItem(KIDROLEKEY(USER.uid))}catch(e){}
   NAV={page:'home'};navSave();VIEW='home';courseChanged();
  }catch(e){CSERR='Course badal nahi paye. Internet check karke dobara try karo.'}
  CSBUSY=false;draw();
+}
+function kidRoleHTML(){
+ const locked=!!(COURSE&&COURSE.kid);
+ return `<h1 style="font-size:26px;margin-top:16px">Kid mode</h1><p class="mut">Kid mode mein sirf Bolo page khulta hai. Is phone par kaun hai?</p>
+  <div style="display:grid;gap:10px;margin-top:14px"><button class="btn" data-act="kidrole" data-v="kid" ${CSBUSY?'disabled':''}>Main bachcha hoon</button><button class="btn" data-act="kidrole" data-v="parent" ${CSBUSY?'disabled':''}>I am parent</button></div>`
+  +(CSERR?`<p class="err">${esc(CSERR)}</p>`:'')
+  +`<p class="mut" style="margin-top:24px">${locked?'Kid mode nahi chahiye? <button class="chip" data-act="csback">Kid mode band karo</button>':'<button class="chip" data-act="kidback">← Wapas</button>'}</p></div>`;
+}
+function kidCodeHTML(){
+ return `<h1 style="font-size:26px;margin-top:16px">I am parent</h1><p class="mut">Bachche ke phone par Bolo kholo, "Parent ke liye" mein "Code banao" dabao, aur wo code yahan paste karo.</p>
+  <input id="kidCode" value="${esc(KID_CODE)}" maxlength="9" autocomplete="off" autocapitalize="characters" placeholder="ABCD-EFGH" aria-label="Bachche ka code" style="width:100%;padding:12px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit;font-size:20px;letter-spacing:3px;margin-top:10px">
+  <button class="btn" data-act="kidjoin" ${CSBUSY?'disabled':''} style="margin-top:12px">${CSBUSY?'Jud raha hai…':'Jodo'}</button>`
+  +(CSERR?`<p class="err">${esc(CSERR)}</p>`:'')
+  +`<p class="mut" style="margin-top:24px"><button class="chip" data-act="kidback">← Wapas</button></p></div>`;
 }
 function courseGateHTML(){
  const head=`<div style="max-width:420px;margin:0 auto;padding:18px 16px"><div class="logo" style="font-size:26px">${LOGO}Orbit Tutorial</div>`;
  if(COURSE_STATE==='wait'||(COURSE_STATE==='none'&&!RAWD))return head+`<p class="mut" style="margin-top:24px">Tumhara course load ho raha hai…</p></div>`;
  if(COURSE_STATE==='err')return head+`<p class="err" style="margin-top:24px">Course load nahi hua. Internet check karke dobara try karo.</p><button class="btn" data-act="csretry">Dobara try karo</button></div>`;
+ if(KID_STEP==='code')return head+kidCodeHTML();
+ if(KID_STEP==='role'||(COURSE&&COURSE.kid&&!KIDROLE))return head+kidRoleHTML();
  const chips=(list,cur,act,lab)=>`<div class="chips" role="group">${list.map(v=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${cur===v}">${lab(v)}</button>`).join('')}</div>`;
  const ready=CATALOG.validLock(CS)&&!CS.own,n=ready?CATALOG.idsFor(CS,RAWD.courses).length:0;
  return head+`<h1 style="font-size:26px;margin-top:16px">Apna course chuno</h1><p class="mut">Ye course tab tak lock rahega jab tak tum use hata nahi dete (Course badlo).</p>`
   +`<h2 class="sec">School ya Board</h2>`+chips(CATALOG.orgIds(),CS.org,'csorg',id=>esc(CATALOG.orgName(id)))
   +`<div class="chips" role="group"><button class="chip" data-act="csown" aria-pressed="${!!CS.own}">Mera school ya college list mein nahi hai</button></div>`
+   +`<div class="chips" role="group"><button class="chip" data-act="kidmode">Kid mode: sirf Bolo (chhote bachhon ke liye)</button></div>`
   +(CS.own?`<p class="mut" style="margin-top:14px">Tum apna school, college ya university khud jodoge (Add course). Class 1 se College aur Master's tak chalega.</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?'Save ho raha hai…':'Pakka karo'}</button>`:'')
   +(CS.org&&!CS.own?`<h2 class="sec">Class</h2>`+chips(CATALOG.classes[CS.org]||[],CS.cls,'cscls',clsLabel):'')
   +(CS.org&&CS.cls&&!CS.own?`<h2 class="sec">Medium</h2>`+chips(MEDIUMS,CS.med,'csmed',v=>v):'')
@@ -687,7 +735,7 @@ function syncSoon(){
  SYNCT=setTimeout(()=>window.CLOUD.push({saved:SAVED,pins:PINS,settings:ST}).catch(e=>console.warn('sync failed',e)),1500);
 }
 window.onCloudFail=e=>{CLOUDFAIL=String((e&&e.message)||e||'unknown');console.error('cloud.js failed',e);if(navigator.onLine&&!USER)draw()};
-window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(window.STUDY)window.STUDY.setUser(u);if(u&&FREE){FREE=false;FREE_ID=null;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';PEEK=false;COURSE=null;COURSE_STATE='wait';if(RAWD)courseChanged();if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u);loadCourse(u)}if(DATA||!u)draw()};
+window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.KIDLINK)window.KIDLINK.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(window.STUDY)window.STUDY.setUser(u);if(u&&FREE){FREE=false;FREE_ID=null;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';PEEK=false;COURSE=null;COURSE_STATE='wait';if(RAWD)courseChanged();if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u);loadCourse(u)}if(DATA||!u)draw()};
 // First login on a device: merge this device's data with the cloud. After that the cloud copy wins.
 window.onCloudData=cd=>{
  if(window.RECALL&&RECALL.sync)RECALL.sync();   // Recall tracker + topic records: phone <-> account
@@ -832,9 +880,11 @@ function draw(){
  if((AUTH_READY||(CLOUDFAIL&&navigator.onLine))&&!USER){openSide(false,true);$('#app').innerHTML=PARENT_LINK&&window.PARENT_KEY?`<div class="logo" style="margin:14px 0">${LOGO}Orbit Tutorial</div>`+PARENT_KEY.viewHTML():FREE?freeHTML():gateHTML();window.scrollTo(0,0);if(window.Analytics)window.Analytics.screen({name:FREE&&!(PARENT_LINK&&window.PARENT_KEY)?'free_notes':'login_gate'});return}
  if(!DATA)return;
  const d=DATA,y=window.scrollY;
- const needCourse=!!USER&&COURSE_STATE!=='set'&&!(PEEK&&VIEW==='study');   // logged in but no course yet (or still loading it): only the course screen is shown
+ const KIDM=kidOn();if(KIDM)VIEW=KIDROLE==='parent'?'kidparent':'bolo';   // Kid mode: the child sees only Bolo, the parent only the parent screen
+ const needCourse=!!USER&&(COURSE_STATE!=='set'||(COURSE&&COURSE.kid===true&&!KIDROLE))&&!(PEEK&&VIEW==='study');   // logged in but no course yet (or still loading it): only the course screen is shown
  let body;
  if(needCourse){openSide(false,true);body=courseGateHTML()}
+ else if(KIDM){openSide(false,true);body=KIDROLE==='parent'?(window.KIDLINK?KIDLINK.parentHTML():''):(window.BOLO?BOLO.viewHTML():'')}
  else if(VIEW==='home')body=navHTML();
  else if(VIEW==='fav'||VIEW==='pins'){
   const fn=VIEW==='fav'?q=>isSaved(q.id):q=>isPinned(q.id);
@@ -856,8 +906,8 @@ function draw(){
  else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
- if(VIEW!=='home'&&!needCourse&&body.indexOf('class="back"')<0)body=`<button class="back" data-act="nav" data-v="home">${I.back}<span>Home</span></button>`+body;
- $('#app').innerHTML=`<div class="top"${needCourse?' style="display:none"':''}><button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button><div class="logo">${LOGO}Orbit Tutorial</div></div>${body}`;
+ if(VIEW!=='home'&&!needCourse&&!KIDM&&body.indexOf('class="back"')<0)body=`<button class="back" data-act="nav" data-v="home">${I.back}<span>Home</span></button>`+body;
+ $('#app').innerHTML=`<div class="top"${needCourse?' style="display:none"':''}>${KIDM?'':`<button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button>`}<div class="logo">${LOGO}Orbit Tutorial</div></div>${body}`;
  drawSide();
  if(VIEW==='vlab'&&window.VLAB)VLAB.mount($('#app'));
  if(VIEW==='models3d'&&window.M3D)M3D.mount($('#app'));
@@ -897,6 +947,7 @@ function stopSay(){
  for(const id in UI)UI[id].say=false;
 }
 function navTo(n,push=true){
+ if(kidOn())return;   // Kid mode: no other page
  stopSay();
  NAV=n;LOCKED=null;VIEW='home';navSave();if(n.page==='chapter'&&window.WEEKLY)WEEKLY.mark();
  if(window.BOLO)BOLO.leave();   // the mic must never stay on after the student leaves the Bolo screen
@@ -910,6 +961,7 @@ function goBack(){
  else if(NAV.page==='pick')navTo({page:'home'});
 }
 function go(v){
+ if(kidOn())return;   // Kid mode: no other page
  if(v==='home'){openSide(false,true);navTo({page:'home'});return}
  stopSay();
  VIEW=v;if(window.BOLO&&v!=='bolo')BOLO.leave();if(v==='class'&&window.CLASSROOM)CLASSROOM.refresh();if(window.VOICE&&v!=='read'&&v!=='talk')VOICE.leave();if(window.VLAB&&v!=='vlab')VLAB.leave();if(window.STUDY&&v!=='study')STUDY.leave();if(window.M3D&&v!=='models3d')M3D.leave();
@@ -917,6 +969,7 @@ function go(v){
  try{if(!(history.state&&history.state.view===v))history.pushState({nav:NAV,view:v},'')}catch(e){}
 }
 window.addEventListener('popstate',e=>{
+ if(kidOn())return;
  if(!(e.state&&e.state.nav)||!DATA)return;
  const v=e.state.view||'home';
  stopSay();
@@ -1208,6 +1261,10 @@ document.addEventListener('click',e=>{
  else if(act==='csmed'){CS.med=b.dataset.v;CSERR='';draw()}
  else if(act==='csparent'){PEEK=true;go('study')}
  else if(act==='csown'){CS={own:true};CSERR='';draw()}
+ else if(act==='kidmode'){KID_STEP='role';CSERR='';draw()}
+ else if(act==='kidrole'){if(b.dataset.v==='parent'){KID_STEP='code';CSERR='';draw()}else saveKid('kid')}
+ else if(act==='kidback'){KID_STEP=KID_STEP==='code'?'role':'';CSERR='';draw()}
+ else if(act==='kidjoin')kidJoin();
  else if(act==='cssave')saveCourse();
  else if(act==='csback')releaseCourse();
  else if(act==='csretry'){COURSE_STATE='wait';draw();if(USER)loadCourse(USER)}
@@ -1312,6 +1369,7 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/bolo-core.js"></script>
 <script src="/byanjan-video.js"></script>
 <script src="/bolo.js"></script>
+<script src="/kidlink.js"></script>
 <script src="/voice-tutor.js"></script>
 <script src="/vlab.js"></script>
 <script src="/models3d.js"></script>

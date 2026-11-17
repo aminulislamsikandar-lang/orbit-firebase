@@ -16,6 +16,7 @@ function courseIdsOf(body, { byId, isCourse }) {
 function decide({ admin, canRead, lock, courseIds, custom, ids }) {
   if (admin || !canRead) return { ok: true };
   if (!lock) return { ok: false, status: 403, code: 'no_course', error: 'Pehle apna course chuno (School ya Board, Class, Medium).' };
+  if (lock.kid) return { ok: false, status: 403, code: 'kid_mode', error: 'Kid mode mein sirf Bolo chalta hai.' };
   if (lock.own) return (courseIds || []).length ? { ok: false, status: 403, code: 'wrong_course', error: 'Tumne apne khud ke courses chune hain, isliye textbook ke courses nahi khul sakte.' } : { ok: true };
   if (custom != null) return { ok: false, status: 403, code: 'wrong_course', error: 'Ye feature tumhare course mein nahi hai.' };
   if ((courseIds || []).some(id => !(ids || []).includes(id))) return { ok: false, status: 403, code: 'wrong_course', error: 'Ye sawaal tumhare course ka nahi hai.' };

@@ -267,17 +267,58 @@ window.CLOUD.course = {
   async get() {
     const u = auth.currentUser; if (!u) return null;
     const s = await getDoc(doc(db, 'studentCourse', u.uid)), d = s.exists() ? s.data() : null;
+    if (d && d.kid === true) return { kid: true };
     if (d && d.own === true) return { own: true };
     return d && typeof d.org === 'string' ? { org: d.org, cls: +d.cls, med: d.med } : null;
   },
   async set(c) {
     const u = auth.currentUser; if (!u) throw new Error('login');
-    await setDoc(doc(db, 'studentCourse', u.uid), c.own ? { own: true, at: Date.now() } : { org: c.org, cls: +c.cls, med: c.med, at: Date.now() });   // fails if it already exists (update is admin-only)
+    await setDoc(doc(db, 'studentCourse', u.uid), c.kid ? { kid: true, at: Date.now() } : c.own ? { own: true, at: Date.now() } : { org: c.org, cls: +c.cls, med: c.med, at: Date.now() });   // fails if it already exists (update is admin-only)
   },
   async clear() {   // the student removes their own course lock (Course badlo); the lock stays until they do
     const u = auth.currentUser; if (!u) throw new Error('login');
     await deleteDoc(doc(db, 'studentCourse', u.uid));
   }
+};
+
+// Kid mode: a parent connects to a child's phone with an 8-character code (firestore.rules: kidLinks). The child's phone shares a small summary, the parent sets the limit and the mic switch.
+window.CLOUD.kids = {
+  async create(name) {
+    const u = auth.currentUser; if (!u) throw new Error('login');
+    const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no I, O, 0, 1: easy to read aloud and copy
+    for (let i = 0; i < 6; i++) {
+      let code = ''; crypto.getRandomValues(new Uint8Array(8)).forEach(b => { code += A[b % A.length]; });
+      let taken = false; try { taken = (await getDoc(doc(db, 'kidLinks', code))).exists(); } catch (e) {}
+      if (taken) continue;
+      const d = { code, kidUid: u.uid, name: String(name || 'Bachcha').slice(0, 40) || 'Bachcha', createdAt: Date.now() };
+      await setDoc(doc(db, 'kidLinks', code), d); return d;
+    }
+    throw new Error('code');
+  },
+  async own() { const u = auth.currentUser; if (!u) return null; const s = await getDocs(query(collection(db, 'kidLinks'), where('kidUid', '==', u.uid))); let a = null; s.forEach(d => { if (!a) a = d.data(); }); return a; },
+  async link(code) { try { const s = await getDoc(doc(db, 'kidLinks', code)); return s.exists() ? s.data() : null; } catch (e) { return null; } },
+  async parents(code) { const s = await getDocs(collection(db, 'kidLinks', code, 'parents')); const a = []; s.forEach(d => a.push(d.data())); return a; },
+  async remove(code) {   // the child's phone stops sharing: the link and everything under it go
+    for (const sub of ['parents']) { try { const s = await getDocs(collection(db, 'kidLinks', code, sub)); await Promise.all(s.docs.map(d => deleteDoc(d.ref))); } catch (e) {} }
+    for (const id of ['sum', 'set']) { try { await deleteDoc(doc(db, 'kidLinks', code, 'state', id)); } catch (e) {} }
+    await deleteDoc(doc(db, 'kidLinks', code));
+  },
+  async putSum(code, sum) { await setDoc(doc(db, 'kidLinks', code, 'state', 'sum'), sum); },
+  async getSum(code) { const s = await getDoc(doc(db, 'kidLinks', code, 'state', 'sum')); return s.exists() ? s.data() : null; },
+  async getSet(code) { const s = await getDoc(doc(db, 'kidLinks', code, 'state', 'set')); return s.exists() ? s.data() : null; },
+  async putSet(code, set) { await setDoc(doc(db, 'kidLinks', code, 'state', 'set'), set); },
+  async join(code, name) {
+    const u = auth.currentUser; if (!u) throw new Error('login');
+    await setDoc(doc(db, 'kidLinks', code, 'parents', u.uid), { uid: u.uid, name: String(name || 'Parent').slice(0, 40) || 'Parent', joinedAt: Date.now() });
+    await setDoc(doc(db, 'users', u.uid, 'kids', code), { at: Date.now() });
+  },
+  async myKids() { const u = auth.currentUser; if (!u) return []; const s = await getDocs(collection(db, 'users', u.uid, 'kids')); const a = []; s.forEach(d => a.push(d.id)); return a; },
+  async leave(code) {
+    const u = auth.currentUser; if (!u) throw new Error('login');
+    try { await deleteDoc(doc(db, 'kidLinks', code, 'parents', u.uid)); } catch (e) {}
+    await deleteDoc(doc(db, 'users', u.uid, 'kids', code));
+  },
+  async forget(code) { const u = auth.currentUser; if (u) await deleteDoc(doc(db, 'users', u.uid, 'kids', code)); }   // the child stopped sharing: drop only the shortcut
 };
 
 onAuthStateChanged(auth, async user => {

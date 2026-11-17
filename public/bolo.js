@@ -42,6 +42,7 @@
     const s = load(), keep = Object.keys(s.days).sort().slice(-DAYS_KEEP), d = {};
     keep.forEach(k => { d[k] = s.days[k]; }); s.days = d;
     try { g.localStorage.setItem(PREFIX + storeFor, JSON.stringify(s)); } catch (e) {}
+    if (g.KIDLINK && g.KIDLINK.touch) g.KIDLINK.touch();   // Kid mode: the parent's phone sees today's minutes and counts
   }
   const today = () => { const s = load(), k = C.dayKey(); return s.days[k] || (s.days[k] = { sec: 0, ok: 0, redo: 0 }); };
   const over = () => today().sec >= load().set.limit * 60;
@@ -280,6 +281,7 @@
       <input id="blLim" type="range" min="5" max="30" step="5" value="${s.set.limit}" style="width:100%" ${edit ? '' : 'disabled'}>
       <label class="bl-row" style="justify-content:flex-start"><input type="checkbox" id="blMc" ${s.set.mic ? 'checked' : ''} ${edit ? '' : 'disabled'}> Mic allow hai (parent ki ijazat)</label>
       <table class="bl-tbl"><tr><td>Aaj boli gayi cheezein</td><td>${d.ok + d.redo}</td></tr><tr><td>Sahi</td><td>${d.ok}</td></tr><tr><td>Dobara karni hain</td><td>${d.redo}</td></tr><tr><td>Ab tak sahi (sab mode)</td><td>${totalDone()}</td></tr></table>
+      ${g.KIDLINK ? g.KIDLINK.kidPanelHTML(edit) : ''}
       ${lock}${pinBox}${st.pinMsg ? `<p class="mut" role="status" style="margin:8px 0 0">${esc(st.pinMsg)}</p>` : ''}
     </div></details>`;
   }
@@ -317,6 +319,9 @@
         ${modeChips()}${subPick()}${card()}${parent()}`;
     },
     leave() { stopListen(); stopSay(); save(); },
+    // Kid mode: what the parent's phone may see (no audio, no text), and the limit / mic switch the parent set there.
+    summary() { const d = today(); return { day: C.dayKey(), sec: d.sec, ok: d.ok, redo: d.redo, total: totalDone() }; },
+    applyRemote(set) { const s = load(); if (set && set.limit) s.set.limit = Math.min(30, Math.max(5, Math.round(+set.limit / 5) * 5)); if (set && typeof set.mic === 'boolean') { s.set.mic = set.mic; if (!set.mic) stopListen(); } save(); redraw(); },
     _reset() { stopListen(); store = null; Object.assign(st, { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, err: '', unlocked: false, parOpen: false, pinMsg: '', fbInit: false, aiOff: false, busy: false }); }
   };
 })();

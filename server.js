@@ -85,7 +85,7 @@ async function lockOf(uid) {
   const hit = COURSE_CACHE.get(uid);
   if (hit && Date.now() - hit.at < 600000) return hit.lock;
   const snap = await FSDB.collection('studentCourse').doc(uid).get();
-  const d = snap.exists ? snap.data() : null, lock = d ? (d.own === true ? { own: true } : { org: d.org, cls: d.cls, med: d.med }) : null;
+  const d = snap.exists ? snap.data() : null, lock = d ? (d.kid === true ? { kid: true } : d.own === true ? { own: true } : { org: d.org, cls: d.cls, med: d.med }) : null;
   if (!CATALOG.validLock(lock)) return null;   // "no course yet" is not cached, so choosing one works at once
   COURSE_CACHE.set(uid, { lock, at: Date.now() });
   return lock;

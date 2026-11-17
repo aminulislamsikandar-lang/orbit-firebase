@@ -27,8 +27,9 @@
   // A lock is valid only when the school/board, the class and the medium all exist in this catalog.
   // { own: true } = "my school or college is not in the list": the student adds their own course(s) with Add course instead of choosing from the catalog.
   const isOwn = l => !!l && l.own === true;
+  const isKid = l => !!l && l.kid === true;   // { kid: true } = Kid mode: the account sees only the Bolo page (the phone's role, kid or parent, is kept on that phone)
   function validLock(l) {
-    if (isOwn(l)) return true;
+    if (isOwn(l) || isKid(l)) return true;
     return !!l && typeof l.org === 'string' && orgIds().includes(l.org) && Number.isInteger(l.cls) && (classes[l.org] || []).includes(l.cls) && mediums.includes(l.med);
   }
   // Course ids a student with this lock may use. `courses` = [{ id, medium }] (the real course list), because the medium is a property of each course.
@@ -39,6 +40,6 @@
       return !!c && (c.medium || 'English') === lock.med;
     });
   }
-  const labelOf = l => isOwn(l) ? 'Mere apne courses' : orgName(l.org) + ' · ' + classLabel(l.cls) + ' · ' + l.med + ' medium';
-  return { groups, classes, content, mediums, MAX_CLASS, isCollege, classLabel, isOwn, orgIds, orgName, validLock, idsFor, labelOf };
+  const labelOf = l => isKid(l) ? 'Kid mode' : isOwn(l) ? 'Mere apne courses' : orgName(l.org) + ' · ' + classLabel(l.cls) + ' · ' + l.med + ' medium';
+  return { groups, classes, content, mediums, MAX_CLASS, isCollege, classLabel, isOwn, isKid, orgIds, orgName, validLock, idsFor, labelOf };
 });

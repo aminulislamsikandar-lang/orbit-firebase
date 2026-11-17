@@ -88,5 +88,28 @@ ok(/COURSELOCK\.decide/.test(srv) && /studentCourse/.test(srv), 'server.js check
 ok(srv.indexOf('COURSELOCK.decide') > srv.indexOf('verifyIdToken'), 'course check runs after login check');
 ok(/window\.CLOUD\.course/.test(read('public/cloud.js')), 'cloud.js has course get/set');
 
+// ---- Kid mode: the account lock { kid: true }, and the parent link (kidLinks) ----
+ok(CAT.validLock({ kid: true }) && CAT.isKid({ kid: true }) && !CAT.isKid({ own: true }) && !CAT.validLock({ kid: false }), 'kid lock is valid only as { kid: true }');
+eq(CAT.idsFor({ kid: true }, courses), [], 'Kid mode has no textbook course');
+ok(CAT.labelOf({ kid: true }) === 'Kid mode', 'Kid mode label');
+const kd = CORE.decide({ admin: false, canRead: true, lock: { kid: true }, courseIds: [], custom: undefined, ids: [] });
+ok(!kd.ok && kd.status === 403 && kd.code === 'kid_mode', 'AI routes that need a course are closed in Kid mode');
+ok(CORE.decide({ admin: true, canRead: true, lock: { kid: true }, courseIds: [], ids: [] }).ok, 'the admin is never locked, also in Kid mode');
+ok(/d\.kid === true \? \{ kid: true \}/.test(read('server.js')), 'server reads the kid lock');
+const rl = read('firestore.rules');
+ok(/hasOnly\(\['kid', 'at'\]\)[\s\S]*?request\.resource\.data\.kid == true/.test(rl), 'a student can create the kid lock: only kid + at');
+ok(/match \/kidLinks\/\{code\}[\s\S]*?code\.matches\('\^\[A-HJ-NP-Z2-9\]\{8\}\$'\)/.test(rl), 'kid link code is 8 easy-to-read characters');
+ok(/match \/kidLinks\/\{code\}[\s\S]*?allow list: if request\.auth != null && resource\.data\.kidUid == request\.auth\.uid;/.test(rl), 'a link can be listed only by its child (a code can be looked up, never browsed)');
+ok(/match \/state\/sum \{[\s\S]*?allow read: if kidOwner\(code\) \|\| kidParent\(code\);[\s\S]*?allow create, update: if kidOwner\(code\)/.test(rl), 'only the child writes the summary; only the child and joined parents read it');
+ok(/match \/state\/set \{[\s\S]*?allow create, update: if kidParent\(code\)[\s\S]*?limit % 5 == 0/.test(rl), 'only a joined parent writes the limit, in steps of 5');
+ok(/match \/parents\/\{uid\}[\s\S]*?allow create: if request\.auth != null && request\.auth\.uid == uid[\s\S]*?exists\(\/databases\/\$\(database\)\/documents\/kidLinks\/\$\(code\)\)/.test(rl), 'a parent can join only as themself and only to a link that exists');
+ok(/window\.CLOUD\.kids/.test(read('public/cloud.js')), 'cloud.js has the kids layer');
+ok(read('public/sw.js').includes("'/kidlink.js'"), 'service worker caches kidlink.js');
+ok(/src="\/kidlink\.js"/.test(read('public/index.html')), 'index.html loads kidlink.js');
+const KL = {}; global.window = global; global.document = { addEventListener() {}, getElementById() { return null; } }; global.CLOUD = {}; require('../public/kidlink.js');
+const K = global.KIDLINK;
+ok(K.normCode(' abcd-efgh9 ') === 'ABCDEFGH' && K.goodCode('ABCD2345') && !K.goodCode('ABCD234') && !K.goodCode('ABCD234O') && !K.goodCode('ABCD2341'), 'codes: spaces, dash and case are forgiven; 8 characters, no I/O/0/1');
+ok(K.fmt('ABCD2345') === 'ABCD-2345', 'codes are shown as XXXX-XXXX');
+
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
