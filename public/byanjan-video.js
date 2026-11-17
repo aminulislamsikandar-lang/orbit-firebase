@@ -86,6 +86,7 @@
 
   function stageHTML(it, P) {
     style();
+    if (/^[\u0981-\u0983]$/.test(it.big)) it = Object.assign({}, it, { big: '\u00a0' + it.big });   // a mark alone: a no-break space as its base, so no dotted circle
     const pz = pose(it), poster = lerpPts(REST, target(it), 1), cn = CONTACT[it.place], lab = pz.labial, dy = lab ? 16 : 0, nz = pz.nasal ? 1 : 0;
     const vel = lerpPts([VEL_UP.slice(0, 2), VEL_UP.slice(2, 4), VEL_UP.slice(4)], [VEL_DOWN.slice(0, 2), VEL_DOWN.slice(2, 4), VEL_DOWN.slice(4)], nz).map(q => Math.round(q[0]) + ' ' + Math.round(q[1])).join(' ');
     const bars = [0, 1, 2, 3, 4].map(i => `<rect id="bvB${i}" x="${i * 9}" y="12" width="6" height="4" rx="2"/>`).join('');

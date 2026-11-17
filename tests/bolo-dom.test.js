@@ -15,12 +15,17 @@ function boot(opts) {
   w.eval('var VIEW="bolo",USER={uid:"u1"};function draw(){document.getElementById("app").innerHTML=BOLO.viewHTML()}');
   const heard = { next: ['a for apple'], started: 0, aborted: 0 };
   if (!opts.noSR) w.SpeechRecognition = class {
-    start() { heard.started++; setTimeout(() => { if (this.onresult) this.onresult({ results: [[...heard.next.map(x => ({ transcript: x }))]] }); }, 0); }
+    start() { heard.started++; setTimeout(() => { if (opts.silent) { if (this.onerror) this.onerror({ error: 'no-speech' }); return; } if (this.onresult) this.onresult({ results: [[...heard.next.map(x => ({ transcript: x }))]] }); }, 0); }
     stop() {} abort() { heard.aborted++; }
   };
   Object.defineProperty(w, 'crypto', { value: require('crypto').webcrypto, configurable: true }); w.TextEncoder = TextEncoder;
   w.speechSynthesis = { cancel() {}, speak() {}, speaking: false }; w.SpeechSynthesisUtterance = function (t) { this.text = t; };
   if (opts.store) w.localStorage.setItem('orbit.bolo.u1', JSON.stringify(opts.store));
+  if (opts.ai) {   // parent key + parent tick + a recorder: the AI check is on
+    w.PARENT_KEY = { has: () => true }; w.localStorage.setItem('orbit.voice.ok.u1', '1'); w.sent = []; w.api = async (u, body) => { w.sent.push(body); return { ok: true, heard: 'ক', tip: 'Shabaash!' }; };
+    Object.defineProperty(w.navigator, 'mediaDevices', { value: { getUserMedia: async () => ({ getTracks: () => [] }) }, configurable: true });
+    w.MediaRecorder = class { constructor() { this.state = 'inactive'; } start() { this.state = 'recording'; setTimeout(() => this.ondataavailable && this.ondataavailable({ data: new w.Blob(['x'], { type: 'audio/webm' }) }), 0); } stop() { this.state = 'inactive'; setTimeout(() => this.onstop && this.onstop(), 0); } static isTypeSupported() { return true; } };
+  }
   w.eval(rd('bolo-core.js')); w.eval(rd('byanjan-video.js')); w.eval(rd('bolo.js'));
   const clips = { made: [], played: 0 }; w.Audio = class { constructor(src) { this.src = src; clips.made.push(src); } play() { clips.played++; return Promise.resolve(); } pause() {} };
   w.eval('draw()');
@@ -109,6 +114,18 @@ function boot(opts) {
   b.click('[data-bl=jump][data-v="39"]');
   t('chandrabindu: nose airflow shown', b.d.getElementById('bvNasal').getAttribute('opacity') !== '0');
 
-  console.log(pass + ' passed, ' + fail + ' failed');
+    // Assamese: the AI judges the child's voice (parent key + tick); without it, byanjan stays self-check and the browser mic gives way after two empty tries
+  b = boot({ ai: true }); b.click('[data-bl=mode][data-v=byanjan]');
+  t('byanjan with the AI check: mic button shown, tick buttons hidden', !!b.d.querySelector('[data-bl=mic]') && !b.d.querySelector('[data-bl=self]'));
+  b.click('[data-bl=mic]'); await b.wait(); await b.wait(); b.click('[data-bl=mic]'); await b.wait(); await b.wait(); await b.wait();
+  t('byanjan: the clip goes to the AI as an Assamese letter and ক is marked done', b.w.sent.length === 1 && b.w.sent[0].kind === 'asletter' && b.w.sent[0].expected === 'ক' && /1 \/ 40 sahi/.test(b.txt()), JSON.stringify(b.w.sent[0] && { k: b.w.sent[0].kind, e: b.w.sent[0].expected }));
+  b = boot({ ai: true }); b.click('[data-bl=mode][data-v=asvyanjan]'); b.click('[data-bl=mic]'); await b.wait(); await b.wait(); b.click('[data-bl=mic]'); await b.wait(); await b.wait(); await b.wait();
+  t('letter + word: the AI check is used too (kind asm, letter and word expected)', b.w.sent.length === 1 && b.w.sent[0].kind === 'asm' && b.w.sent[0].expected === 'ক, কল');
+  b = boot(); b.click('[data-bl=mode][data-v=byanjan]'); for (let i = 0; i < 37; i++) b.click('[data-bl=next]');
+  t('ং ঃ ঁ are drawn with a no-break-space base (no dotted circle)', b.d.querySelector('#bvGlyph span').textContent === '\u00a0ং' && b.d.querySelector('.bl-prog button:nth-child(38)').textContent === '\u00a0ং');
+  b = boot({ silent: true }); b.click('[data-bl=mode][data-v=asvyanjan]');
+  b.click('[data-bl=mic]'); await b.wait(); b.click('[data-bl=mic]'); await b.wait();
+  t('letter + word: after two empty tries the child gets the tick buttons', !!b.d.querySelector('[data-bl=self]') && /Browser Assamese/.test(b.txt()));
+console.log(pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })();
