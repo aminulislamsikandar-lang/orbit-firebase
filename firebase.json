@@ -16,6 +16,7 @@
         ]
       },
       { "source": "/public-videos/**", "headers": [{ "key": "Content-Security-Policy", "value": "sandbox allow-scripts allow-popups allow-presentation" }] },
+      { "source": "/audio/**", "headers": [{ "key": "Cache-Control", "value": "public, max-age=604800" }] },
       { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
       { "source": "/config.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
       { "source": "**/*.json", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }

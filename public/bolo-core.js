@@ -28,6 +28,34 @@
   ];
   const TABLES = [2, 3, 4, 5, 6, 7, 8, 9, 10];
 
+  // Assamese byanjan (consonants), in the order of the recording: public/audio/byanjan/01.mp3 ... 40.mp3 (one clip per row, same order).
+  // [letter, name as spoken in the recording (when it is more than the letter), place where the sound is made, nasal?]
+  // Place is the traditional one (kanthya, talabya, murdhanya, dantya, oshthya); change it here if the school book says otherwise.
+  const BYANJAN_DATA = [
+    ['ক', '', 'velar'], ['খ', '', 'velar'], ['গ', '', 'velar'], ['ঘ', '', 'velar'], ['ঙ', 'উঙ', 'velar', 1],
+    ['চ', '', 'palatal'], ['ছ', '', 'palatal'], ['জ', '', 'palatal'], ['ঝ', '', 'palatal'], ['ঞ', 'ঞিঁয়', 'palatal', 1],
+    ['ট', '', 'retroflex'], ['ঠ', '', 'retroflex'], ['ড', '', 'retroflex'], ['ঢ', '', 'retroflex'], ['ণ', 'মূৰ্দ্ধন্য ণ', 'retroflex', 1],
+    ['ত', '', 'dental'], ['থ', '', 'dental'], ['দ', '', 'dental'], ['ধ', '', 'dental'], ['ন', 'দন্ত্য ন', 'dental', 1],
+    ['প', '', 'labial'], ['ফ', '', 'labial'], ['ব', '', 'labial'], ['ভ', '', 'labial'], ['ম', '', 'labial', 1],
+    ['য', '', 'palatal'], ['ৰ', '', 'retroflex'], ['ল', '', 'dental'], ['ৱ', '', 'labial'],
+    ['শ', 'তালব্য শ', 'palatal'], ['ষ', 'মূৰ্দ্ধন্য ষ', 'retroflex'], ['স', 'দন্ত্য স', 'dental'], ['হ', '', 'throat'],
+    ['\u09DC', 'ড-ৰে বিন্দু ড\u09DC', 'retroflex'], ['\u09DD', 'ঢ-ৰে বিন্দু ঢ\u09DD', 'retroflex'], ['\u09DF', 'অন্তঃস্থ য\u09DF', 'palatal'],
+    ['ৎ', 'খণ্ড ত', 'dental'], ['ং', 'অনুস্বাৰ', 'velar', 1], ['ঃ', 'বিসৰ্গ', 'throat'], ['ঁ', 'চন্দ্ৰবিন্দু', 'none', 1]
+  ];
+  // Clip length in ms (voice + a little silence), used to time the mouth animation. Same order as BYANJAN_DATA.
+  const BYANJAN_MS = [836, 967, 940, 862, 888, 784, 967, 1071, 1019, 1019, 862, 993, 1019, 1019, 1254, 836, 810, 1019, 1019, 1358, 836, 810, 888, 1071, 1019, 967, 940, 967, 967, 1228, 1411, 1306, 862, 1437, 1411, 1541, 1358, 1176, 1176, 1228];
+  const PLACES = {
+    velar: { as: 'কণ্ঠ্য', hint: 'Jeebh ka peeche wala hissa upar naram taalu ko chhoota hai.' },
+    palatal: { as: 'তালব্য', hint: 'Jeebh ka beech wala hissa upar ke kadak taalu ko chhoota hai.' },
+    retroflex: { as: 'মূৰ্ধন্য', hint: 'Jeebh ki nok mudkar upar taalu ko chhoti hai.' },
+    dental: { as: 'দন্ত্য', hint: 'Jeebh ki nok upar ke daanton ke peeche lagti hai.' },
+    labial: { as: 'ওষ্ঠ্য', hint: 'Dono hont milte hain.' },
+    throat: { as: 'কণ্ঠ্য', hint: 'Awaaz gale se nikalti hai, jeebh upar nahi lagti.' },
+    none: { as: 'নাসিক্য', hint: 'Awaaz naak se nikalti hai.' }
+  };
+  const AUDIO_V = 1;   // bump when the clips are re-recorded, so phones fetch the new files
+  const byanjanAudio = n => '/audio/byanjan/' + String(n).padStart(2, '0') + '.mp3?v=' + AUDIO_V;
+
   // Everything a mode needs: key (used for saving progress), title, and items {big, sub, say, match:{kind, ...}}
   function items(mode, opt) {
     opt = opt || {};
@@ -36,10 +64,11 @@
       const t = TABLES.includes(+opt.table) ? +opt.table : 2;
       return Array.from({ length: 10 }, (_, k) => { const n = k + 1; return { big: t + ' × ' + n, sub: '= ' + t * n, say: t + ' times ' + n + ' is ' + t * n, match: { kind: 'number', n: t * n } }; });
     }
+    if (mode === 'byanjan') return BYANJAN_DATA.map((d, i) => ({ big: d[0], sub: d[1] || d[0], say: d[1] || d[0], audio: byanjanAudio(i + 1), ms: BYANJAN_MS[i], place: d[2], nasal: !!d[3], match: { kind: 'self' } }));
     const p = POEMS.find(x => x.id === opt.poem) || POEMS[0];
     return p.lines.map(l => ({ big: l.split(' ')[0].replace(/[^A-Za-z]/g, ''), sub: l, say: l, match: { kind: 'line', line: l } }));
   }
-  const stateKey = (mode, opt) => mode === 'table' ? 't' + ((opt && +opt.table) || 2) : mode === 'poem' ? 'p-' + ((opt && opt.poem) || POEMS[0].id) : 'alpha';
+  const stateKey = (mode, opt) => mode === 'byanjan' ? 'byanjan' : mode === 'table' ? 't' + ((opt && +opt.table) || 2) : mode === 'poem' ? 'p-' + ((opt && opt.poem) || POEMS[0].id) : 'alpha';
 
   // ---- matching ----
   const norm = s => String(s == null ? '' : s).toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9\u0900-\u097f ]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -104,5 +133,5 @@
   const dayKey = d => { d = d || new Date(); const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); };
   const fmtTime = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 
-  return { WORDS, POEMS, TABLES, LETTER_SOUNDS, items, stateKey, norm, tokens, numbersIn, check, matchLetter, matchLine, matchNumber, dayKey, fmtTime };
+  return { WORDS, POEMS, TABLES, BYANJAN_DATA, BYANJAN_MS, PLACES, byanjanAudio, LETTER_SOUNDS, items, stateKey, norm, tokens, numbersIn, check, matchLetter, matchLine, matchNumber, dayKey, fmtTime };
 });

@@ -10,7 +10,7 @@ const rd = f => fs.readFileSync(path.join(ROOT, 'public', f), 'utf8');
 
 function boot(opts) {
   opts = opts || {};
-  const dom = new JSDOM('<!doctype html><body><div id="app"></div></body>', { runScripts: 'outside-only', url: 'https://orbittutorial.web.app/' });
+  const dom = new JSDOM('<!doctype html><body><div id="app"></div></body>', { runScripts: 'outside-only', pretendToBeVisual: true, url: 'https://orbittutorial.web.app/' });
   const w = dom.window;
   w.eval('var VIEW="bolo",USER={uid:"u1"};function draw(){document.getElementById("app").innerHTML=BOLO.viewHTML()}');
   const heard = { next: ['a for apple'], started: 0, aborted: 0 };
@@ -21,9 +21,10 @@ function boot(opts) {
   Object.defineProperty(w, 'crypto', { value: require('crypto').webcrypto, configurable: true }); w.TextEncoder = TextEncoder;
   w.speechSynthesis = { cancel() {}, speak() {}, speaking: false }; w.SpeechSynthesisUtterance = function (t) { this.text = t; };
   if (opts.store) w.localStorage.setItem('orbit.bolo.u1', JSON.stringify(opts.store));
-  w.eval(rd('bolo-core.js')); w.eval(rd('bolo.js'));
+  w.eval(rd('bolo-core.js')); w.eval(rd('byanjan-video.js')); w.eval(rd('bolo.js'));
+  const clips = { made: [], played: 0 }; w.Audio = class { constructor(src) { this.src = src; clips.made.push(src); } play() { clips.played++; return Promise.resolve(); } pause() {} };
   w.eval('draw()');
-  return { w, d: w.document, heard, click: sel => { const el = w.document.querySelector(sel); el && el.click(); }, txt: () => w.document.getElementById('app').textContent, wait: () => new Promise(r => setTimeout(r, 20)) };
+  return { w, d: w.document, heard, clips, click: sel => { const el = w.document.querySelector(sel); el && el.click(); }, txt: () => w.document.getElementById('app').textContent, wait: () => new Promise(r => setTimeout(r, 20)) };
 }
 
 (async () => {
@@ -81,6 +82,32 @@ function boot(opts) {
   b = boot(); b.w.SpeechRecognition = class { start() {} stop() {} abort() { b.heard.aborted++; } }; b.w.eval('BOLO._reset()'); b.w.eval('draw()');
   b.click('[data-bl=mic]'); b.w.BOLO.leave();
   t('leave() aborts a running listen', b.heard.aborted >= 1);
+
+  // Assamese byanjan: recorded clip + mouth video, no mic
+  b = boot(); b.click('[data-bl=mode][data-v=byanjan]');
+  t('byanjan mode shows the first letter in the mouth video', b.d.querySelector('#bvGlyph').textContent === 'ক' && !!b.d.querySelector('svg.bv-mouth #bvTongue'));
+  t('byanjan mode has no mic button but the self-check buttons', !b.d.querySelector('[data-bl=mic]') && !!b.d.querySelector('[data-bl=self][data-v="1"]'));
+  t('byanjan: the place is explained under the video', /কণ্ঠ্য/.test(b.d.querySelector('.bv-note').textContent));
+  b.click('[data-bl=hear]'); await new Promise(r => setTimeout(r, 450));
+  t('Sunao plays the recorded clip of the letter', b.clips.made[0] === '/audio/byanjan/01.mp3?v=1' && b.clips.played === 1, JSON.stringify(b.clips));
+  await new Promise(r => setTimeout(r, 300));
+  t('the tongue moves toward the sound position while it plays', /^M/.test(b.d.getElementById('bvTongue').getAttribute('d')) && (b.d.getElementById('bvTongue').getAttribute('d').match(/C/g) || []).length === 12);
+  b.click('[data-bl=self][data-v="1"]');
+  t('"Maine bol diya" marks the letter done', /1 \/ 40 sahi/.test(b.txt()) && /Shabaash/.test(b.txt()));
+  b.click('[data-bl=next]'); await new Promise(r => setTimeout(r, 450));
+  t('Aage shows the next letter and plays its clip at once', b.d.querySelector('#bvGlyph').textContent === 'খ' && b.clips.made[b.clips.made.length - 1] === '/audio/byanjan/02.mp3?v=1');
+  b.click('[data-bl=self][data-v="0"]'); await new Promise(r => setTimeout(r, 450));
+  t('"Dobara bolunga" plays the clip again, not the browser voice', b.clips.made.filter(x => x.includes('02.mp3')).length === 2);
+  b.click('[data-bl=mode][data-v=alpha]');
+  t('back to A se Z: big letter again, mic is back', b.d.querySelector('.bl-big').textContent === 'A' && !!b.d.querySelector('[data-bl=mic]'));
+  // every letter draws a mouth without errors, and labial / throat / nasal poses are set
+  b = boot(); b.click('[data-bl=mode][data-v=byanjan]');
+  let drawn = 0; for (let i = 0; i < 40; i++) { b.click('[data-bl=jump][data-v="' + i + '"]'); if (b.d.getElementById('bvTongue') && b.d.querySelector('.bv-note').textContent.length > 10) drawn++; }
+  t('all 40 letters draw the mouth video with a note', drawn === 40, String(drawn));
+  b.click('[data-bl=jump][data-v="20"]');
+  t('labial letter (প): lips are closed in the picture', /translate\(0 16\)/.test(b.d.getElementById('bvUL').getAttribute('transform')));
+  b.click('[data-bl=jump][data-v="39"]');
+  t('chandrabindu: nose airflow shown', b.d.getElementById('bvNasal').getAttribute('opacity') !== '0');
 
   console.log(pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

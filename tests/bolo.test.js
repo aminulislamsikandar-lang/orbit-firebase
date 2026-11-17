@@ -68,5 +68,17 @@ t('page escapes text it shows', /esc\(it\.big\)/.test(C) && /esc\(it\.sub\)/.tes
 t('no emoji in the page or the core', !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(C) && !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(read('public/bolo-core.js')));
 t('page does not say Premium', !/premium/i.test(C));
 
+// ---- Assamese byanjan: 40 recorded clips + the mouth video ----
+const BY = B.items('byanjan');
+t('byanjan: 40 items, one per recorded clip', BY.length === 40 && B.BYANJAN_MS.length === 40);
+t('byanjan: every letter is different and has a place', new Set(BY.map(x => x.big)).size === 40 && BY.every(x => B.PLACES[x.place]));
+t('byanjan: every clip file exists, is named 01..40 and is a small mp3', BY.every((x, i) => { const f = path.join(ROOT, 'public/audio/byanjan', String(i + 1).padStart(2, '0') + '.mp3'); return fs.existsSync(f) && fs.statSync(f).size > 3000 && fs.statSync(f).size < 40000 && x.audio === B.byanjanAudio(i + 1); }));
+t('byanjan: Assamese ra and wa are the Assamese letters (U+09F0, U+09F1)', BY[26].big.codePointAt(0) === 0x9f0 && BY[28].big.codePointAt(0) === 0x9f1);
+t('byanjan: progress is saved under its own key, no mic matching', B.stateKey('byanjan') === 'byanjan' && B.stateKey('alpha') === 'alpha' && BY.every(x => x.match.kind === 'self') && B.check(BY[0], ['ko']) === false);
+t('byanjan: the page escapes the letter and plays the clip, no browser voice for it', /speak = it => it && it\.audio \? playClip\(it\)/.test(C) && /data-v="byanjan"|\['byanjan', /.test(C));
+const V = read('public/byanjan-video.js');
+t('byanjan video: pure SVG, no network, no storage', !/fetch\(|XMLHttpRequest|localStorage|sessionStorage/.test(V) && /requestAnimationFrame/.test(V) && /prefers-reduced-motion/.test(V));
+t('byanjan video: escapes the letter it draws', /esc\(it\.big\)/.test(V));
+
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
