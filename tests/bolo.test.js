@@ -80,5 +80,14 @@ const V = read('public/byanjan-video.js');
 t('byanjan video: pure SVG, no network, no storage', !/fetch\(|XMLHttpRequest|localStorage|sessionStorage/.test(V) && /requestAnimationFrame/.test(V) && /prefers-reduced-motion/.test(V));
 t('byanjan video: escapes the letter it draws', /esc\(it\.big\)/.test(V));
 
+// Assamese "letter + word" mode (asvyanjan), beside the byanjan mode
+const AV = B.items('asvyanjan');
+t('asvyanjan: 23 items, first is ক – কল, last is ম', AV.length === 23 && AV[0].big === 'ক' && AV[0].sub.startsWith('ক – কল') && AV[22].big === 'ম');
+t('asvyanjan: 46 cues in order, clips inside the recording and in order', B.AS_CUES.length === 46 && B.AS_CUES.every((x, i, a) => i === 0 || x > a[i - 1]) && AV.every((v, i) => v.clip.e > v.clip.s && (i === 0 || v.clip.s > AV[i - 1].clip.s)));
+t('asvyanjan: own progress key, byanjan key unchanged', B.stateKey('asvyanjan') === 'asv' && B.stateKey('byanjan') === 'byanjan' && B.stateKey('alpha') === 'alpha');
+t('asvyanjan: word or letter in Assamese script is right', say(AV[0], 'কল') && say(AV[0], 'ক') && say(AV[3], 'ঘৰ') && say(AV[3], 'ঘর'));
+t('asvyanjan: Bengali র for ৰ and Roman spelling are accepted', say(AV[5], 'চরাই') && say(AV[22], 'মেকুরী') && say(AV[0], 'kal') && say(AV[12], 'dhol'));
+t('asvyanjan: wrong word and empty speech are refused', !say(AV[0], 'গছ') && !say(AV[2], 'কল') && !say(AV[16], 'বাঘ') && !say(AV[0], '') && !B.check(AV[0], []));
+t('byanjan mode still has its own clips', B.items('byanjan').length === B.BYANJAN_DATA.length && !!B.items('byanjan')[0].audio);
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

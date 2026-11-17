@@ -72,9 +72,21 @@
     } catch (e) {}
     if (g.BYANJAN_VIDEO) g.BYANJAN_VIDEO.play(it, { lead: LEAD, ms: it.ms });
   }
-  const speak = it => it && it.audio ? playClip(it) : it && say(it.say);
-  function stopSay() { try { g.speechSynthesis && g.speechSynthesis.cancel(); } catch (e) {} stopClip(); }
-  function say(t) { if (!TTS) return; try { const u = new g.SpeechSynthesisUtterance(t); u.lang = 'en-IN'; u.rate = 0.8; g.speechSynthesis.cancel(); g.speechSynthesis.speak(u); } catch (e) {} }
+  // Asvyanjan items play a part (it.clip = start/end seconds) of one longer recording (it.src); if it cannot play, the browser voice reads the text.
+  let rangeAudio = null, rangeTimer = 0;
+  function stopRange() { clearTimeout(rangeTimer); if (rangeAudio) try { rangeAudio.pause(); } catch (e) {} }
+  function playRange(it) {
+    stopSay();
+    try {
+      if (!rangeAudio) rangeAudio = new g.Audio(it.src);
+      rangeAudio.currentTime = it.clip.s;
+      const p = rangeAudio.play(); if (p && p.catch) p.catch(() => say(it.say, it.lang));
+      rangeTimer = setTimeout(stopRange, (it.clip.e - it.clip.s) * 1000 + 150);
+    } catch (e) { say(it.say, it.lang); }
+  }
+  const speak = it => it && it.audio ? playClip(it) : it && it.clip ? playRange(it) : it && say(it.say);
+  function stopSay() { try { g.speechSynthesis && g.speechSynthesis.cancel(); } catch (e) {} stopClip(); stopRange(); }
+  function say(t, lang) { if (!TTS) return; try { const u = new g.SpeechSynthesisUtterance(t); u.lang = lang || 'en-IN'; u.rate = 0.8; g.speechSynthesis.cancel(); g.speechSynthesis.speak(u); } catch (e) {} }
 
   // ---- Task 28: AI check (only with the parent's Gemini key and the parent's tick) ----
   // The child's clip goes to /api/bolo/check, the AI says sahi or dobara. Nothing is saved. If the AI check fails once, the browser's own check takes over for the rest of the visit.
@@ -82,7 +94,7 @@
   const hasKey = () => !!(g.PARENT_KEY && g.PARENT_KEY.has && g.PARENT_KEY.has());
   const OKKEY = () => 'orbit.voice.ok.' + uid();
   const aiTick = () => { try { return g.localStorage.getItem(OKKEY()) === '1'; } catch (e) { return false; } };
-  const aiOn = () => hasKey() && CAN_REC && aiTick() && typeof g.api === 'function' && !st.aiOff;
+  const aiOn = () => hasKey() && CAN_REC && aiTick() && typeof g.api === 'function' && !st.aiOff && st.mode !== 'asvyanjan';
   const AI_MS = 6000;
   let aiRec = null, aiStream = null, aiChunks = [], aiTimer = 0, aiDrop = false;
   function aiStop(drop) {
@@ -144,7 +156,7 @@
     if (over() || !load().set.mic || st.listening || !SR) return;
     stopSay(); stopListen(); st.fb = null; st.err = '';
     let r; try { r = new SR(); } catch (e) { st.err = 'Mic shuru nahi ho paya. Dobara try karo.'; redraw(); return; }
-    rec = r; r.lang = 'en-IN'; r.interimResults = false; r.maxAlternatives = 3; r.continuous = false;
+    rec = r; r.lang = st.mode === 'asvyanjan' ? (st.asBn ? 'bn-IN' : 'as-IN') : 'en-IN'; r.interimResults = false; r.maxAlternatives = 3; r.continuous = false;
     const item = list()[st.i];
     r.onresult = e => {
       const res = e.results && e.results[0], alts = res ? Array.from(res).map(a => a.transcript) : [];
@@ -152,6 +164,7 @@
     };
     r.onerror = e => {
       const code = e && e.error; if (code === 'aborted') return;
+      if (code === 'language-not-supported' && st.mode === 'asvyanjan' && !st.asBn) { st.asBn = true; stopListen(); listen(); return; }   // no Assamese in this browser: Bengali hears the same letters
       stopListen();
       st.err = code === 'not-allowed' || code === 'service-not-allowed' ? 'Browser ne mic ki ijazat nahi di. Address bar mein mic allow karo.'
         : code === 'no-speech' ? 'Kuch sunai nahi diya. Mic dabao aur zor se bolo.'
@@ -217,7 +230,7 @@
     g.document.head.appendChild(s); return '';
   }
 
-  const modeChips = () => `<div class="chips" role="group" aria-label="Kya bolna hai">${[['alpha', 'A se Z'], ['table', 'Table'], ['poem', 'Poem'], ['byanjan', 'ব্যঞ্জন']].map(m => `<button class="chip" data-bl="mode" data-v="${m[0]}" aria-pressed="${st.mode === m[0]}">${m[1]}</button>`).join('')}</div>`;
+  const modeChips = () => `<div class="chips" role="group" aria-label="Kya bolna hai">${[['alpha', 'A se Z'], ['table', 'Table'], ['poem', 'Poem'], ['byanjan', 'ব্যঞ্জন'], ['asvyanjan', 'ক – কল']].map(m => `<button class="chip" data-bl="mode" data-v="${m[0]}" aria-pressed="${st.mode === m[0]}">${m[1]}</button>`).join('')}</div>`;
   function subPick() {
     if (st.mode === 'table') return `<label class="mut" for="blTable">Kiska table?</label><select id="blTable" class="bl-fld">${C.TABLES.map(t => `<option value="${t}" ${t === st.table ? 'selected' : ''}>${t} ka table</option>`).join('')}</select>`;
     if (st.mode === 'poem') return `<label class="mut" for="blPoem">Kaun si poem?</label><select id="blPoem" class="bl-fld">${C.POEMS.map(p => `<option value="${p.id}" ${p.id === st.poem ? 'selected' : ''}>${esc(p.title)}</option>`).join('')}</select>`;
@@ -227,18 +240,18 @@
   function card() {
     const s = load(), items = list(), it = items[st.i], m = marks(), done = items.filter((_, i) => m[i] === 'd').length, last = st.i >= items.length - 1;
     if (over()) return `<div class="card"><h2 class="sec" style="margin:0 0 6px">Aaj ka time poora hua</h2><p class="mut" style="margin:0">Kal dobara bolenge. Aaj ${today().ok} baar sahi bola.</p><p class="mut" style="margin:10px 0 0">Parent ne roz ki limit ${s.set.limit} minute rakhi hai.</p></div>`;
-    const by = st.mode === 'byanjan';
-    const cells = items.map((_, i) => `<button data-bl="jump" data-v="${i}" class="${m[i] === 'd' ? 'd' : m[i] === 'r' ? 'r' : ''} ${i === st.i ? 'c' : ''}" aria-label="${esc(items[i].big)} ${m[i] === 'd' ? 'sahi' : m[i] === 'r' ? 'dobara' : ''}" ${i === st.i ? 'aria-current="true"' : ''}>${st.mode === 'alpha' || by ? items[i].big : i + 1}</button>`).join('');
+    const by = st.mode === 'byanjan', asv = st.mode === 'asvyanjan';
+    const cells = items.map((_, i) => `<button data-bl="jump" data-v="${i}" class="${m[i] === 'd' ? 'd' : m[i] === 'r' ? 'r' : ''} ${i === st.i ? 'c' : ''}" aria-label="${esc(items[i].big)} ${m[i] === 'd' ? 'sahi' : m[i] === 'r' ? 'dobara' : ''}" ${i === st.i ? 'aria-current="true"' : ''}>${st.mode === 'alpha' || by || asv ? items[i].big : i + 1}</button>`).join('');
     const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:56px' : 'font-size:96px';
     const bigHTML = by && g.BYANJAN_VIDEO ? g.BYANJAN_VIDEO.stageHTML(it, C.PLACES) : `<div class="bl-big" style="${big}">${esc(it.big)}</div>`;
     const micOff = !s.set.mic;
     const aiAsk = hasKey() && CAN_REC && !aiTick() ? '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13.5px"><input type="checkbox" id="blAiOk" style="margin-top:3px"><span>Parent ki ijazat: AI se jaanch ke liye bachhe ki awaaz Gemini ko jayegi (Orbit save nahi karta). Tick na ho to browser khud check karega.</span></label>' : '';
     const status = by ? 'Sunao dabao, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? 'AI sun raha hai...' : aiOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
     const self = by || (!SR && !micOff) ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
-    return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h2 class="sec" style="margin:0">${esc(st.mode === 'table' ? st.table + ' ka table' : st.mode === 'poem' ? (C.POEMS.find(p => p.id === st.poem) || C.POEMS[0]).title : by ? 'অসমীয়া ব্যঞ্জন' : 'A se Z')}</h2><span class="mut">${done} / ${items.length} sahi</span></div>
+    return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h2 class="sec" style="margin:0">${esc(st.mode === 'table' ? st.table + ' ka table' : st.mode === 'poem' ? (C.POEMS.find(p => p.id === st.poem) || C.POEMS[0]).title : by ? 'অসমীয়া ব্যঞ্জন' : asv ? 'ব্যঞ্জন + শব্দ' : 'A se Z')}</h2><span class="mut">${done} / ${items.length} sahi</span></div>
       <div class="bl-prog" style="margin-top:10px">${cells}</div>
       ${bigHTML}<p class="bl-sub" ${by ? 'lang="as"' : ''}>${by && it.sub === it.big ? '' : esc(it.sub)}</p>
-      <div class="bl-two"><button class="btn bl-sec" data-bl="hear" ${TTS || by ? '' : 'disabled'}>${ICON.say}<span>Sunao</span></button><button class="btn ${st.fb && st.fb.ok ? '' : 'bl-sec'}" data-bl="next" ${last ? 'disabled' : ''}><span>Aage</span>${ICON.next}</button></div>
+      <div class="bl-two"><button class="btn bl-sec" data-bl="hear" ${TTS || by || asv ? '' : 'disabled'}>${ICON.say}<span>Sunao</span></button><button class="btn ${st.fb && st.fb.ok ? '' : 'bl-sec'}" data-bl="next" ${last ? 'disabled' : ''}><span>Aage</span>${ICON.next}</button></div>
       ${by ? '' : `<button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || (!SR && !aiOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>`}
       <p class="mut" style="text-align:center;margin:0" role="status">${status}</p>
       ${st.err ? `<p class="err" role="alert" style="text-align:center">${esc(st.err)}</p>` : ''}

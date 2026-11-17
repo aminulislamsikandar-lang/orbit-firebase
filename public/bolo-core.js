@@ -56,6 +56,19 @@
   const AUDIO_V = 1;   // bump when the clips are re-recorded, so phones fetch the new files
   const byanjanAudio = n => '/audio/byanjan/' + String(n).padStart(2, '0') + '.mp3?v=' + AUDIO_V;
 
+  // Assamese "letter + word" lesson (second Assamese mode, beside byanjan): 23 rows from one recording, public/bolo-audio/assamese-vyanjan.mp3,
+  // two cues per row (the letter, then its word). Each clip runs from its letter to just before the next one, so Sunao plays the real voice.
+  const AS_CUES = [1.25, 2.8, 4.99, 6.71, 8.63, 10.56, 12.33, 13.97, 16.29, 17.85, 19.62, 21.2, 23.17, 25.02, 26.87, 28.55, 30.26, 31.71, 33.58, 35.24, 37.02, 38.68, 40.62, 42.08, 43.76, 45.36, 47.06, 48.6, 50.38, 51.95, 53.56, 55.24, 56.94, 58.59, 60.08, 61.59, 63.24, 64.79, 66.6, 68.15, 69.83, 71.33, 72.87, 74.31, 75.8, 77.35];
+  const AS_TOTAL = 78.3;
+  const AS_SRC = '/bolo-audio/assamese-vyanjan.mp3?v=' + AUDIO_V;
+  const AS_ROWS = [
+    ['ক', 'ka', 'কল', 'kal', 'banana'], ['খ', 'kha', 'খৰাহি', 'kharahi', 'basket'], ['গ', 'ga', 'গছ', 'gos', 'tree'], ['ঘ', 'gha', 'ঘৰ', 'ghor', 'house'], ['ঙ', 'nga', 'নাঙল', 'nangal', 'plough'],
+    ['চ', 'ca', 'চৰাই', 'sorai', 'bird'], ['ছ', 'cha', 'ছাগলী', 'sagoli', 'goat'], ['জ', 'ja', 'জোন', 'jon', 'moon'], ['ঝ', 'jha', 'ঝৰ্ণা', 'jhorna', 'waterfall'],
+    ['ট', 'ta', 'টেঙা', 'tenga', 'sour fruit'], ['ঠ', 'tha', 'ঠেলা', 'thela', 'cart'], ['ড', 'da', 'ডাল', 'dal', 'branch'], ['ঢ', 'dha', 'ঢোল', 'dhol', 'drum'],
+    ['ত', 'ta', 'তৰা', 'tora', 'star'], ['থ', 'tha', 'থাল', 'thal', 'plate'], ['দ', 'da', 'দৰ্জা', 'dorja', 'door'], ['ধ', 'dha', 'ধান', 'dhan', 'paddy'], ['ন', 'na', 'নাও', 'nao', 'boat'],
+    ['প', 'pa', 'পানী', 'pani', 'water'], ['ফ', 'pha', 'ফুল', 'phul', 'flower'], ['ব', 'ba', 'বাঘ', 'bagh', 'tiger'], ['ভ', 'bha', 'ভালুক', 'bhaluk', 'bear'], ['ম', 'ma', 'মেকুৰী', 'mekuri', 'cat']
+  ];
+
   // Everything a mode needs: key (used for saving progress), title, and items {big, sub, say, match:{kind, ...}}
   function items(mode, opt) {
     opt = opt || {};
@@ -64,11 +77,14 @@
       const t = TABLES.includes(+opt.table) ? +opt.table : 2;
       return Array.from({ length: 10 }, (_, k) => { const n = k + 1; return { big: t + ' × ' + n, sub: '= ' + t * n, say: t + ' times ' + n + ' is ' + t * n, match: { kind: 'number', n: t * n } }; });
     }
+    if (mode === 'asvyanjan') return AS_ROWS.map((r, i) => ({ big: r[0], sub: r[0] + ' – ' + r[2] + ' (' + r[3] + ' · ' + r[4] + ')', say: r[0] + ', ' + r[2], lang: 'bn-IN', src: AS_SRC,
+      clip: { s: Math.max(0, AS_CUES[2 * i] - 0.12), e: 2 * i + 2 < AS_CUES.length ? AS_CUES[2 * i + 2] - 0.3 : AS_TOTAL },
+      match: { kind: 'asm', letter: r[0], word: r[2], roman: [r[1], r[3]] } }));
     if (mode === 'byanjan') return BYANJAN_DATA.map((d, i) => ({ big: d[0], sub: d[1] || d[0], say: d[1] || d[0], audio: byanjanAudio(i + 1), ms: BYANJAN_MS[i], place: d[2], nasal: !!d[3], match: { kind: 'self' } }));
     const p = POEMS.find(x => x.id === opt.poem) || POEMS[0];
     return p.lines.map(l => ({ big: l.split(' ')[0].replace(/[^A-Za-z]/g, ''), sub: l, say: l, match: { kind: 'line', line: l } }));
   }
-  const stateKey = (mode, opt) => mode === 'byanjan' ? 'byanjan' : mode === 'table' ? 't' + ((opt && +opt.table) || 2) : mode === 'poem' ? 'p-' + ((opt && opt.poem) || POEMS[0].id) : 'alpha';
+  const stateKey = (mode, opt) => mode === 'asvyanjan' ? 'asv' : mode === 'byanjan' ? 'byanjan' : mode === 'table' ? 't' + ((opt && +opt.table) || 2) : mode === 'poem' ? 'p-' + ((opt && opt.poem) || POEMS[0].id) : 'alpha';
 
   // ---- matching ----
   const norm = s => String(s == null ? '' : s).toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9\u0900-\u097f ]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -120,6 +136,16 @@
     for (const w of want) if (got.some(g => sameWord(g, w))) hit++;
     return hit / want.length >= 0.6 && got.length <= want.length * 2 + 2;                             // most words, and not a long unrelated sentence
   }
+  // ---- Assamese (Bengali script) matching: the browser may write the word in Assamese or Bengali letters, with র for ৰ and ব for ৱ ----
+  const normA = s => String(s == null ? '' : s).toLowerCase().replace(/[’'.,!?।|\-]/g, ' ').replace(/ৰ/g, 'র').replace(/ৱ/g, 'ব').replace(/\s+/g, ' ').trim();
+  function matchAsm(m, text) {
+    const t = normA(text), tk = t ? t.split(' ') : [], word = normA(m.word), letter = normA(m.letter);
+    if (!tk.length) return false;
+    if (word && t.replace(/ /g, '').includes(word)) return true;                                              // said the word (also when the engine adds an ending)
+    if (word.length >= 4 && tk.some(x => lev(x, word) <= 1)) return true;                                       // one slip on a longer word
+    if (tk.some(x => x === letter || x === letter + 'ো' || x === letter + 'অ')) return true;                    // said the letter ("ক", "কো")
+    return (m.roman || []).some(r => tk.includes(String(r).toLowerCase()));                                     // engine wrote it in Roman letters ("kal")
+  }
   function matchNumber(n, text) { return numbersIn(text).has(n); }
 
   // One spoken attempt. alternatives = the guesses of the speech engine (any one matching is enough).
@@ -127,11 +153,11 @@
     const alts = (Array.isArray(alternatives) ? alternatives : [alternatives]).map(x => String(x == null ? '' : x)).filter(Boolean);
     const m = item && item.match;
     if (!m || !alts.length) return false;
-    return alts.some(t => m.kind === 'letter' ? matchLetter(m, t) : m.kind === 'number' ? matchNumber(m.n, t) : m.kind === 'line' ? matchLine(m.line, t) : false);
+    return alts.some(t => m.kind === 'letter' ? matchLetter(m, t) : m.kind === 'asm' ? matchAsm(m, t) : m.kind === 'number' ? matchNumber(m.n, t) : m.kind === 'line' ? matchLine(m.line, t) : false);
   }
 
   const dayKey = d => { d = d || new Date(); const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); };
   const fmtTime = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 
-  return { WORDS, POEMS, TABLES, BYANJAN_DATA, BYANJAN_MS, PLACES, byanjanAudio, LETTER_SOUNDS, items, stateKey, norm, tokens, numbersIn, check, matchLetter, matchLine, matchNumber, dayKey, fmtTime };
+  return { WORDS, POEMS, TABLES, BYANJAN_DATA, BYANJAN_MS, AS_ROWS, AS_CUES, matchAsm, PLACES, byanjanAudio, LETTER_SOUNDS, items, stateKey, norm, tokens, numbersIn, check, matchLetter, matchLine, matchNumber, dayKey, fmtTime };
 });
