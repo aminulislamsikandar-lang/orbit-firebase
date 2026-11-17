@@ -89,5 +89,10 @@ t('asvyanjan: word or letter in Assamese script is right', say(AV[0], 'কল') 
 t('asvyanjan: Bengali র for ৰ and Roman spelling are accepted', say(AV[5], 'চরাই') && say(AV[22], 'মেকুরী') && say(AV[0], 'kal') && say(AV[12], 'dhol'));
 t('asvyanjan: wrong word and empty speech are refused', !say(AV[0], 'গছ') && !say(AV[2], 'কল') && !say(AV[16], 'বাঘ') && !say(AV[0], '') && !B.check(AV[0], []));
 t('byanjan mode still has its own clips', B.items('byanjan').length === B.BYANJAN_DATA.length && !!B.items('byanjan')[0].audio);
+// Assamese: Hindi/Bengali engines, letter with a vowel sign, language rotation, spoken praise
+t('asvyanjan: Hindi engine text (Devanagari) counts as the Assamese word', say(AV[0], 'कल') && say(AV[3], 'घर') && say(AV[5], 'चराई') && say(AV[16], 'धान'));
+t('asvyanjan: letter heard with a vowel sign counts as the letter', say(AV[0], 'কা') && say(AV[0], 'का') && say(AV[1], 'খো') && say(AV[6], 'ছি'));
+t('asvyanjan: a different letter or word is still refused', !say(AV[0], 'खा') && !say(AV[0], 'घर') && !say(AV[2], 'कल'));
+t('bolo.js: Assamese listens in as, bn, hi in turn and the child is praised aloud', /AS_LANGS = \['as-IN', 'bn-IN', 'hi-IN'\]/.test(C) && /nextAsLang\(\)/.test(C) && /if \(ok\) say\('शाबाश!', 'hi-IN'\)/.test(C));
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

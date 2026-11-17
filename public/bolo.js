@@ -152,12 +152,15 @@
     save(); stopListen();
     st.fb = ok ? { ok: true, t: manual || it.match.kind === 'self' ? 'Shabaash! ' + it.big + ' ho gaya.' : 'Shabaash! Sahi bola: ' + it.say } : { ok: false, t: 'Phir se bolo: "' + it.say + '"' };
     redraw();
-    if (!ok) speak(it);
+    if (ok) say('शाबाश!', 'hi-IN'); else speak(it);   // praise is spoken in every mode, a mistake plays the item again
   }
   // The browser's voice engine often cannot hear Assamese. After two empty tries the child may tick by themselves instead of seeing the same message again.
+  // Assamese is heard by trying one language after the other (Assamese, then Bengali, then Hindi: their engines are much better); Hindi text is read as Assamese by matchAsm.
+  const AS_LANGS = ['as-IN', 'bn-IN', 'hi-IN'];
+  const nextAsLang = () => { st.asLang = ((st.asLang || 0) + 1) % AS_LANGS.length; };
   function asMissMsg() {
     if (st.mode !== 'asvyanjan') return '';
-    st.asMiss = (st.asMiss || 0) + 1;
+    st.asMiss = (st.asMiss || 0) + 1; nextAsLang();
     return st.asMiss >= 2 ? 'Browser Assamese awaaz nahi pakad paa raha. Neeche "Maine bol diya" dabao.' : '';
   }
   function listen() {
@@ -165,15 +168,17 @@
     if (over() || !load().set.mic || st.listening || !SR) return;
     stopSay(); stopListen(); st.fb = null; st.err = '';
     let r; try { r = new SR(); } catch (e) { st.err = 'Mic shuru nahi ho paya. Dobara try karo.'; redraw(); return; }
-    rec = r; r.lang = st.mode === 'asvyanjan' ? (st.asBn ? 'bn-IN' : 'as-IN') : 'en-IN'; r.interimResults = false; r.maxAlternatives = 3; r.continuous = false;
+    rec = r; r.lang = st.mode === 'asvyanjan' ? AS_LANGS[(st.asLang || 0) % AS_LANGS.length] : 'en-IN'; r.interimResults = false; r.maxAlternatives = 3; r.continuous = false;
     const item = list()[st.i];
     r.onresult = e => {
       const res = e.results && e.results[0], alts = res ? Array.from(res).map(a => a.transcript) : [];
-      mark(C.check(item, alts));
+      const good = C.check(item, alts);
+      if (!good && st.mode === 'asvyanjan') nextAsLang();   // heard something else: next try listens in the next language
+      mark(good);
     };
     r.onerror = e => {
       const code = e && e.error; if (code === 'aborted') return;
-      if (code === 'language-not-supported' && st.mode === 'asvyanjan' && !st.asBn) { st.asBn = true; stopListen(); listen(); return; }   // no Assamese in this browser: Bengali hears the same letters
+      if (code === 'language-not-supported' && st.mode === 'asvyanjan' && (st.asLang || 0) < AS_LANGS.length - 1) { nextAsLang(); stopListen(); listen(); return; }   // this browser cannot hear that language: try the next one
       stopListen();
       st.err = code === 'not-allowed' || code === 'service-not-allowed' ? 'Browser ne mic ki ijazat nahi di. Address bar mein mic allow karo.'
         : code === 'no-speech' ? 'Kuch sunai nahi diya. Mic dabao aur zor se bolo.'

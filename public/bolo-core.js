@@ -137,13 +137,15 @@
     return hit / want.length >= 0.6 && got.length <= want.length * 2 + 2;                             // most words, and not a long unrelated sentence
   }
   // ---- Assamese (Bengali script) matching: the browser may write the word in Assamese or Bengali letters, with র for ৰ and ব for ৱ ----
-  const normA = s => String(s == null ? '' : s).toLowerCase().replace(/[’'.,!?।|\-]/g, ' ').replace(/ৰ/g, 'র').replace(/ৱ/g, 'ব').replace(/\s+/g, ' ').trim();
+  // Hindi speech engines write Assamese words in Devanagari (कल for কল): the two blocks line up letter by letter, so shift it into Bengali script before comparing
+  const devToBn = s => s.replace(/[\u0900-\u097f]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x80));
+  const normA = s => devToBn(String(s == null ? '' : s)).toLowerCase().replace(/[’'.,!?।|\-]/g, ' ').replace(/ৰ/g, 'র').replace(/ৱ/g, 'ব').replace(/\s+/g, ' ').trim();
   function matchAsm(m, text) {
     const t = normA(text), tk = t ? t.split(' ') : [], word = normA(m.word), letter = normA(m.letter);
     if (!tk.length) return false;
     if (word && t.replace(/ /g, '').includes(word)) return true;                                              // said the word (also when the engine adds an ending)
     if (word.length >= 4 && tk.some(x => lev(x, word) <= 1)) return true;                                       // one slip on a longer word
-    if (tk.some(x => x === letter || x === letter + 'ো' || x === letter + 'অ')) return true;                    // said the letter ("ক", "কো")
+    if (tk.some(x => x === letter || (x.startsWith(letter) && x.length <= letter.length + 2 && /^[\u09be-\u09cc\u09d7\u0981-\u0983অআ]+$/.test(x.slice(letter.length))))) return true;                    // said the letter ("ক", "কো")
     return (m.roman || []).some(r => tk.includes(String(r).toLowerCase()));                                     // engine wrote it in Roman letters ("kal")
   }
   function matchNumber(n, text) { return numbersIn(text).has(n); }
