@@ -296,7 +296,7 @@
   }
   function kidRow(c) {
     const t = c.today || {}, studyDay = c.plan.days.includes(new Date().getDay());
-    const st = !c.plan.on ? 'Padhai ka time band hai' : !studyDay ? 'Aaj chhutti' : t.done ? 'Aaj padhai poori hui' + (t.mins ? ' (' + t.mins + ' min' + (t.q ? ', ' + t.q + ' sawaal mein ' + (t.ok || 0) + ' sahi' : '') + ')' : '') : t.started ? 'Aaj padhai shuru ho gayi' : 'Aaj abhi tak shuru nahi hua';
+    const st = !c.plan.on ? 'Padhai ka time band hai' : !studyDay ? 'Aaj chhutti' : t.done ? 'Aaj padhai poori hui' : t.started ? 'Aaj padhai shuru ho gayi' : 'Aaj abhi tak shuru nahi hua';
     const chips = (arr, sel, act) => `<div class="chips" role="group">${arr.map(([v, n]) => `<button class="chip" data-sp="${act}" data-id="${esc(c.id)}" data-v="${v}" aria-pressed="${sel(v)}">${esc(n)}</button>`).join('')}</div>`;
     const pd = NET.pd && NET.pd.id === c.id ? NET.pd.d : null;
     const edit = pd ? `<div style="margin-top:8px"><label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" data-spp="on" ${pd.on ? 'checked' : ''}> Chalu rakho</label>
@@ -306,9 +306,23 @@
  <div class="mut" style="margin-top:8px">Kitne minute</div>${chips(MINS.map(m => [m, m + ' min']), v => pd.mins === +v, 'pmins')}
  <div class="mut" style="margin-top:8px">Kaun se din</div>${chips(DAYN.map((n, i) => [i, n]), v => pd.days.includes(+v), 'pday')}
  <button class="btn" data-sp="psave" data-id="${esc(c.id)}" style="margin:10px 8px 0 0">Save karo</button><button class="btn alt" data-sp="pcancel" style="margin:10px 0 0">Raddh karo</button></div>` : '';
-    return `<div style="border:1px solid var(--ln);border-radius:12px;padding:10px;margin:8px 0"><div><b>${esc(c.name || 'Bachha')}</b></div>
- <div style="margin:4px 0">${esc(st)}</div><div class="mut" style="font-size:13px">${esc(fmtClock(c.plan.time))}, ${c.plan.mins} min, ${esc(daysText(c.plan.days))}</div>
+    const tone = !c.plan.on || !studyDay ? 'n' : t.done ? 'g' : t.started ? 'l' : 'a', stats = t.done && (t.mins || t.q) ? `<div class="sp-st">${t.mins ? `<div class="sp-s sp-g"><b>${esc(t.mins)}</b><span>minute padhai</span></div>` : ''}${t.q ? `<div class="sp-s sp-c"><b>${esc(t.ok || 0)}/${esc(t.q)}</b><span>sawaal sahi</span></div>` : ''}</div>` : '';
+    return `<div class="sp-kid sp-${tone}"><div class="sp-nm"><span class="sp-av" aria-hidden="true">${esc(String(c.name || 'B').trim().charAt(0).toUpperCase() || 'B')}</span><b>${esc(c.name || 'Bachha')}</b></div>
+ <div class="sp-pill">${esc(st)}</div>${stats}<div class="mut" style="font-size:13px;margin-top:6px">${esc(fmtClock(c.plan.time))}, ${c.plan.mins} min, ${esc(daysText(c.plan.days))}</div>
  ${pd ? '' : `<div style="margin-top:8px"><button class="btn alt" data-sp="pedit" data-id="${esc(c.id)}" style="margin:0 8px 0 0">Time badlo</button><button class="btn alt" data-sp="pleave" data-id="${esc(c.id)}" style="margin:0">Hata do</button></div>`}${edit}</div>`;
+  }
+  function spStyle() {
+    if (g.document.getElementById('spStyle')) return '';
+    const e = g.document.createElement('style'); e.id = 'spStyle';
+    e.textContent = `.sp-kid{border-radius:16px;padding:12px;margin:10px 0;border:1px solid rgba(34,197,94,.3);background:linear-gradient(165deg,rgba(34,197,94,.14),rgba(34,197,94,.03)),var(--card)}
+.sp-kid.sp-a{border-color:rgba(245,158,11,.4);background:linear-gradient(165deg,rgba(245,158,11,.14),rgba(245,158,11,.03)),var(--card)}.sp-kid.sp-n{border-color:var(--ln);background:var(--card)}
+.sp-nm{display:flex;align-items:center;gap:10px}.sp-av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;background:linear-gradient(145deg,#4ade80,#15803d)}
+.sp-pill{display:inline-block;margin-top:8px;border-radius:99px;padding:5px 14px;font-weight:700;font-size:14px;color:#fff;background:linear-gradient(90deg,#16a34a,#22c55e)}
+.sp-l .sp-pill{background:linear-gradient(90deg,#65a30d,#a3e635);color:#1a2e05}.sp-a .sp-pill{background:linear-gradient(90deg,#d97706,#fbbf24);color:#2a1700}.sp-n .sp-pill{background:var(--ans);color:var(--tx)}
+.sp-st{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.sp-s{border-radius:14px;padding:10px 12px;color:#fff;box-shadow:0 5px 12px rgba(0,0,0,.14);animation:spup .45s cubic-bezier(.3,1.4,.5,1) backwards}
+.sp-s b{display:block;font-size:28px;line-height:1.05;font-variant-numeric:tabular-nums}.sp-s span{font-size:12.5px}.sp-g{background:linear-gradient(145deg,#22c55e,#15803d)}.sp-c{background:linear-gradient(145deg,#2dd4bf,#0f766e)}
+@keyframes spup{from{transform:translateY(12px) scale(.92);opacity:0}}@media(prefers-reduced-motion:reduce){.sp-s{animation:none}}`;
+    g.document.head.appendChild(e); return '';
   }
   function dadCard() {            // on the FATHER's phone: join with the code, switch notifications on, see the children
     const o = NET.dadOpen ? ' open' : '', head = `<details class="card" id="spDad"${o}><summary>Main parent hoon (bachhe ka alert)</summary><div>`;
@@ -316,6 +330,7 @@
     const NOTE = { unsupported: 'Is browser mein notification nahi hai. Android par Chrome use karo. iPhone par Orbit ko Home Screen par jodo.', denied: 'Notification band hai. Browser ki settings mein Orbit ke liye allow karo.' };
     const pushUi = NET.push === 'on' ? '<p style="margin:6px 0">Is phone par notification chalu hai.</p><button class="btn alt" data-sp="poff" style="margin:0">Notification band karo</button>'
       : NOTE[NET.push] ? `<p class="mut" style="margin:6px 0">${esc(NOTE[NET.push])}</p>` : '<button class="btn" data-sp="pon" style="margin:6px 0 0">Is phone par notification chalu karo</button>';
+    spStyle();
     const kids = NET.children === null ? '<p class="mut">Load ho raha hai...</p>' : NET.children.length ? NET.children.map(kidRow).join('') : '<p class="mut">Abhi koi bachha juda nahi hai.</p>';
     return `${head}<label class="mut" for="spJoin">Bachhe ke phone ka code (6 akshar)</label><input id="spJoin" data-spf="joincode" maxlength="7" autocomplete="off" autocapitalize="characters" value="${esc(NET.codeIn)}" style="${PREF};text-transform:uppercase;letter-spacing:3px">
  <button class="btn" data-sp="join" style="margin:10px 0 0">Jodo</button>
@@ -402,6 +417,6 @@
     viewHTML, sync: pill,
     setUser(u) { const id = u && u.uid ? u.uid : ''; if (id === S.uid) return; stopRing(); S.uid = id; S.unlocked = false; S.draft = null; S.msg = S.err = S.pinMsg = ''; S.run = loadRun(); S.snoozes = 0; S.snoozeUntil = 0; NET.children = null; NET.linked = null; NET.code = ''; NET.pd = null; NET.codeIn = ''; NET.lastPull = 0; NET.lastKids = 0; NET.push = 'unknown'; NET.lmsg = NET.lerr = NET.dmsg = NET.derr = ''; pill(); if (id) pullPlan(true); },
     leave() { S.unlocked = false; S.draft = null; S.msg = S.err = S.pinMsg = ''; pill(); },
-    _t: { clean, stateOf, ymd, fmtClock, mmss, minOf, DEF, NET, getQ: () => S.sq }   // _t is for tests only
+    _t: { clean, stateOf, ymd, fmtClock, mmss, minOf, DEF, NET, kidRow, getQ: () => S.sq }   // _t is for tests only
   };
 })(window);

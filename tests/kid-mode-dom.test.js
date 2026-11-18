@@ -102,6 +102,8 @@ async function boot(db, uid, { role } = {}) {
   t('the child phone shares only day, minutes and counts', Object.keys(db.sums[code.replace('-', '')]).sort().join() === 'at,day,ok,redo,sec,total');
   par.click('[data-kl=refresh]'); await tick(150);
   t('the parent screen shows the summary', /Aaj sahi/.test(par.app()) && /Ab tak sahi/.test(par.app()));
+  t('the parent numbers are a green ring and three coloured cards (not a plain table)', !!par.d.querySelector('.kl-kid .kl-arc') && par.d.querySelectorAll('.kl-tiles .kl-t').length === 3 && !par.d.querySelector('.bl-tbl') && /Roz ki limit \d+ min mein se/.test(par.app()));
+  t('the animation plays only the first time (not on every 30-second refresh)', !par.d.querySelector('.kl-kid').classList.contains('kl-in'));
 
   par.d.getElementById('klCode').value = 'ABCD-2'; par.w.KIDLINK._tick(); await tick(150);
   t('the 30-second refresh does not wipe a code that is being typed', par.d.getElementById('klCode').value === 'ABCD-2');

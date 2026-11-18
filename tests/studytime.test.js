@@ -35,6 +35,18 @@ const SC = require('../study-core');
 for (const x of [null, {}, { on: true, name: ' A  B ', time: '25:00', mins: 7, days: [1, 1, 9, 3], course: 'c2-as<script>', ch: 500 }, { on: true, name: 'Rahul', time: '06:05', mins: 45, days: [0, 6], course: 'c10-science', ch: 12, cls: 3, subj: ['evs', 'asm'] }, { on: 'yes', mins: '30', time: 5 }, { cls: 9, subj: ['x'] }, { cls: '2', subj: [] }])
   ok(JSON.stringify(T.clean(x)) === JSON.stringify(SC.cleanPlan(x)), 'client and server clean the same: ' + JSON.stringify(x));
 
+// the father's card for one child: green status pill + coloured number cards (no numbers hidden in a sentence)
+{
+  const plan = { on: true, time: '17:00', mins: 30, days: [0, 1, 2, 3, 4, 5, 6] };
+  const row = today => T.kidRow({ id: 'c1', name: 'Rahul', plan, today });
+  const done = row({ done: true, mins: 30, q: 8, ok: 6 });
+  ok(/sp-kid sp-g/.test(done) && />Aaj padhai poori hui</.test(done) && /<b>30<\/b><span>minute padhai/.test(done) && /<b>6\/8<\/b><span>sawaal sahi/.test(done), 'done: green pill, minutes card and sawaal card');
+  ok(/sp-kid sp-l/.test(row({ started: true })) && !/sp-st/.test(row({ started: true })), 'started: lime pill, no number cards');
+  ok(/sp-kid sp-a/.test(row({})) && /abhi tak shuru nahi hua/.test(row({})), 'not started: amber pill');
+  ok(/sp-kid sp-n/.test(T.kidRow({ id: 'c1', name: 'Rahul', plan: { on: false, time: '17:00', mins: 30, days: [1] }, today: {} })), 'switched off: grey');
+  ok(/class="sp-av"[^>]*>R</.test(done) && !/<script/.test(T.kidRow({ id: 'c1', name: '<script>x</script>', plan, today: {} })), 'initial letter shown, name escaped');
+}
+
 // wiring
 const idx = rd('public/index.html');
 for (const k of ['/kidbank.js', "item('study','recall'", "VIEW==='study'", 'STUDY.viewHTML()', 'STUDY.setUser(u)', "STUDY.leave()", 'STUDY.sync()', '/studytime.js']) ok(idx.includes(k), 'index: ' + k);

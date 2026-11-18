@@ -132,17 +132,58 @@
     try { await C.putSet(code, next); k.set = next; S.par.err = ''; S.par.msg = 'Bachche ke phone par agli baar khulte hi lag jayega.'; } catch (e) { S.par.err = fail(e); }
     draw();
   }
+  // ---- the parent's numbers: a green ring (today's minutes against the limit), coloured number cards, a "right answers" meter ----
+  const KI = {   // thin line icons (no emoji)
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', ok: '<path d="M5 12.5l4.2 4.2L19 7"/>',
+    redo: '<path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4v4.6H8"/>', star: '<path d="M12 3.2l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17.2l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>'
+  };
+  const kic = n => `<svg class="kl-ic" viewBox="0 0 24 24" aria-hidden="true">${KI[n]}</svg>`;
+  function klStyle() {
+    if (g.document.getElementById('klStyle')) return;
+    const e = g.document.createElement('style'); e.id = 'klStyle';
+    e.textContent = `.kl-ic{width:22px;height:22px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.kl-kid{background:linear-gradient(165deg,rgba(34,197,94,.17),rgba(34,197,94,.03) 60%),var(--card);border:1px solid rgba(34,197,94,.32)}
+.kl-head{display:flex;align-items:center;gap:12px}.kl-av{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:20px;background:linear-gradient(145deg,#4ade80,#15803d);box-shadow:0 4px 12px rgba(22,163,74,.4)}
+.kl-head h2{margin:0}.kl-head small{display:block;color:var(--mut);font-size:12.5px}
+.kl-hero{display:flex;align-items:center;gap:16px;margin:14px 0 10px}.kl-ringw{position:relative;width:132px;height:132px;flex:none}.kl-ringw svg{width:100%;height:100%;transform:rotate(-90deg)}
+.kl-trk{fill:none;stroke:rgba(34,197,94,.18);stroke-width:12}.kl-arc{fill:none;stroke-width:12;stroke-linecap:round}
+.kl-ctr{position:absolute;inset:0;display:grid;place-content:center;text-align:center;line-height:1}.kl-ctr b{font-size:36px;color:#15803d}.kl-ctr span{font-size:12px;color:var(--mut);margin-top:4px}
+:root[data-theme="dark"] .kl-ctr b{color:#4ade80}@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .kl-ctr b{color:#4ade80}}
+.kl-side{flex:1;min-width:0}.kl-side strong{display:block;font-size:17px}.kl-side p{margin:4px 0 0;color:var(--mut);font-size:13.5px}
+.kl-pill{display:inline-flex;align-items:center;gap:6px;margin-top:8px;border-radius:99px;padding:4px 12px;font-size:13px;font-weight:700;color:#fff;background:linear-gradient(90deg,#16a34a,#22c55e)}.kl-pill .kl-ic{width:16px;height:16px;stroke-width:2.4}
+.kl-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kl-t{border-radius:16px;padding:12px 10px;color:#fff;display:flex;flex-direction:column;gap:2px;box-shadow:0 6px 14px rgba(0,0,0,.14)}.kl-t b{font-size:30px;line-height:1.05;font-variant-numeric:tabular-nums}.kl-t span{font-size:12.5px;opacity:.95;line-height:1.25}.kl-t .kl-ic{opacity:.9;margin-bottom:4px}
+.kl-g{background:linear-gradient(145deg,#22c55e,#15803d)}.kl-a{background:linear-gradient(145deg,#fbbf24,#d97706)}.kl-c{background:linear-gradient(145deg,#2dd4bf,#0f766e)}
+.kl-meter{margin-top:12px}.kl-meter div{display:flex;justify-content:space-between;font-size:13.5px;font-weight:600}.kl-meter i{display:block;height:12px;border-radius:99px;margin-top:6px;background:rgba(34,197,94,.18);overflow:hidden}.kl-meter u{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#84cc16,#22c55e,#0d9488)}
+.kl-in .kl-t{animation:klup .5s cubic-bezier(.3,1.4,.5,1) backwards}.kl-in .kl-t:nth-child(2){animation-delay:.1s}.kl-in .kl-t:nth-child(3){animation-delay:.2s}
+.kl-in .kl-arc{animation:klring 1.1s ease-out}.kl-in .kl-meter u{animation:klgrow 1s ease-out}
+@keyframes klup{from{transform:translateY(14px) scale(.9);opacity:0}}@keyframes klring{from{stroke-dashoffset:326.7}}@keyframes klgrow{from{width:0}}
+@media(prefers-reduced-motion:reduce){.kl-in *{animation:none!important}}
+@media(max-width:360px){.kl-hero{flex-direction:column;align-items:flex-start}}`;
+    g.document.head.appendChild(e);
+  }
+  function kidStats(k, i, sm, lim) {     // the coloured numbers for one child
+    const sec = sm ? +sm.sec || 0 : 0, ok = sm ? +sm.ok || 0 : 0, redo = sm ? +sm.redo || 0 : 0, tot = k.sum ? +k.sum.total || 0 : 0;
+    const p = Math.max(0, Math.min(1, sec / (lim * 60))), off = (326.7 * (1 - p)).toFixed(1), pct = ok + redo ? Math.round(ok * 100 / (ok + redo)) : null, full = p >= 1;
+    return `<div class="kl-hero"><div class="kl-ringw"><svg viewBox="0 0 132 132" role="img" aria-label="Aaj ${min(sec)} minute, limit ${lim} minute"><defs><linearGradient id="klg${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#bef264"/><stop offset=".5" stop-color="#22c55e"/><stop offset="1" stop-color="#0d9488"/></linearGradient></defs>
+      <circle class="kl-trk" cx="66" cy="66" r="52"/><circle class="kl-arc" cx="66" cy="66" r="52" stroke="url(#klg${i})" stroke-dasharray="326.7" stroke-dashoffset="${off}"/></svg>
+      <div class="kl-ctr"><b>${min(sec)}</b><span>min</span></div></div>
+      <div class="kl-side"><strong>Aaj Bolo chala</strong><p>Roz ki limit ${lim} min mein se ${min(sec)} min</p>${full ? `<span class="kl-pill">${kic('ok')}Aaj ka goal poora</span>` : ''}</div></div>
+    <div class="kl-tiles"><div class="kl-t kl-g">${kic('ok')}<b>${ok}</b><span>Aaj sahi</span></div><div class="kl-t kl-a">${kic('redo')}<b>${redo}</b><span>Dobara karni hain</span></div><div class="kl-t kl-c">${kic('star')}<b>${tot}</b><span>Ab tak sahi (sab mode)</span></div></div>
+    ${pct == null ? '' : `<div class="kl-meter"><div><span>Aaj sahi jawab ka hissa</span><span>${pct}%</span></div><i role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><u style="width:${pct}%"></u></i></div>`}`;
+  }
   function parentHTML() {
+    klStyle();
     const P = S.par; if (!P.loaded && !P.busy && S.uid) parLoad();
     const now = new Date(), dk = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-    const cards = P.kids.map(k => {
+    const cards = P.kids.map((k, i) => {
       const sm = k.sum && k.sum.day === dk ? k.sum : null, lim = k.set ? k.set.limit : 10, mic = k.set ? k.set.mic !== false : true;
-      return `<div class="card" data-kl-card="${esc(k.code)}" style="margin-top:12px"><h2 class="sec" style="margin:0 0 6px">${esc(k.name)}</h2>
-        <table class="bl-tbl"><tr><td>Aaj Bolo chala</td><td>${sm ? min(sm.sec) + ' min' : '0 min'}</td></tr><tr><td>Aaj sahi</td><td>${sm ? sm.ok : 0}</td></tr><tr><td>Dobara karni hain</td><td>${sm ? sm.redo : 0}</td></tr><tr><td>Ab tak sahi (sab mode)</td><td>${k.sum ? k.sum.total : 0}</td></tr></table>
-        <p class="mut" style="margin:6px 0 0">${k.sum ? 'Aakhri update: ' + esc(new Date(k.sum.at).toLocaleString()) : 'Bachche ke phone se abhi koi update nahi aaya.'}</p>
-        <div class="bl-row" style="margin-top:12px"><label for="klLim-${esc(k.code)}">Roz ki limit</label><b id="klLimV-${esc(k.code)}">${lim} min</b></div>
-        <input id="klLim-${esc(k.code)}" data-kl-lim="${esc(k.code)}" type="range" min="5" max="30" step="5" value="${lim}" style="width:100%">
-        <label class="bl-row" style="justify-content:flex-start"><input type="checkbox" data-kl-mic="${esc(k.code)}" ${mic ? 'checked' : ''}> Mic allow hai</label>
+      P.seen = P.seen || {}; const anim = !P.seen[k.code]; P.seen[k.code] = true;     // the ring and cards animate the first time only, not on every 30-second refresh (the kid objects are rebuilt on each refresh, so it is kept by code)
+      return `<div class="card kl-kid${anim ? ' kl-in' : ''}" data-kl-card="${esc(k.code)}" style="margin-top:12px"><div class="kl-head"><div class="kl-av" aria-hidden="true">${esc(String(k.name || '?').trim().charAt(0).toUpperCase() || '?')}</div><div><h2 class="sec">${esc(k.name)}</h2><small>${k.sum ? 'Aakhri update: ' + esc(new Date(k.sum.at).toLocaleString()) : 'Bachche ke phone se abhi koi update nahi aaya.'}</small></div></div>
+        ${kidStats(k, i, sm, lim)}
+        <div class="bl-row" style="margin-top:14px"><label for="klLim-${esc(k.code)}">Roz ki limit</label><b id="klLimV-${esc(k.code)}">${lim} min</b></div>
+        <input id="klLim-${esc(k.code)}" data-kl-lim="${esc(k.code)}" type="range" min="5" max="30" step="5" value="${lim}" style="width:100%;accent-color:#22c55e">
+        <label class="bl-row" style="justify-content:flex-start"><input type="checkbox" data-kl-mic="${esc(k.code)}" ${mic ? 'checked' : ''} style="accent-color:#22c55e"> Mic allow hai</label>
         <div class="chips" style="margin-top:8px"><button class="chip" data-kl="leave" data-v="${esc(k.code)}">Is bachche se judna band karo</button></div></div>`;
     }).join('');
     return `<h1 style="font-size:26px;margin-top:14px">Parent</h1><p class="mut" style="margin:4px 0 0">Bachche ka Bolo ka din dekho aur limit badlo.</p>

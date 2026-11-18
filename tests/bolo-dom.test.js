@@ -13,13 +13,13 @@ function boot(opts) {
   const dom = new JSDOM('<!doctype html><body><div id="app"></div></body>', { runScripts: 'outside-only', pretendToBeVisual: true, url: 'https://orbittutorial.web.app/' });
   const w = dom.window;
   w.eval('var VIEW="bolo",USER={uid:"u1"};function draw(){document.getElementById("app").innerHTML=BOLO.viewHTML()}');
-  const heard = { next: ['a for apple'], started: 0, aborted: 0 };
+  const heard = { next: ['a for apple'], started: 0, aborted: 0 }, spoken = [];
   if (!opts.noSR) w.SpeechRecognition = class {
     start() { heard.started++; setTimeout(() => { if (opts.silent) { if (this.onerror) this.onerror({ error: 'no-speech' }); return; } if (this.onresult) this.onresult({ results: [[...heard.next.map(x => ({ transcript: x }))]] }); }, 0); }
     stop() {} abort() { heard.aborted++; }
   };
   Object.defineProperty(w, 'crypto', { value: require('crypto').webcrypto, configurable: true }); w.TextEncoder = TextEncoder;
-  w.speechSynthesis = { cancel() {}, speak() {}, speaking: false }; w.SpeechSynthesisUtterance = function (t) { this.text = t; };
+  w.speechSynthesis = { cancel() {}, speak(u) { spoken.push(u.text); }, speaking: false }; w.SpeechSynthesisUtterance = function (t) { this.text = t; };
   if (opts.store) w.localStorage.setItem('orbit.bolo.u1', JSON.stringify(opts.store));
   if (opts.ai) {   // parent key + parent tick + a recorder: the AI check is on
     w.PARENT_KEY = { has: () => true }; w.localStorage.setItem('orbit.voice.ok.u1', '1'); w.sent = []; w.api = async (u, body) => { w.sent.push(body); return { ok: true, heard: 'ক', tip: 'Shabaash!' }; };
@@ -29,28 +29,41 @@ function boot(opts) {
   w.eval(rd('bolo-core.js')); w.eval(rd('byanjan-video.js')); w.eval(rd('bolo.js'));
   const clips = { made: [], played: 0 }; w.Audio = class { constructor(src) { this.src = src; clips.made.push(src); } play() { clips.played++; return Promise.resolve(); } pause() {} };
   w.eval('draw()');
-  return { w, d: w.document, heard, clips, click: sel => { const el = w.document.querySelector(sel); el && el.click(); }, txt: () => w.document.getElementById('app').textContent, wait: () => new Promise(r => setTimeout(r, 20)) };
+  const goto = n => { for (let i = 0; i < n; i++) w.document.querySelector('[data-bl=next]').click(); };
+  return { w, d: w.document, heard, clips, spoken, goto, click: sel => { const el = w.document.querySelector(sel); el && el.click(); }, txt: () => w.document.getElementById('app').textContent, wait: () => new Promise(r => setTimeout(r, 20)) };
 }
 
 (async () => {
   let b = boot();
-  t('screen shows title, big letter A and the privacy line', /Bolo/.test(b.txt()) && b.d.querySelector('.bl-big').textContent === 'A' && /Awaaz save nahi hoti/.test(b.txt()));
+  t('screen shows the big letter A and the topic chips on top', b.d.querySelector('.bl-big').textContent === 'A' && b.d.querySelectorAll('.bl-chips [data-bl=mode]').length === 5);
   t('mic button is enabled', !b.d.querySelector('[data-bl=mic]').disabled);
+  t('there is no Sunao button at all', !b.d.querySelector('[data-bl=hear]') && !/Sunao/.test(b.txt()));
+  t('only the mic and a small skip arrow can be pressed on the card (topic chips are on top)', [...b.d.querySelectorAll('.bl-stage button')].map(x => x.dataset.bl).join() === 'mic,next');
+  const css = b.d.getElementById('blStyle').textContent;
+  t('mic is orange and big (132px)', /\.bl-mic\{[^}]*#ff6a00/.test(css) && /\.bl-mic\{[^}]*width:132px/.test(css));
+  t('the screen is animated (letter bobs, mic beats) and respects reduced motion', /blbob/.test(css) && /blbeat/.test(css) && /prefers-reduced-motion/.test(css));
   b.click('[data-bl=mic]'); await b.wait();
-  t('right answer shows Shabaash and marks A done', /Shabaash/.test(b.txt()) && /1 \/ 26 sahi/.test(b.txt()));
+  t('right answer: Shabaash pop-up with tiny emojis, A is counted', !!b.d.querySelector('.bl-praise') && /Shabaash/.test(b.d.querySelector('.bl-praise').textContent) && /⭐/.test(b.d.querySelector('.bl-praise').textContent) && /1 \/ 26/.test(b.txt()));
+  t('the praise is spoken and the mic is paused while the pop-up shows', b.spoken.includes('शाबाश!') && b.d.querySelector('[data-bl=mic]').disabled);
+  await new Promise(r => setTimeout(r, 1900));
+  t('pop-up goes away by itself and the next letter B comes by itself (no Aage press)', !b.d.querySelector('.bl-praise') && b.d.querySelector('.bl-big').textContent === 'B' && !b.d.querySelector('[data-bl=mic]').disabled);
   const saved = JSON.parse(b.w.localStorage.getItem('orbit.bolo.u1'));
   t('only marks and counts are saved, not the spoken text', saved.prog.alpha['0'] === 'd' && saved.days[b.w.BOLO_CORE.dayKey()].ok === 1 && !/apple/i.test(JSON.stringify(saved)));
+  b.heard.next = ['zebra']; b.spoken.length = 0; b.click('[data-bl=mic]'); await b.wait();
+  t('wrong answer asks to say it again and marks redo', /Phir se bolo/.test(b.txt()) && !b.d.querySelector('.bl-praise') && JSON.parse(b.w.localStorage.getItem('orbit.bolo.u1')).prog.alpha['1'] === 'r');
+  t('a wrong answer plays the item by itself (no Sunao press)', b.spoken.includes('B for Ball'), JSON.stringify(b.spoken));
+  t('a wrong answer does not move on', b.d.querySelector('.bl-big').textContent === 'B');
   b.click('[data-bl=next]');
-  t('Aage moves to B', b.d.querySelector('.bl-big').textContent === 'B');
-  b.heard.next = ['zebra']; b.click('[data-bl=mic]'); await b.wait();
-  t('wrong answer asks to say it again and marks redo', /Phir se bolo/.test(b.txt()) && b.d.querySelector('.bl-prog button.r'));
+  t('the small skip arrow moves to C', b.d.querySelector('.bl-big').textContent === 'C');
   b.click('[data-bl=mode][data-v=table]');
   t('table mode shows 2 x 1', /2 × 1/.test(b.txt()));
-  b.w.eval('document.getElementById("app").querySelector("#blTable")'); const sel = b.d.getElementById('blTable'); sel.value = '5'; sel.dispatchEvent(new b.w.Event('change', { bubbles: true }));
+  t('table numbers are chips on top, not a drop-down', b.d.querySelectorAll('.bl-chips [data-bl=table]').length === 9 && !b.d.getElementById('blTable'));
+  b.click('[data-bl=table][data-v="5"]');
   t('choosing 5 ka table changes the card', /5 × 1/.test(b.txt()) && /= 5/.test(b.txt()));
   b.heard.next = ['five ones are five']; b.click('[data-bl=mic]'); await b.wait();
   t('table answer in words is accepted', /Shabaash/.test(b.txt()));
   b.click('[data-bl=mode][data-v=poem]');
+  t('poems are chips on top too', b.d.querySelectorAll('.bl-chips [data-bl=poem]').length === 2);
   b.heard.next = ['twinkle twinkle little star']; b.click('[data-bl=mic]'); await b.wait();
   t('poem line is accepted', /Shabaash/.test(b.txt()));
 
@@ -67,7 +80,7 @@ function boot(opts) {
   b = boot({ noSR: true });
   t('no recognition: self-check buttons appear and work', !!b.d.querySelector('[data-bl=self][data-v="1"]'));
   b.click('[data-bl=self][data-v="1"]');
-  t('self-check marks the item', /1 \/ 26 sahi/.test(b.txt()));
+  t('self-check marks the item', /1 \/ 26/.test(b.txt()) && !!b.d.querySelector('.bl-praise'));
 
   // PIN
   b = boot();
@@ -93,12 +106,12 @@ function boot(opts) {
   t('byanjan mode shows the first letter in the mouth video', b.d.querySelector('#bvGlyph').textContent === 'ক' && !!b.d.querySelector('svg.bv-mouth #bvTongue'));
   t('byanjan mode has no mic button but the self-check buttons', !b.d.querySelector('[data-bl=mic]') && !!b.d.querySelector('[data-bl=self][data-v="1"]'));
   t('byanjan: the place is explained under the video', /কণ্ঠ্য/.test(b.d.querySelector('.bv-note').textContent));
-  b.click('[data-bl=hear]'); await new Promise(r => setTimeout(r, 450));
-  t('Sunao plays the recorded clip of the letter', b.clips.made[0] === '/audio/byanjan/01.mp3?v=1' && b.clips.played === 1, JSON.stringify(b.clips));
+  await new Promise(r => setTimeout(r, 450));
+  t('choosing the topic plays the recorded clip of the letter by itself (no Sunao button)', b.clips.made[0] === '/audio/byanjan/01.mp3?v=1' && b.clips.played === 1, JSON.stringify(b.clips));
   await new Promise(r => setTimeout(r, 300));
   t('the tongue moves toward the sound position while it plays', /^M/.test(b.d.getElementById('bvTongue').getAttribute('d')) && (b.d.getElementById('bvTongue').getAttribute('d').match(/C/g) || []).length === 12);
   b.click('[data-bl=self][data-v="1"]');
-  t('"Maine bol diya" marks the letter done', /1 \/ 40 sahi/.test(b.txt()) && /Shabaash/.test(b.txt()));
+  t('"Maine bol diya" marks the letter done', /1 \/ 40/.test(b.txt()) && /Shabaash/.test(b.txt()));
   b.click('[data-bl=next]'); await new Promise(r => setTimeout(r, 450));
   t('Aage shows the next letter and plays its clip at once', b.d.querySelector('#bvGlyph').textContent === 'খ' && b.clips.made[b.clips.made.length - 1] === '/audio/byanjan/02.mp3?v=1');
   b.click('[data-bl=self][data-v="0"]'); await new Promise(r => setTimeout(r, 450));
@@ -107,22 +120,22 @@ function boot(opts) {
   t('back to A se Z: big letter again, mic is back', b.d.querySelector('.bl-big').textContent === 'A' && !!b.d.querySelector('[data-bl=mic]'));
   // every letter draws a mouth without errors, and labial / throat / nasal poses are set
   b = boot(); b.click('[data-bl=mode][data-v=byanjan]');
-  let drawn = 0; for (let i = 0; i < 40; i++) { b.click('[data-bl=jump][data-v="' + i + '"]'); if (b.d.getElementById('bvTongue') && b.d.querySelector('.bv-note').textContent.length > 10) drawn++; }
+  let drawn = 0; for (let i = 0; i < 40; i++) { if (i) b.click('[data-bl=next]'); if (b.d.getElementById('bvTongue') && b.d.querySelector('.bv-note').textContent.length > 10) drawn++; }
   t('all 40 letters draw the mouth video with a note', drawn === 40, String(drawn));
-  b.click('[data-bl=jump][data-v="20"]');
+  b = boot(); b.click('[data-bl=mode][data-v=byanjan]'); b.goto(20);
   t('labial letter (প): lips are closed in the picture', /translate\(0 16\)/.test(b.d.getElementById('bvUL').getAttribute('transform')));
-  b.click('[data-bl=jump][data-v="39"]');
+  b.goto(19);
   t('chandrabindu: nose airflow shown', b.d.getElementById('bvNasal').getAttribute('opacity') !== '0');
 
     // Assamese: the AI judges the child's voice (parent key + tick); without it, byanjan stays self-check and the browser mic gives way after two empty tries
   b = boot({ ai: true }); b.click('[data-bl=mode][data-v=byanjan]');
   t('byanjan with the AI check: mic button shown, tick buttons hidden', !!b.d.querySelector('[data-bl=mic]') && !b.d.querySelector('[data-bl=self]'));
   b.click('[data-bl=mic]'); await b.wait(); await b.wait(); b.click('[data-bl=mic]'); await b.wait(); await b.wait(); await b.wait();
-  t('byanjan: the clip goes to the AI as an Assamese letter and ক is marked done', b.w.sent.length === 1 && b.w.sent[0].kind === 'asletter' && b.w.sent[0].expected === 'ক' && /1 \/ 40 sahi/.test(b.txt()), JSON.stringify(b.w.sent[0] && { k: b.w.sent[0].kind, e: b.w.sent[0].expected }));
+  t('byanjan: the clip goes to the AI as an Assamese letter and ক is marked done', b.w.sent.length === 1 && b.w.sent[0].kind === 'asletter' && b.w.sent[0].expected === 'ক' && /1 \/ 40/.test(b.txt()), JSON.stringify(b.w.sent[0] && { k: b.w.sent[0].kind, e: b.w.sent[0].expected }));
   b = boot({ ai: true }); b.click('[data-bl=mode][data-v=asvyanjan]'); b.click('[data-bl=mic]'); await b.wait(); await b.wait(); b.click('[data-bl=mic]'); await b.wait(); await b.wait(); await b.wait();
   t('letter + word: the AI check is used too (kind asm, letter and word expected)', b.w.sent.length === 1 && b.w.sent[0].kind === 'asm' && b.w.sent[0].expected === 'ক, কল');
   b = boot(); b.click('[data-bl=mode][data-v=byanjan]'); for (let i = 0; i < 37; i++) b.click('[data-bl=next]');
-  t('ং ঃ ঁ are drawn with a no-break-space base (no dotted circle)', b.d.querySelector('#bvGlyph span').textContent === '\u00a0ং' && b.d.querySelector('.bl-prog button:nth-child(38)').textContent === '\u00a0ং');
+  t('ং ঃ ঁ are drawn with a no-break-space base (no dotted circle)', b.d.querySelector('#bvGlyph span').textContent === '\u00a0ং');
   b = boot({ silent: true }); b.click('[data-bl=mode][data-v=asvyanjan]');
   b.click('[data-bl=mic]'); await b.wait(); b.click('[data-bl=mic]'); await b.wait();
   t('letter + word: after two empty tries the child gets the tick buttons', !!b.d.querySelector('[data-bl=self]') && /Browser Assamese/.test(b.txt()));

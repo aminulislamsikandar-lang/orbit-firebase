@@ -16,7 +16,6 @@
   const ico = p => `<svg class="bl-ic" viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
   const ICON = {
     mic: ico('<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'),
-    say: ico('<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>'),
     next: ico('<path d="M9 6l6 6-6 6"/>'), back: ico('<path d="M15 6l-6 6 6 6"/>'),
     ok: ico('<path d="M5 13l4 4L19 7"/>'), redo: ico('<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>')
   };
@@ -49,7 +48,7 @@
   const totalDone = () => Object.values(load().prog).reduce((a, m) => a + Object.values(m).filter(v => v === 'd').length, 0);
 
   // ---- screen state (not saved) ----
-  const st = { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, listening: false, err: '', unlocked: false, parOpen: false, pinMsg: '' };
+  const st = { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, listening: false, err: '', unlocked: false, parOpen: false, pinMsg: '', praise: null, enter: true };
   const opt = () => ({ table: st.table, poem: st.poem });
   const list = () => C.items(st.mode, opt());
   const key = () => C.stateKey(st.mode, opt());
@@ -57,7 +56,7 @@
   const hasPin = () => !!load().set.pin;
   const canEdit = () => !hasPin() || st.unlocked;
   function firstOpen() { const m = marks(), n = list().length; for (let i = 0; i < n; i++) if (m[i] !== 'd') return i; return 0; }
-  function reset(mode) { stopListen(); stopSay(); if (mode) st.mode = mode; st.fb = null; st.err = ''; st.i = firstOpen(); }
+  function reset(mode) { stopListen(); stopSay(); clearAdv(); if (mode) st.mode = mode; st.fb = null; st.err = ''; st.enter = true; st.i = firstOpen(); }
 
   // ---- voice out ----
   // Byanjan items carry a recorded voice clip (item.audio) and a mouth "video" (byanjan-video.js); everything else uses the browser voice.
@@ -125,7 +124,7 @@
         const j = await g.api('/api/bolo/check', { kind: item.match.kind === 'self' ? 'asletter' : item.match.kind, expected: item.say, audio: { mime: String(blob.type).split(';')[0], data: await b64(blob) } });
         st.busy = false;
         if (!onScreen()) return;
-        mark(!!j.ok); if (j.tip) { st.fb = { ok: !!j.ok, t: j.tip }; redraw(); }
+        mark(!!j.ok); if (j.tip && !j.ok) { st.fb = { ok: false, t: j.tip }; redraw(); }
       } catch (e) {
         st.busy = false; st.aiOff = true;   // the browser check takes over
         st.err = (e && e.message ? e.message + ' ' : '') + 'AI check nahi ho paya, ab browser se check hoga. Dobara bolo.'; redraw();
@@ -149,10 +148,19 @@
     const s = load(), k = key(), it = list()[st.i], d = today();
     s.prog[k] = s.prog[k] || {};
     if (ok) { s.prog[k][st.i] = 'd'; d.ok++; st.asMiss = 0; } else { if (s.prog[k][st.i] !== 'd') s.prog[k][st.i] = 'r'; d.redo++; }
-    save(); stopListen();
-    st.fb = ok ? { ok: true, t: manual || it.match.kind === 'self' ? 'Shabaash! ' + it.big + ' ho gaya.' : 'Shabaash! Sahi bola: ' + it.say } : { ok: false, t: 'Phir se bolo: "' + it.say + '"' };
+    save(); stopListen(); clearAdv();
+    st.fb = ok ? null : { ok: false, t: 'Phir se bolo: "' + it.say + '"' };
+    st.praise = ok ? (manual || it.match.kind === 'self' ? shown(it.big) + ' ho gaya' : 'Sahi bola: ' + it.say) : null;
     redraw();
-    if (ok) say('शाबाश!', 'hi-IN'); else speak(it);   // praise is spoken in every mode, a mistake plays the item again
+    if (ok) { say('शाबाश!', 'hi-IN'); advT = setTimeout(afterPraise, PRAISE_MS); }   // praise is spoken, the pop-up goes by itself and the next item comes
+    else speak(it);                                                                  // every wrong answer plays the item again by itself (no Sunao button)
+  }
+  const PRAISE_MS = 1700; let advT = 0;
+  function clearAdv() { clearTimeout(advT); advT = 0; st.praise = null; }
+  function afterPraise() {
+    advT = 0; st.praise = null; if (!onScreen()) return;
+    if (st.i < list().length - 1) { st.i++; st.fb = null; st.err = ''; st.enter = true; redraw(); if (st.mode === 'byanjan') speak(list()[st.i]); }
+    else redraw();
   }
   // The browser's voice engine often cannot hear Assamese. After two empty tries the child may tick by themselves instead of seeing the same message again.
   // Assamese is heard by trying one language after the other (Assamese, then Bengali, then Hindi: their engines are much better); Hindi text is read as Assamese by matchAsm.
@@ -225,52 +233,85 @@
   g.addEventListener('pagehide', save);
 
   // ---- views ----
+  // Simple screen for small children: topic chips on top, one big coloured card, one big orange mic. Nothing else to press.
+  const HUES = ['233,30,99', '33,150,243', '46,170,100', '142,68,173', '0,150,160', '229,57,53', '63,81,181'];   // card colour changes with every item
+  const FLY = ['⭐', '✨', '🎉', '👏', '🌟', '🎈'];                                                           // tiny emojis, only inside the Shabaash pop-up
   function style() {
     if (g.document.getElementById('blStyle')) return '';
     const s = g.document.createElement('style'); s.id = 'blStyle';
     s.textContent = `.bl-ic{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
-.bl-prog{display:flex;flex-wrap:wrap;gap:4px}.bl-prog button{width:26px;height:26px;border:0;border-radius:7px;background:var(--ans);color:var(--mut);font:600 11px inherit;padding:0}
-.bl-prog button.d{background:var(--on);color:var(--onbg)}.bl-prog button.r{background:var(--ans);color:var(--tx);text-decoration:underline}.bl-prog button.c{outline:2px solid var(--on);outline-offset:1px}
-.bl-big{text-align:center;font-weight:700;line-height:1.1;overflow-wrap:anywhere;padding:14px 0 2px}.bl-sub{text-align:center;font-size:20px;font-weight:600;margin:0 0 4px}
+.bl-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.bl-chips{margin:12px 0 4px}.bl-chips .chip{font-weight:700;font-size:15px;padding:8px 16px;border:2px solid var(--c);color:var(--c);background:var(--card)}
+.bl-chips .chip[aria-pressed=true]{background:var(--c);color:#fff;border-color:var(--c)}
+.bl-stage{position:relative;overflow:hidden;border-radius:26px;margin-top:10px;padding:16px 14px 24px;border:2px solid rgba(var(--rgb),.35);background:linear-gradient(160deg,rgba(var(--rgb),.24),rgba(var(--rgb),.05)),var(--card)}
+.bl-stage>*{position:relative}
+.bl-bub{position:absolute!important;border-radius:50%;background:rgba(var(--rgb),.16);animation:blfl 7s ease-in-out infinite}
+.bl-bub:nth-child(1){width:90px;height:90px;left:-24px;top:50px}.bl-bub:nth-child(2){width:56px;height:56px;right:18px;top:96px;animation-delay:-2s}.bl-bub:nth-child(3){width:70px;height:70px;right:-18px;bottom:90px;animation-delay:-4s}
+.bl-top{display:flex;justify-content:space-between;align-items:center;gap:10px;font-weight:700}.bl-ttl{font-size:17px}.bl-cnt{font-size:15px;background:rgba(var(--rgb),.18);border-radius:99px;padding:3px 12px}
+.bl-bar{height:12px;border-radius:99px;background:rgba(var(--rgb),.15);margin-top:10px;overflow:hidden}.bl-bar span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,rgb(var(--rgb)),#ffc83d);transition:width .5s}
+.bl-big{text-align:center;font-weight:800;line-height:1.1;overflow-wrap:anywhere;padding:18px 0 4px;color:rgb(var(--rgb));text-shadow:0 5px 0 rgba(var(--rgb),.22);animation:blbob 2.6s ease-in-out infinite}
+.bl-in .bl-big{animation:blin .55s cubic-bezier(.3,1.6,.5,1),blbob 2.6s .55s ease-in-out infinite}
+.bl-shake .bl-big{animation:blshake .45s}
+.bl-sub{text-align:center;font-size:21px;font-weight:700;margin:0 0 2px}
+.bl-micw{position:relative;display:grid;place-items:center;min-height:56px;margin:18px 0 6px}
+.bl-mic{position:relative;width:132px;height:132px;border-radius:50%;border:0;background:linear-gradient(145deg,#ffa63d,#ff6a00);color:#fff;display:grid;place-items:center;box-shadow:0 12px 28px rgba(255,106,0,.45),inset 0 -7px 0 rgba(0,0,0,.12);transition:transform .12s}
+.bl-mic:active{transform:scale(.93)}.bl-mic .bl-ic{width:58px;height:58px;stroke-width:2}
+.bl-mic:not(.on):not(:disabled){animation:blbeat 2.2s ease-in-out infinite}
+.bl-mic.on::before,.bl-mic.on::after{content:'';position:absolute;inset:0;border-radius:50%;border:4px solid #ff8a1f;animation:blring 1.4s ease-out infinite}.bl-mic.on::after{animation-delay:.7s}
+.bl-mic:disabled{opacity:.4;box-shadow:none;animation:none}.bl-mic.on:disabled{opacity:1;box-shadow:0 12px 28px rgba(255,106,0,.45),inset 0 -7px 0 rgba(0,0,0,.12)}
+.bl-msg{text-align:center;margin:0;font-size:14px;color:var(--mut)}
+.bl-fb{border-radius:16px;padding:10px 12px;text-align:center;font-weight:700;font-size:17px;background:rgba(229,57,53,.16);margin-top:10px}
+.bl-skip{position:absolute!important;right:2px;top:50%;margin-top:-21px;width:42px;height:42px;border-radius:50%;border:0;background:rgba(var(--rgb),.18);color:var(--tx);display:grid;place-items:center;padding:0}.bl-skip:disabled{opacity:.3}
 .bl-two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.bl-two .btn{margin:0;display:flex;align-items:center;justify-content:center;gap:8px}
 .btn.bl-sec{background:var(--ans);color:var(--tx)}.btn.bl-go{margin-top:10px;width:100%}
-.bl-mic{width:88px;height:88px;border-radius:50%;border:0;background:var(--on);color:var(--onbg);display:grid;place-items:center;margin:14px auto 6px}
-.bl-mic .bl-ic{width:36px;height:36px}.bl-mic.on{animation:blp 1s infinite}.bl-mic:disabled{opacity:.35}
-@keyframes blp{50%{opacity:.55}}@media(prefers-reduced-motion:reduce){.bl-mic.on{animation:none}}
-.bl-fb{min-height:46px;border-radius:12px;padding:10px 12px;text-align:center;font-weight:600;background:var(--ans);margin-top:8px;display:grid;place-items:center}
-.bl-status{display:flex;gap:10px;align-items:center;background:var(--ans);border-radius:12px;padding:10px 12px;font-size:14px}
+.bl-praise{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;z-index:50}
+.bl-praise>div{max-width:84vw;box-sizing:border-box;background:#fff;color:#111;border:4px solid #ffc83d;border-radius:30px;padding:22px 36px;text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.35);animation:blpopin .5s cubic-bezier(.3,1.6,.5,1)}
+.bl-praise b{display:block;font-size:38px;color:#e65100}.bl-praise span{display:block;font-size:16px;font-weight:600;margin-top:4px}.bl-praise .bl-em{font-size:20px;letter-spacing:4px}
+.bl-fly{position:absolute;bottom:12%;font-size:22px;animation:blfly 1.5s ease-out forwards}
 .bl-fld{width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit}
 .bl-par summary{font-weight:600;cursor:pointer}.bl-par>div{margin-top:12px}.bl-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0}
-.bl-tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}.bl-tbl td{padding:6px 0;border-top:1px solid var(--ln)}.bl-tbl td:last-child{text-align:right}`;
+.bl-tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}.bl-tbl td{padding:6px 0;border-top:1px solid var(--ln)}.bl-tbl td:last-child{text-align:right}
+@keyframes blbob{50%{transform:translateY(-7px)}}@keyframes blin{from{transform:scale(.2) rotate(-12deg);opacity:0}to{transform:none;opacity:1}}
+@keyframes blshake{20%,60%{transform:translateX(-10px)}40%,80%{transform:translateX(10px)}}
+@keyframes blbeat{50%{transform:scale(1.06)}}@keyframes blring{from{transform:scale(1);opacity:.8}to{transform:scale(1.55);opacity:0}}
+@keyframes blfl{50%{transform:translateY(-16px)}}@keyframes blpopin{from{transform:scale(.3);opacity:0}to{transform:none;opacity:1}}
+@keyframes blfly{from{transform:translateY(0);opacity:1}to{transform:translateY(-52vh);opacity:0}}
+@media(prefers-reduced-motion:reduce){.bl-stage *,.bl-praise *{animation:none!important}}`;
     g.document.head.appendChild(s); return '';
   }
 
-  const modeChips = () => `<div class="chips" role="group" aria-label="Kya bolna hai">${[['alpha', 'A se Z'], ['table', 'Table'], ['poem', 'Poem'], ['byanjan', 'ব্যঞ্জন'], ['asvyanjan', 'ক – কল']].map(m => `<button class="chip" data-bl="mode" data-v="${m[0]}" aria-pressed="${st.mode === m[0]}">${m[1]}</button>`).join('')}</div>`;
-  function subPick() {
-    if (st.mode === 'table') return `<label class="mut" for="blTable">Kiska table?</label><select id="blTable" class="bl-fld">${C.TABLES.map(t => `<option value="${t}" ${t === st.table ? 'selected' : ''}>${t} ka table</option>`).join('')}</select>`;
-    if (st.mode === 'poem') return `<label class="mut" for="blPoem">Kaun si poem?</label><select id="blPoem" class="bl-fld">${C.POEMS.map(p => `<option value="${p.id}" ${p.id === st.poem ? 'selected' : ''}>${esc(p.title)}</option>`).join('')}</select>`;
+  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['asvyanjan', 'ক – কল', '#00969f']];
+  const chipRow = (label, arr) => `<div class="chips bl-chips" role="group" aria-label="${label}">${arr.map(m => `<button class="chip" style="--c:${m[3]}" data-bl="${m[0]}" data-v="${m[1]}" aria-pressed="${m[4]}">${m[2]}</button>`).join('')}</div>`;
+  const modeChips = () => chipRow('Kya bolna hai', MODES.map(m => ['mode', m[0], m[1], m[2], st.mode === m[0]]));
+  function subPick() {   // the second row of chips (table number, or which poem) - still only chips at the top
+    if (st.mode === 'table') return chipRow('Kiska table?', C.TABLES.map(t => ['table', t, t, '#2196f3', t === st.table]));
+    if (st.mode === 'poem') return chipRow('Kaun si poem?', C.POEMS.map(p => ['poem', p.id, esc(p.title), '#2eaa64', p.id === st.poem]));
     return '';
   }
+  // The Shabaash pop-up: it shows by itself and goes by itself (taps pass through it), then the next item comes.
+  const praiseHTML = () => st.praise ? `<div class="bl-praise" role="status"><div><b>Shabaash!</b><span>${esc(st.praise)}</span><span class="bl-em" aria-hidden="true">${FLY.slice(0, 5).join(' ')}</span></div>${FLY.concat(FLY).map((e, i) => `<span class="bl-fly" aria-hidden="true" style="left:${6 + i * 8}%;animation-delay:${(i % 4) * 0.12}s">${e}</span>`).join('')}</div>` : '';
 
   function card() {
     const s = load(), items = list(), it = items[st.i], m = marks(), done = items.filter((_, i) => m[i] === 'd').length, last = st.i >= items.length - 1;
     if (over()) return `<div class="card"><h2 class="sec" style="margin:0 0 6px">Aaj ka time poora hua</h2><p class="mut" style="margin:0">Kal dobara bolenge. Aaj ${today().ok} baar sahi bola.</p><p class="mut" style="margin:10px 0 0">Parent ne roz ki limit ${s.set.limit} minute rakhi hai.</p></div>`;
     const by = st.mode === 'byanjan', asv = st.mode === 'asvyanjan';
-    const cells = items.map((_, i) => `<button data-bl="jump" data-v="${i}" class="${m[i] === 'd' ? 'd' : m[i] === 'r' ? 'r' : ''} ${i === st.i ? 'c' : ''}" aria-label="${esc(items[i].big)} ${m[i] === 'd' ? 'sahi' : m[i] === 'r' ? 'dobara' : ''}" ${i === st.i ? 'aria-current="true"' : ''}>${st.mode === 'alpha' || by || asv ? shown(items[i].big) : i + 1}</button>`).join('');
-    const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:56px' : 'font-size:96px';
+    const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:60px' : 'font-size:104px';
     const bigHTML = by && g.BYANJAN_VIDEO ? g.BYANJAN_VIDEO.stageHTML(it, C.PLACES) : `<div class="bl-big" style="${big}">${esc(it.big)}</div>`;
     const micOff = !s.set.mic;
     const aiAsk = hasKey() && CAN_REC && !aiTick() ? '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13.5px"><input type="checkbox" id="blAiOk" style="margin-top:3px"><span>Parent ki ijazat: AI se jaanch ke liye bachhe ki awaaz Gemini ko jayegi (Orbit save nahi karta). Tick na ho to browser khud check karega.</span></label>' : '';
-    const status = by && !aiOn() ? 'Sunao dabao, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? 'AI sun raha hai...' : aiOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
+    const msg = by && !aiOn() ? 'Suno, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? 'AI sun raha hai...' : aiOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
     const self = (by && !aiOn()) || (!by && !SR && !micOff) || (asv && (st.asMiss || 0) >= 2 && !aiOn()) ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
-    return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h2 class="sec" style="margin:0">${esc(st.mode === 'table' ? st.table + ' ka table' : st.mode === 'poem' ? (C.POEMS.find(p => p.id === st.poem) || C.POEMS[0]).title : by ? 'অসমীয়া ব্যঞ্জন' : asv ? 'ব্যঞ্জন + শব্দ' : 'A se Z')}</h2><span class="mut">${done} / ${items.length} sahi</span></div>
-      <div class="bl-prog" style="margin-top:10px">${cells}</div>
+    const skip = `<button class="bl-skip" data-bl="next" aria-label="Aage" ${last ? 'disabled' : ''}>${ICON.next}</button>`;
+    const mic = `<div class="bl-micw">${by && !aiOn() ? '' : `<button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || st.praise || (!SR && !aiOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>`}${skip}</div>`;
+    const enter = st.enter; st.enter = false;
+    const title = st.mode === 'table' ? st.table + ' ka table' : st.mode === 'poem' ? (C.POEMS.find(p => p.id === st.poem) || C.POEMS[0]).title : by ? 'অসমীয়া ব্যঞ্জন' : asv ? 'ব্যঞ্জন + শব্দ' : 'A se Z';
+    return `<div class="bl-stage${enter ? ' bl-in' : ''}${st.fb && !st.fb.ok ? ' bl-shake' : ''}" style="--rgb:${HUES[st.i % HUES.length]}"><i class="bl-bub"></i><i class="bl-bub"></i><i class="bl-bub"></i>
+      <div class="bl-top"><span class="bl-ttl">${esc(title)}</span><span class="bl-cnt">${done} / ${items.length}</span></div>
+      <div class="bl-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${items.length}" aria-valuenow="${done}"><span style="width:${Math.round(done / items.length * 100)}%"></span></div>
       ${bigHTML}<p class="bl-sub" ${by ? 'lang="as"' : ''}>${by && it.sub === it.big ? '' : esc(it.sub)}</p>
-      <div class="bl-two"><button class="btn bl-sec" data-bl="hear" ${TTS || by || asv ? '' : 'disabled'}>${ICON.say}<span>Sunao</span></button><button class="btn ${st.fb && st.fb.ok ? '' : 'bl-sec'}" data-bl="next" ${last ? 'disabled' : ''}><span>Aage</span>${ICON.next}</button></div>
-      ${by && !aiOn() ? '' : `<button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || (!SR && !aiOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>`}
-      <p class="mut" style="text-align:center;margin:0" role="status">${status}</p>
+      ${mic}<p class="bl-msg" role="status">${msg}</p>
       ${st.err ? `<p class="err" role="alert" style="text-align:center">${esc(st.err)}</p>` : ''}
-      <div class="bl-fb" role="status" ${st.fb ? '' : 'hidden'}>${st.fb ? esc(st.fb.t) : ''}</div>${self}${aiAsk}</div>`;
+      ${st.fb && !st.fb.ok ? `<div class="bl-fb" role="status">${esc(st.fb.t)}</div>` : ''}${self}${aiAsk}</div>${praiseHTML()}`;
   }
 
   function parent() {
@@ -296,19 +337,17 @@
     const b = e.target && e.target.closest ? e.target.closest('[data-bl]') : null;
     if (!b || b.disabled) return;
     const a = b.dataset.bl, v = b.dataset.v;
-    if (a === 'mode') { reset(v); redraw(); }
-    else if (a === 'jump') { stopListen(); stopSay(); st.i = +v; st.fb = null; st.err = ''; redraw(); }
-    else if (a === 'next') { stopListen(); stopSay(); st.i = Math.min(list().length - 1, st.i + 1); st.fb = null; st.err = ''; redraw(); if (st.mode === 'byanjan') speak(list()[st.i]); }
-    else if (a === 'hear') speak(list()[st.i]);
+    if (a === 'mode') { reset(v); redraw(); if (v === 'byanjan') speak(list()[st.i]); }   // recorded-voice letters have no mic: the voice plays by itself
+    else if (a === 'table') { st.table = +v; reset(); redraw(); }
+    else if (a === 'poem') { st.poem = v; reset(); redraw(); }
+    else if (a === 'next') { stopListen(); stopSay(); clearAdv(); st.i = Math.min(list().length - 1, st.i + 1); st.fb = null; st.err = ''; st.enter = true; redraw(); if (st.mode === 'byanjan') speak(list()[st.i]); }
     else if (a === 'mic') { if (aiRec) aiStop(false); else listen(); }
     else if (a === 'self') mark(v === '1', true);
     else if (a === 'pin') pinAction(v);
   });
   g.document.addEventListener('change', e => {
     const t = e.target, id = t && t.id;
-    if (id === 'blTable') { st.table = +t.value; reset(); redraw(); }
-    else if (id === 'blPoem') { st.poem = t.value; reset(); redraw(); }
-    else if (id === 'blAiOk') { try { t.checked ? g.localStorage.setItem(OKKEY(), '1') : g.localStorage.removeItem(OKKEY()); } catch (e) {} redraw(); }
+    if (id === 'blAiOk') { try { t.checked ? g.localStorage.setItem(OKKEY(), '1') : g.localStorage.removeItem(OKKEY()); } catch (e) {} redraw(); }
     else if (id === 'blLim' && canEdit()) { load().set.limit = +t.value; save(); redraw(); }
     else if (id === 'blMc' && canEdit()) { load().set.mic = t.checked; if (!t.checked) stopListen(); save(); redraw(); }
   });
@@ -319,14 +358,12 @@
     viewHTML() {
       style(); load();
       if (!st.fbInit) { st.fbInit = true; st.i = firstOpen(); }
-      return `<h1 style="font-size:26px;margin-top:14px">Bolo</h1><p class="mut" style="margin:4px 0 0">Bolo aur seekho. Mic dabao, bolo, Orbit sunega.</p>
-        <div class="bl-status" style="margin-top:12px" role="status"><span>${st.listening ? 'Mic chalu hai. Sirf sunta hai, awaaz save nahi hoti.' : 'Mic band hai. Awaaz save nahi hoti.'}</span></div>
-        ${modeChips()}${subPick()}${card()}${parent()}`;
+      return `<h1 class="bl-sr">Bolo</h1>${modeChips()}${subPick()}${card()}${parent()}`;
     },
-    leave() { stopListen(); stopSay(); save(); },
+    leave() { stopListen(); stopSay(); clearAdv(); save(); },
     // Kid mode: what the parent's phone may see (no audio, no text), and the limit / mic switch the parent set there.
     summary() { const d = today(); return { day: C.dayKey(), sec: d.sec, ok: d.ok, redo: d.redo, total: totalDone() }; },
     applyRemote(set) { const s = load(); if (set && set.limit) s.set.limit = Math.min(30, Math.max(5, Math.round(+set.limit / 5) * 5)); if (set && typeof set.mic === 'boolean') { s.set.mic = set.mic; if (!set.mic) stopListen(); } save(); redraw(); },
-    _reset() { stopListen(); store = null; Object.assign(st, { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, err: '', unlocked: false, parOpen: false, pinMsg: '', fbInit: false, aiOff: false, busy: false }); }
+    _reset() { stopListen(); clearAdv(); store = null; Object.assign(st, { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, err: '', unlocked: false, parOpen: false, pinMsg: '', fbInit: false, aiOff: false, busy: false, enter: true }); }
   };
 })();

@@ -65,7 +65,8 @@ t('settings can be edited only when no PIN or unlocked', /canEdit\(\)/.test(C) &
 t('listening stops after a time limit', /LISTEN_MS/.test(C) && /setTimeout\(\(\) => \{ if \(rec === r\)/.test(C));
 t('mic is off while the daily limit is over', /function listen\(\) \{\s*if \(aiOn\(\)\) return listenAI\(\);\s*if \(over\(\)/.test(C) && /async function listenAI\(\) \{\s*if \(over\(\)/.test(C));
 t('page escapes text it shows', /esc\(it\.big\)/.test(C) && /esc\(it\.sub\)/.test(C) && /esc\(st\.fb\.t\)/.test(C));
-t('no emoji in the page or the core', !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(C) && !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(read('public/bolo-core.js')));
+const EMO = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2728}\u{2B50}]/u, FLYLINE = (C.match(/^.*const FLY = .*$/m) || [''])[0];
+t('emoji only in the Shabaash pop-up (the FLY line), nowhere else in the page, never as icons, none in the core', EMO.test(FLYLINE) && !EMO.test(C.replace(FLYLINE, '')) && !EMO.test(read('public/bolo-core.js')));
 t('page does not say Premium', !/premium/i.test(C));
 
 // ---- Assamese byanjan: 40 recorded clips + the mouth video ----
@@ -93,6 +94,7 @@ t('byanjan mode still has its own clips', B.items('byanjan').length === B.BYANJA
 t('asvyanjan: Hindi engine text (Devanagari) counts as the Assamese word', say(AV[0], 'कल') && say(AV[3], 'घर') && say(AV[5], 'चराई') && say(AV[16], 'धान'));
 t('asvyanjan: letter heard with a vowel sign counts as the letter', say(AV[0], 'কা') && say(AV[0], 'का') && say(AV[1], 'খো') && say(AV[6], 'ছি'));
 t('asvyanjan: a different letter or word is still refused', !say(AV[0], 'खा') && !say(AV[0], 'घर') && !say(AV[2], 'कल'));
-t('bolo.js: Assamese listens in as, bn, hi in turn and the child is praised aloud', /AS_LANGS = \['as-IN', 'bn-IN', 'hi-IN'\]/.test(C) && /nextAsLang\(\)/.test(C) && /if \(ok\) say\('शाबाश!', 'hi-IN'\)/.test(C));
+t('bolo.js: Assamese listens in as, bn, hi in turn and the child is praised aloud', /AS_LANGS = \['as-IN', 'bn-IN', 'hi-IN'\]/.test(C) && /nextAsLang\(\)/.test(C) && /say\('शाबाश!', 'hi-IN'\)/.test(C));
+t('Bolo has no Sunao button; a wrong answer plays the item by itself; Shabaash pop-up moves on by itself', !/data-bl="hear"/.test(C) && /else speak\(it\);/.test(C) && /advT = setTimeout\(afterPraise, PRAISE_MS\)/.test(C) && /class="bl-praise"/.test(C));
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
