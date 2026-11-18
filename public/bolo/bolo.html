@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="as">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bolo – ব্যঞ্জনবর্ণ</title>
+<style>
+  :root{--bg:#f4f8ff;--card:#fff;--ink:#12203a;--mut:#5b6b88;--ok:#1a9d5a;--bad:#d64545;--acc:#2f6fed}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1626;--card:#18233b;--ink:#eef3ff;--mut:#9fb0d0}}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+  .card{background:var(--card);border-radius:24px;padding:24px;width:100%;max-width:420px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.12)}
+  #letter{font-size:140px;line-height:1.2;min-height:170px;font-weight:700;transition:transform .2s}
+  #letter.pop{transform:scale(1.12)}
+  #status{color:var(--mut);height:24px;margin:4px 0 12px}
+  .bar{height:10px;background:rgba(127,127,127,.2);border-radius:6px;overflow:hidden;margin:10px 0}
+  .bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .15s}
+  #meter{height:8px;background:rgba(127,127,127,.2);border-radius:6px;overflow:hidden;margin:6px 0 16px;opacity:0}
+  #meter.on{opacity:1}
+  #meter i{display:block;height:100%;width:0;background:var(--ok)}
+  button{font-size:18px;padding:14px 28px;border:0;border-radius:14px;background:var(--acc);color:#fff;cursor:pointer}
+  button.sec{background:transparent;color:var(--mut);font-size:14px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div id="letter">ক</div>
+  <div id="status">Start dabao</div>
+  <div id="meter"><i></i></div>
+  <div class="bar"><i id="prog"></i></div>
+  <button id="start">Start</button><br>
+  <button id="stop" class="sec" hidden>Rok do</button>
+</div>
+
+<script>
+/* ===== CONFIG ===== */
+const LETTERS = ['ক','খ','গ','ঘ','ঙ','চ','ছ','জ','ঝ','ঞ','ট','ঠ','ড','ঢ','ণ','ত','থ','দ','ধ','ন','প','ফ','ব','ভ','ম',
+                 'য','ৰ','ল','ৱ','শ','ষ','স','হ','ক্ষ','ড়','ঢ়','য়','ৎ','ং','ঃ','ঁ'];   // audio/01.mp3 ... audio/41.mp3
+const AUDIO_DIR    = 'audio/';
+const AFTER_MS     = 2800;   // clip khatam hone ke baad itni der aur wait (bachhe ke bolne ka time)
+const GAP_MS       = 400;
+const MIN_VOICE_MS = 250;    // itni der threshold se upar awaaz ho to "bola" maano
+const COUNT_DURING_CLIP = true; // false = sirf clip ke BAAD ki awaaz count hogi (speaker leak se bachne ke liye)
+const UPLOAD_URL   = '/api/bolo/session';
+const CHILD_ID     = new URLSearchParams(location.search).get('child') || 'child1';
+
+/* ===== STATE ===== */
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let stream, ctx, analyser, rec, chunks = [], recStart = 0, running = false;
+let session = [], win = null, threshold = 0.02, sampler = null, lvlBuf;
+
+function playClip(i){
+  return new Promise((res, rej) => {
+    const a = new Audio(AUDIO_DIR + String(i+1).padStart(2,'0') + '.mp3');
+    a.onended = res; a.onerror = rej; a.play().catch(rej);
+  });
+}
+
+function level(){
+  analyser.getFloatTimeDomainData(lvlBuf);
+  let s = 0; for (const v of lvlBuf) s += v*v;
+  return Math.sqrt(s / lvlBuf.length);
+}
+
+/* har 40ms par mic level dekho; current letter-window me voiced time jodo */
+function startSampler(){
+  let last = performance.now();
+  sampler = setInterval(() => {
+    const now = performance.now(), l = level(), dt = now - last; last = now;
+    $('meter').firstElementChild.style.width = Math.min(100, l/threshold*35) + '%';
+    if (win){
+      win.peak = Math.max(win.peak, l);
+      if (l > threshold && (COUNT_DURING_CLIP || !win.inClip)) win.voiced += dt;
+    }
+  }, 40);
+}
+
+/* Shuru me clip bajao (bachha chup rahe) -> speaker leak ka level naap kar threshold banao */
+async function calibrate(){
+  $('status').textContent = 'Chup raho, sirf suno...';
+  let max = 0;
+  const t = setInterval(() => { max = Math.max(max, level()); }, 30);
+  try{ await playClip(0); }catch(e){}
+  await sleep(500);
+  clearInterval(t);
+  return Math.max(0.02, max * 1.8);
+}
+
+async function run(){
+  running = true; session = []; chunks = [];
+  $('start').hidden = true; $('stop').hidden = false;
+  try{
+    /* SIRF mic. getDisplayMedia / captureStream / WebAudio se clip ko recorder me nahi jodte,
+       isliye device audio direct record nahi hota. Speaker ki awaaz jo hawa se mic me aati hai
+       use echoCancellation kam karta hai. */
+    stream = await navigator.mediaDevices.getUserMedia({audio:{
+      echoCancellation:true, noiseSuppression:true, autoGainControl:false, voiceIsolation:true
+    }});
+  }catch(e){ $('status').textContent = 'Mic ki permission do'; running = false; $('start').hidden = false; $('stop').hidden = true; return; }
+
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = ctx.createAnalyser(); analyser.fftSize = 1024; lvlBuf = new Float32Array(analyser.fftSize);
+  ctx.createMediaStreamSource(stream).connect(analyser);   // sirf analysis ke liye; destination se nahi joda
+
+  /* poore session ki EK continuous recording */
+  rec = new MediaRecorder(stream);
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  const stopped = new Promise(r => rec.onstop = r);
+  rec.start(1000);
+  recStart = performance.now();
+  $('meter').classList.add('on');
+  startSampler();
+
+  threshold = await calibrate();
+
+  for (let i = 0; i < LETTERS.length && running; i++){
+    $('letter').textContent = LETTERS[i];
+    $('letter').classList.add('pop'); setTimeout(() => $('letter').classList.remove('pop'), 200);
+    $('prog').style.width = (i / LETTERS.length * 100) + '%';
+    $('status').textContent = 'Saath me bolo 🎤';
+
+    win = {voiced:0, peak:0, inClip:true};
+    const startMs = Math.round(performance.now() - recStart);
+    try{ await playClip(i); }catch(e){ console.warn('audio fail', i, e); }
+    win.inClip = false;
+    await sleep(AFTER_MS);
+    const endMs = Math.round(performance.now() - recStart);
+    session.push({index:i+1, letter:LETTERS[i], startMs, endMs, spoke: win.voiced >= MIN_VOICE_MS, peak:+win.peak.toFixed(3)});
+    win = null;
+    await sleep(GAP_MS);
+  }
+
+  clearInterval(sampler); $('meter').classList.remove('on');
+  rec.state !== 'inactive' && rec.stop();
+  await stopped;
+  $('prog').style.width = '100%';
+  $('status').textContent = running ? 'Shabash! 🎉' : 'Roka gaya';
+  await finish();
+}
+
+async function finish(){
+  stream.getTracks().forEach(t => t.stop()); ctx.close();
+  running = false; $('stop').hidden = true; $('start').hidden = false; $('start').textContent = 'Phir se';
+  if (!session.length) return;
+
+  const silent = session.filter(s => !s.spoke);
+  const report = {
+    childId: CHILD_ID, ts: Date.now(), total: session.length,
+    spokeCount: session.length - silent.length,
+    silentLetters: silent.map(s => s.letter),
+    letters: session            // har letter ka startMs/endMs: parent recording me seedha wahin jump kar sakta hai
+  };
+  const fd = new FormData();
+  fd.append('report', JSON.stringify(report));
+  fd.append('recording', new Blob(chunks, {type: rec.mimeType}), 'session' + (rec.mimeType.includes('mp4') ? '.mp4' : '.webm'));
+  try{
+    const r = await fetch(UPLOAD_URL, {method:'POST', body:fd});
+    if (!r.ok) throw new Error(r.status);
+  }catch(e){ console.warn('upload fail', e); $('status').textContent += ' (upload nahi hua)'; }
+}
+
+$('start').onclick = run;
+$('stop').onclick  = () => { running = false; };
+</script>
+</body>
+</html>
