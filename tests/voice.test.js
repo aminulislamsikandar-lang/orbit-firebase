@@ -59,11 +59,12 @@ t('server: the voice block exists before the custom-course routes', i0 > 0 && i1
 const block = src.slice(i0, i1);
 const routes = {}, app = { post: (p, h) => { routes[p] = h; } };
 const QUIZ = { courses: [{ id: 'c5-sci', class: 5, subject: 'Science', chapters: [{ no: 1, title: 'Plants', context: NOTES, sections: [{ title: 'Q', questions: [{ id: 'q1', no: 1, text: 'Why do plants need light?' }] }] }, { no: 2, title: 'Empty', sections: [] }, { no: 3, title: 'No notes', sections: [{ title: 'Q', questions: [{ id: 'q2', no: 1, text: 'Q?' }] }] }] }] };
+let boloLeft = 2, boloDaily = 40, boloRefunds = 0; const boloQuota = { take: async () => boloLeft-- > 0, refund: async () => { boloRefunds++; } };
 let gCalls = [], gReply = { text: '{}' }, guardOk = true, fetchCalls = [], fetchReply = null, limitedNow = false;
-const mkRes = () => { const r = { code: 200, body: null, status(c) { r.code = c; return r; }, json(b) { r.body = b; return r; } }; return r; };
-const makeRoutes = () => new Function('app', 'VOICE', 'RECALL', 'QUIZ', 'CUSTOM', 'userKeyOf', 'guardAI', 'geminiFor', 'failMsgFor', 'aiLimiter', 'rateKey', 'fetch', 'AbortSignal', 'process', 'console', 'Buffer', block)(
+const mkRes = () => { const r = { code: 200, statusCode: 200, body: null, fin: [], status(c) { r.code = r.statusCode = c; return r; }, json(b) { r.body = b; r.fin.forEach(f => f()); return r; }, on(e, f) { if (e === 'finish') r.fin.push(f); } }; return r; };
+const makeRoutes = () => new Function('app', 'VOICE', 'RECALL', 'QUIZ', 'CUSTOM', 'userKeyOf', 'guardAI', 'geminiFor', 'failMsgFor', 'aiLimiter', 'rateKey', 'BOLO_QUOTA', 'BOLO_FREE_DAILY', 'fetch', 'AbortSignal', 'process', 'console', 'Buffer', block)(
   app, V, RECALL, QUIZ, CUSTOM, req => String(req.headers['x-user-key'] || ''), (req, res) => { if (!guardOk) { res.status(429).json({ error: 'slow' }); return false; } return true; },
-  async (req, system, prompt, opts) => { gCalls.push({ system, prompt, opts }); return gReply; }, (req, s) => 'AI error ' + s, { hit: () => limitedNow }, () => 'k',
+  async (req, system, prompt, opts) => { gCalls.push({ system, prompt, opts }); return gReply; }, (req, s) => 'AI error ' + s, { hit: () => limitedNow }, () => 'k', boloQuota, boloDaily,
   async (url, o) => { fetchCalls.push({ url, o }); return fetchReply; }, { timeout: () => undefined }, { env: {} }, { error() {} }, Buffer);
 makeRoutes();
 const KEY = 'AIza' + 'k'.repeat(30);
@@ -123,6 +124,20 @@ const clip = { mime: 'audio/webm;codecs=opus', data: Buffer.alloc(3000, 1).toStr
   gReply = { text: '{"ok":true,"heard":"ay for apple","tip":"Shabaash!"}' };
   r = await call('/api/bolo/check', { kind: 'letter', expected: 'A for Apple', audio: clip }, '');
   t('bolo route: refused without the parent key (403), before any AI call', r.code === 403 && r.body.code === 'need_parent_key');
+  // free Assamese check (server key, daily limit, no parent key)
+  gReply = { text: '{"ok":true,"heard":"ক","tip":"Shabaash!"}' };
+  r = await call('/api/bolo/check', { kind: 'asm', expected: 'ক, কল', audio: clip }, '');
+  t('bolo route: an Assamese letter/word check is free without the parent key (200)', r.code === 200 && r.body.ok === true && gCalls.length > 0);
+  r = await call('/api/bolo/check', { kind: 'asletter', expected: 'ক', audio: clip }, ''); t('bolo route: the Assamese letter-only check is free too', r.code === 200);
+  const nFree = gCalls.length;
+  r = await call('/api/bolo/check', { kind: 'asm', expected: 'ক, কল', audio: clip }, '');
+  t('bolo route: when the free daily checks are used up: 429 limit_reached (bolo), no AI call', r.code === 429 && r.body.code === 'limit_reached' && r.body.kind === 'bolo' && gCalls.length === nFree);
+  r = await call('/api/bolo/check', { kind: 'line', expected: 'Twinkle', audio: clip }, '');
+  t('bolo route: a non-Assamese check still needs the parent key', r.code === 403 && r.body.code === 'need_parent_key');
+  boloLeft = 5; boloRefunds = 0; gReply = { status: 503 };
+  r = await call('/api/bolo/check', { kind: 'asm', expected: 'ক, কল', audio: clip }, '');
+  t('bolo route: a failed free AI call gives the daily use back', r.code === 502 && boloRefunds === 1);
+  gReply = { text: '{"ok":true,"heard":"ay for apple","tip":"Shabaash!"}' };
   const nb = gCalls.length;
   r = await call('/api/bolo/check', { kind: 'letter', expected: 'A for Apple', audio: clip });
   const gb = gCalls[gCalls.length - 1];

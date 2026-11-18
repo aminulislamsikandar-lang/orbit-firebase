@@ -8,7 +8,7 @@
 'use strict';
 
 const COLLECTION = 'dailyUsage';
-const KINDS = ['recall', 'ai', 'photos'];   // Recall free check, custom-course AI calls, custom-course photo reads
+const KINDS = ['recall', 'ai', 'photos', 'bolo'];   // Recall free check, custom-course AI calls, custom-course photo reads, Bolo Assamese voice checks
 const DAY_MS = 86400000;
 
 const istDay = (now = Date.now) => new Date(now() + 19800000).toISOString().slice(0, 10);
@@ -26,7 +26,7 @@ function createMemoryQuota(max, now = Date.now) {
 }
 
 // db = admin.firestore() (or a fake with the same calls), or null when Firestore is not set up: then everything is in memory.
-// kind = 'recall' | 'ai' | 'photos'. Every method is async. take/refund use ONE transaction (one read + one small write),
+// kind = 'recall' | 'ai' | 'photos' | 'bolo'. Every method is async. take/refund use ONE transaction (one read + one small write),
 // so two requests at the same moment can not both get the last use.
 function createStoredQuota({ db, kind, max, now = Date.now, log = console }) {
   if (!KINDS.includes(kind)) throw new Error('unknown limit kind: ' + kind);

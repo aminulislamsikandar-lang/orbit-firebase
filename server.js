@@ -122,6 +122,11 @@ const takeFree = uid => RECALL_QUOTA.take(uid);
 const refundFree = uid => RECALL_QUOTA.refund(uid);
 const freeLeft = uid => RECALL_QUOTA.left(uid);
 setInterval(() => RECALL_QUOTA.prune(), 3600000).unref();
+// Bolo, Assamese modes: the AI voice check (Gemini hears the child) is free for every student on the server's key, up to BOLO_FREE_DAILY checks a day
+// (0 turns it off). With the parent's own key there is no limit. The browser only sends the clip when the parent has ticked the permission.
+const BOLO_FREE_DAILY = (() => { const n = parseInt(process.env.BOLO_FREE_DAILY || '40', 10); return Number.isFinite(n) && n >= 0 ? n : 40; })();
+const BOLO_QUOTA = LIMITS.createStoredQuota({ db: FSDB, kind: 'bolo', max: Math.max(1, BOLO_FREE_DAILY) });
+setInterval(() => BOLO_QUOTA.prune(), 3600000).unref();
 
 // Chapter topics (Task 31) live in Firestore chapterTopics/<course>_<chapter>: written only here (admin route below), read by every signed-in student.
 // topicsOf() returns the saved doc or null (no Firestore, no topics yet, or an error). Kept 1 hour in memory so a Recall check costs no extra read.
@@ -815,10 +820,18 @@ app.post('/api/talk/turn', async (req, res) => {
 
 app.post('/api/bolo/check', async (req, res) => {
   const b = req.body || {};
-  if (!needParentKey(req, res)) return;
-  const o = VOICE.sanitizeBolo(b); if (!o) return res.status(400).json({ error: 'Bolo ki detail sahi nahi hai.' });
+  const o = VOICE.sanitizeBolo(b);
+  // Assamese letters and words: free for everyone on the server's key (daily limit); every other Bolo check still needs the parent's key
+  const freeAs = !userKeyOf(req) && BOLO_FREE_DAILY > 0 && !!o && (o.kind === 'asm' || o.kind === 'asletter');
+  if (!freeAs && !needParentKey(req, res)) return;
+  if (!o) return res.status(400).json({ error: 'Bolo ki detail sahi nahi hai.' });
   const a = RECALL.checkAudio(b.audio); if (!a.ok) return res.status(400).json({ error: a.error });
   if (!(await guardAI(req, res))) return;
+  if (freeAs) {   // a failed AI call gives the use back
+    const uid = req.user.uid;
+    if (!(await BOLO_QUOTA.take(uid))) return res.status(429).json({ code: 'limit_reached', kind: 'bolo', error: 'Aaj ke free awaaz check ho gaye (' + BOLO_FREE_DAILY + '). Phone ka awaaz-milao chalta rahega.' });
+    if (typeof res.on === 'function') res.on('finish', () => { if (res.statusCode >= 400) Promise.resolve(BOLO_QUOTA.refund(uid)).catch(() => {}); });
+  }
   const r = await geminiFor(req, VOICE.BOLO_SYSTEM, VOICE.buildBoloPrompt(o), { json: true, temperature: 0.1, maxTokens: 300, audio: { mime: a.mime, data: a.data }, reqMs: 20000, budgetMs: 35000 });
   const out = r.text ? VOICE.parseBolo(r.text) : null;
   if (!out) return res.status(502).json({ error: r.text ? 'AI ka jawab samajh nahi aaya. Dobara bolo.' : failMsgFor(req, r.status) });

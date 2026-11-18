@@ -94,7 +94,10 @@
   const hasKey = () => !!(g.PARENT_KEY && g.PARENT_KEY.has && g.PARENT_KEY.has());
   const OKKEY = () => 'orbit.voice.ok.' + uid();
   const aiTick = () => { try { return g.localStorage.getItem(OKKEY()) === '1'; } catch (e) { return false; } };
-  const aiOn = () => hasKey() && CAN_REC && aiTick() && typeof g.api === 'function' && !st.aiOff;
+  // Assamese modes: the AI check also works without the parent's key (the server's free daily checks); it still needs the parent's tick. When the day's free checks
+  // are used up, or it fails once, the other two listeners (browser, voice match) carry on.
+  const freeAs = () => asMode() && !st.freeOff;
+  const aiOn = () => (hasKey() || freeAs()) && CAN_REC && aiTick() && typeof g.api === 'function' && !st.aiOff;
   const AI_MS = 6000;
   let aiRec = null, aiStream = null, aiChunks = [], aiTimer = 0, aiDrop = false;
   let fuseSR = null, onSRDone = null;   // the browser listener that runs next to the recording in the Assamese modes
@@ -126,11 +129,20 @@
       }));
       return vmCache[mode];
     }
-    const cues = C.AS_CUES;
-    const buf = await decodeBuf(ac, await (await g.fetch(items[0].src)).arrayBuffer()), pcm = buf.getChannelData(0), sr = buf.sampleRate;
-    const cut = (a, b) => pcm.subarray(Math.max(0, Math.round(a * sr)), Math.round(b * sr));
-    // three recordings per item: the letter, the word, and both
-    vmCache[mode] = items.map((_, i) => [cut(cues[2 * i] - 0.1, cues[2 * i] + 0.7), cut(cues[2 * i + 1] - 0.1, cues[2 * i + 1] + 0.8), cut(cues[2 * i] - 0.1, cues[2 * i + 1] + 0.8)].map(p => V.features(p, sr)).filter(f => f.length));
+    // the teacher recordings: the main one, and a second one when AS_CUES2 is filled in (its failing to load never stops the first)
+    const srcs = [{ src: items[0].src, cues: C.AS_CUES }];
+    if (C.AS_CUES2 && C.AS_CUES2.length === C.AS_CUES.length) srcs.push({ src: C.AS_SRC2, cues: C.AS_CUES2, optional: true });
+    const perSrc = [];
+    for (const o of srcs) {
+      try {
+        const buf = await decodeBuf(ac, await (await g.fetch(o.src)).arrayBuffer()), pcm = buf.getChannelData(0), sr = buf.sampleRate, cues = o.cues;
+        const cut = (a, b) => pcm.subarray(Math.max(0, Math.round(a * sr)), Math.round(b * sr));
+        // three recordings per item: the letter, the word, and both
+        perSrc.push(items.map((_, i) => [cut(cues[2 * i] - 0.1, cues[2 * i] + 0.7), cut(cues[2 * i + 1] - 0.1, cues[2 * i + 1] + 0.8), cut(cues[2 * i] - 0.1, cues[2 * i + 1] + 0.8)].map(p => V.features(p, sr)).filter(f => f.length)));
+      } catch (e) { if (!o.optional) throw e; }
+    }
+    // every recording is a separate reference: the child is compared with each one and the closest counts
+    vmCache[mode] = items.map((_, i) => [].concat(...perSrc.map(r => r[i])));
     return vmCache[mode];
   }
   async function matchLocal(blob, idx) {
@@ -140,7 +152,7 @@
       const q = g.VMATCH.featuresMulti(buf.getChannelData(0), buf.sampleRate);
       if (!onScreen() || st.i !== idx) return;
       if (!q.length) { st.asMiss = (st.asMiss || 0) + 1; st.err = 'Awaaz saaf nahi aayi. Mic ke paas zor se bolo: "' + list()[idx].say + '"'; redraw(); return; }
-      const res = g.VMATCH.decide(g.VMATCH.distances(q, refs), idx, { k: 2, ratio: 0.9 });
+      const res = g.VMATCH.decide(g.VMATCH.distances(q, refs), idx, { k: 3, ratio: 0.95 });
       if (!res.ok) st.asMiss = (st.asMiss || 0) + 1;
       mark(res.ok);
     } finally { try { ac.close(); } catch (e) {} }
@@ -427,7 +439,7 @@
     const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:60px' : 'font-size:104px';
     const bigHTML = by && g.BYANJAN_VIDEO ? g.BYANJAN_VIDEO.stageHTML(it, C.PLACES) : `<div class="bl-big" style="${big}">${esc(it.big)}</div>`;
     const micOff = !s.set.mic;
-    const aiAsk = hasKey() && CAN_REC && !aiTick() ? '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13.5px"><input type="checkbox" id="blAiOk" style="margin-top:3px"><span>Parent ki ijazat: AI se jaanch ke liye bachhe ki awaaz Gemini ko jayegi (Orbit save nahi karta). Tick na ho to browser khud check karega.</span></label>' : '';
+    const aiAsk = (hasKey() || freeAs()) && CAN_REC && !aiTick() ? '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13.5px"><input type="checkbox" id="blAiOk" style="margin-top:3px"><span>Parent ki ijazat: AI se jaanch ke liye bachhe ki awaaz Gemini ko jayegi (Orbit save nahi karta). Tick na ho to phone khud check karega.</span></label>' : '';
     const msg = by && !recOn() ? 'Suno, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? (aiOn() ? 'AI sun raha hai...' : 'Awaaz check ho rahi hai...') : recOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : localMatch() ? (by ? 'Mic dabao aur letter bolo' : 'Mic dabao aur bolo: letter aur shabd, jaise "ক, কল"') : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
     const self = (by && !recOn()) || (!by && !SR && !recOn() && !micOff) || ((asv || by) && (st.asMiss || 0) >= 2) ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
     const skip = `<button class="bl-skip" data-bl="next" aria-label="Aage" ${last ? 'disabled' : ''}>${ICON.next}</button>`;

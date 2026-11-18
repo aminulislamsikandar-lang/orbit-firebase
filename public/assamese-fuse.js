@@ -17,9 +17,9 @@
     const rank = 1 + dists.filter((d, i) => i !== target && d < dists[target]).length;
     const ratio = dists[target] / med, bestRatio = sorted[0] / med, best = dists.indexOf(sorted[0]);
     let state = 'no';
-    if (rank === 1 && ratio <= 0.75) state = 'strong_yes';
-    else if (rank <= 2 && ratio <= 0.9) state = 'yes';
-    else if (best !== target && bestRatio <= 0.75 && ratio > 0.9) state = 'strong_no';   // the clip clearly sounds like another item, and not like the target
+    if (rank === 1 && ratio <= 0.8) state = 'strong_yes';
+    else if (best !== target && bestRatio <= 0.6 && ratio > 0.9) state = 'strong_no';   // the clip clearly sounds like another item, and not like the target
+    else if (rank <= 3 && ratio <= 0.95) state = 'yes';   // easier on purpose: small children are hard to match
     return { state, rank, ratio, bestRatio, best };
   }
 

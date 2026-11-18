@@ -61,6 +61,11 @@
   const AS_CUES = [1.25, 2.8, 4.99, 6.71, 8.63, 10.56, 12.33, 13.97, 16.29, 17.85, 19.62, 21.2, 23.17, 25.02, 26.87, 28.55, 30.26, 31.71, 33.58, 35.24, 37.02, 38.68, 40.62, 42.08, 43.76, 45.36, 47.06, 48.6, 50.38, 51.95, 53.56, 55.24, 56.94, 58.59, 60.08, 61.59, 63.24, 64.79, 66.6, 68.15, 69.83, 71.33, 72.87, 74.31, 75.8, 77.35];
   const AS_TOTAL = 78.3;
   const AS_SRC = '/bolo-audio/assamese-vyanjan.mp3?v=' + AUDIO_V;
+  // A second teacher recording of the same 23 items (same order: letter, word, letter, word...). Only the voice match uses it: the child's voice is compared with
+  // both recordings separately and the closer one counts. Put the file in public/bolo-audio/ and the cue times from `node scripts/find-cues.js <file>` here;
+  // while AS_CUES2 is null nothing changes.
+  const AS_SRC2 = '/bolo-audio/assamese-vyanjan2.mp3?v=' + AUDIO_V;
+  const AS_CUES2 = null;
   const AS_ROWS = [
     ['ক', 'ka', 'কল', 'kal', 'banana'], ['খ', 'kha', 'খৰাহি', 'kharahi', 'basket'], ['গ', 'ga', 'গছ', 'gos', 'tree'], ['ঘ', 'gha', 'ঘৰ', 'ghor', 'house'], ['ঙ', 'nga', 'নাঙল', 'nangal', 'plough'],
     ['চ', 'ca', 'চৰাই', 'sorai', 'bird'], ['ছ', 'cha', 'ছাগলী', 'sagoli', 'goat'], ['জ', 'ja', 'জোন', 'jon', 'moon'], ['ঝ', 'jha', 'ঝৰ্ণা', 'jhorna', 'waterfall'],
@@ -161,5 +166,5 @@
   const dayKey = d => { d = d || new Date(); const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); };
   const fmtTime = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 
-  return { WORDS, POEMS, TABLES, BYANJAN_DATA, BYANJAN_MS, AS_ROWS, AS_CUES, matchAsm, PLACES, byanjanAudio, LETTER_SOUNDS, items, stateKey, norm, tokens, numbersIn, check, matchLetter, matchLine, matchNumber, dayKey, fmtTime };
+  return { WORDS, POEMS, TABLES, BYANJAN_DATA, BYANJAN_MS, AS_ROWS, AS_CUES, AS_SRC2, AS_CUES2, matchAsm, PLACES, byanjanAudio, LETTER_SOUNDS, items, stateKey, norm, tokens, numbersIn, check, matchLetter, matchLine, matchNumber, dayKey, fmtTime };
 });

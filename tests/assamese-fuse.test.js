@@ -42,5 +42,14 @@ const flat = Array(23).fill(10); flat[3] = 9.8; flat[4] = 9.7; flat[5] = 9.6;
 t('no clear winner (noise): no, never yes', ['no'].includes(F.vmState(flat, 3).state));
 t('no distances or an infinite target: none', F.vmState([], 0).state === 'none' && F.vmState([Infinity, 1], 0).state === 'none' && F.vmState(null, 0).state === 'none');
 
+// easier pass (third closest still counts) and the second recording
+const third = Array(23).fill(10); third[5] = 5; third[6] = 6; third[3] = 8.2;
+t('target is third closest but clearly under the median: yes', F.vmState(third, 3).state === 'yes', JSON.stringify(F.vmState(third, 3)));
+const fourth = Array(23).fill(10); fourth[5] = 5; fourth[6] = 6; fourth[7] = 7; fourth[3] = 8.2;
+t('target is fourth closest: still not yes', F.vmState(fourth, 3).state !== 'yes');
+{ const V = require('../public/voicematch-core.js'), mk = (f) => { const a = []; for (let i = 0; i < 30; i++) { const v = new Float32Array(12); for (let c = 0; c < 12; c++) v[c] = Math.sin(i * 0.3 * (c + 1) * f); a.push(v); } return a; };
+  const q = mk(1), refsOne = [[mk(2.2)], [mk(3.1)]], refsTwo = [[mk(2.2), mk(1)], [mk(3.1)]];
+  t('a second recording that sounds like the child brings the item closer', V.distances(q, refsTwo)[0] < V.distances(q, refsOne)[0] && V.distances(q, refsTwo)[0] < 1e-6); }
+
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

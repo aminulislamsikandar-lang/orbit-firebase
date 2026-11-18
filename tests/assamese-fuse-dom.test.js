@@ -58,6 +58,10 @@ function boot(o) {
   w.AudioContext = class { decodeAudioData(ab, ok) { const x = new Float32Array(ab); const r = { getChannelData: () => x, sampleRate: SR16, length: x.length }; if (ok) ok(r); return Promise.resolve(r); } close() {} };
   w.fetch = async url => { const b = REF[String(url).split('?')[0]]; if (!b) throw new Error('no ' + url); return { arrayBuffer: async () => b }; };
   if (o.ai) { w.PARENT_KEY = { has: () => true }; w.localStorage.setItem('orbit.voice.ok.u1', '1'); w.api = async (u, body) => { log.api.push(body); return { ok: o.ai === 'yes', tip: o.ai === 'yes' ? 'Shabaash AI!' : 'Phir se' }; }; }
+  if (o.free) {   // no parent key: the server's free Assamese checks ('yes' = AI hears it right, 'limit' = the day's free checks are used up)
+    w.PARENT_KEY = { has: () => false }; if (!o.noTick) w.localStorage.setItem('orbit.voice.ok.u1', '1');
+    w.api = async (u, body) => { log.api.push(body); if (o.free === 'limit') throw new Error('Aaj ke free awaaz check ho gaye'); return { ok: true, tip: 'Shabaash AI!' }; };
+  }
   w.FileReader = class { readAsDataURL() { this.result = 'data:audio/webm;base64,AAAA'; setTimeout(() => this.onload && this.onload(), 0); } };
   w.Audio = class { play() { return Promise.resolve(); } pause() {} };
   ['bolo-core.js', 'voicematch-core.js', 'assamese-fuse.js', 'byanjan-video.js', 'bolo.js'].forEach(f => w.eval(rd(f)));
@@ -130,6 +134,17 @@ function boot(o) {
   b = boot({ mode: 'byanjan', sr: 'yes', clip: good, ai: 'no' });
   await b.mic(false, 1500);
   t('parent AI says no: it outweighs the browser and the voice match', !/Shabaash!/.test(b.txt().replace(/Shabaash AI!/g, '')) && b.w.BOLO.lastFuse().verdict !== 'pass');
+
+  // ---- free AI check without the parent's key (Assamese modes only, parent's tick still needed) ----
+  b = boot({ mode: 'byanjan', sr: 'no', clip: good, free: 'yes' });
+  await b.mic(false, 1500);
+  t('no parent key, tick on: the AI is still asked in an Assamese mode (server free check)', b.log.api.length === 1 && b.w.BOLO.lastFuse().ai === 'yes' && /Shabaash/.test(b.txt()));
+  b = boot({ mode: 'byanjan', sr: 'no', clip: good, free: 'yes', noTick: true });
+  await b.mic(false, 1500);
+  t('no parent key and no tick: the clip is never sent', b.log.api.length === 0 && b.w.BOLO.lastFuse().ai === 'none');
+  b = boot({ mode: 'byanjan', sr: 'no', clip: good, free: 'limit' });
+  await b.mic(false, 1500);
+  t('free checks used up: the AI step fails quietly, the voice match still decides', b.log.api.length === 1 && b.w.BOLO.lastFuse().ai === 'none' && b.w.BOLO.lastFuse().vm !== 'none');
 
   // ---- asvyanjan (letter + word, one recording with 23 items) ----
   const asGood = cat(child(word3(0), 21), gapOf(0.3), child(word3(23), 22));   // the child says the letter, then the word
