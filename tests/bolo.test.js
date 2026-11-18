@@ -58,12 +58,12 @@ t('service worker cache was bumped past v26', Number((/orbit-shell-v(\d+)/.exec(
 t('Permissions-Policy still allows the microphone for the app', /microphone=\(self\)/.test(read('firebase.json')));
 
 // privacy and safety of the page
-t('page never writes the recognised text or audio anywhere', !/localStorage\.setItem\([^)]*(alts|transcript)/.test(C) && !/fetch\(|XMLHttpRequest|sendBeacon/.test(C) && !/localStorage\.setItem\([^)]*(blob|chunks|clip|audio)/i.test(C) && /const aiOn = \(\) => hasKey\(\) && CAN_REC && aiTick\(\)/.test(C) && (C.match(/getUserMedia\(/g) || []).length === 1 && C.indexOf('getUserMedia(') > C.indexOf('async function listenAI()') && /function listen\(\) \{\n    if \(aiOn\(\)\) return listenAI\(\);/.test(C));   // Phase 5: the mic is opened for the AI check only (parent key + parent tick); the only network call is api('/api/bolo/check')
+t('page never writes the recognised text or audio anywhere', !/localStorage\.setItem\([^)]*(alts|transcript)/.test(C) && !/(?<![.\w])fetch\(|XMLHttpRequest|sendBeacon/.test(C) && (C.match(/g\.fetch\([^)]*\)/g) || []).every(x => /items\[0\]\.src|it\.audio/.test(x)) && !/localStorage\.setItem\([^)]*(blob|chunks|clip|audio)/i.test(C) && /const aiOn = \(\) => hasKey\(\) && CAN_REC && aiTick\(\)/.test(C) && (C.match(/getUserMedia\(/g) || []).length === 1 && C.indexOf('getUserMedia(') > C.indexOf('async function listenAI()') && /function listen\(\) \{\n    if \(recOn\(\)\) return listenAI\(\);/.test(C));   // Phase 5: the mic is opened for the AI check only (parent key + parent tick); the only network call is api('/api/bolo/check')
 t('page keeps only marks, time and settings', /prog/.test(C) && /days/.test(C) && !/alts\b[^;\n]*save/.test(C));
 t('PIN is stored as a SHA-256 hash, never plain', /crypto\.subtle\.digest\('SHA-256'/.test(C) && /s\.set\.pin = h/.test(C));
 t('settings can be edited only when no PIN or unlocked', /canEdit\(\)/.test(C) && (C.match(/canEdit\(\)/g) || []).length >= 3);
 t('listening stops after a time limit', /LISTEN_MS/.test(C) && /setTimeout\(\(\) => \{ if \(rec === r\)/.test(C));
-t('mic is off while the daily limit is over', /function listen\(\) \{\s*if \(aiOn\(\)\) return listenAI\(\);\s*if \(over\(\)/.test(C) && /async function listenAI\(\) \{\s*if \(over\(\)/.test(C));
+t('mic is off while the daily limit is over', /function listen\(\) \{\s*if \(recOn\(\)\) return listenAI\(\);\s*if \(over\(\)/.test(C) && /async function listenAI\(\) \{\s*if \(over\(\)/.test(C));
 t('page escapes text it shows', /esc\(it\.big\)/.test(C) && /esc\(it\.sub\)/.test(C) && /esc\(st\.fb\.t\)/.test(C));
 const EMO = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2728}\u{2B50}]/u, FLYLINE = (C.match(/^.*const FLY = .*$/m) || [''])[0];
 t('emoji only in the Shabaash pop-up (the FLY line), nowhere else in the page, never as icons, none in the core', EMO.test(FLYLINE) && !EMO.test(C.replace(FLYLINE, '')) && !EMO.test(read('public/bolo-core.js')));

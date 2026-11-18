@@ -97,6 +97,7 @@
   const aiOn = () => hasKey() && CAN_REC && aiTick() && typeof g.api === 'function' && !st.aiOff;
   const AI_MS = 6000;
   let aiRec = null, aiStream = null, aiChunks = [], aiTimer = 0, aiDrop = false;
+  let fuseSR = null, onSRDone = null;   // the browser listener that runs next to the recording in the Assamese modes
   function aiStop(drop) {
     clearTimeout(aiTimer); aiDrop = !!drop;
     try { if (aiRec && aiRec.state !== 'inactive') aiRec.stop(); } catch (e) {}
@@ -105,10 +106,128 @@
     if (drop) { st.listening = false; aiChunks = []; }
   }
   const b64 = blob => new Promise((ok, no) => { const f = new g.FileReader(); f.onload = () => ok(String(f.result).split(',')[1] || ''); f.onerror = () => no(new Error('Recording padh nahi paye.')); f.readAsDataURL(blob); });
+  // ---- Awaaz milao (Assamese): the browser cannot hear Assamese, so the child's clip is compared on the phone with the teacher's recording of every item ----
+  // public/voicematch-core.js does the comparing (MFCC + DTW with a voice-size search). No key, no internet, nothing leaves the phone.
+  const asMode = () => st.mode === 'asvyanjan' || st.mode === 'byanjan';
+  const localMatch = () => asMode() && CAN_REC && !!g.VMATCH && !st.vmOff;
+  // Assamese: the browser listener, the voice match and (with the parent's key) the AI check all hear the same attempt, and public/assamese-fuse.js weighs them.
+  const fuseOn = () => localMatch() && !!g.AFUSE;
+  const recOn = () => aiOn() || localMatch();
+  const decodeBuf = (ac, ab) => new Promise((ok, no) => { const p = ac.decodeAudioData(ab, ok, no); if (p && p.then) p.then(ok, no); });
+  const vmCache = {};
+  async function vmRefs(ac) {
+    const mode = st.mode;
+    if (vmCache[mode]) return vmCache[mode];
+    const items = C.items(mode), V = g.VMATCH;
+    if (mode === 'byanjan') {   // one teacher recording per letter
+      vmCache[mode] = await Promise.all(items.map(async it => {
+        const b = await decodeBuf(ac, await (await g.fetch(it.audio)).arrayBuffer()), f = V.features(b.getChannelData(0), b.sampleRate);
+        return f.length ? [f] : [];
+      }));
+      return vmCache[mode];
+    }
+    const cues = C.AS_CUES;
+    const buf = await decodeBuf(ac, await (await g.fetch(items[0].src)).arrayBuffer()), pcm = buf.getChannelData(0), sr = buf.sampleRate;
+    const cut = (a, b) => pcm.subarray(Math.max(0, Math.round(a * sr)), Math.round(b * sr));
+    // three recordings per item: the letter, the word, and both
+    vmCache[mode] = items.map((_, i) => [cut(cues[2 * i] - 0.1, cues[2 * i] + 0.7), cut(cues[2 * i + 1] - 0.1, cues[2 * i + 1] + 0.8), cut(cues[2 * i] - 0.1, cues[2 * i + 1] + 0.8)].map(p => V.features(p, sr)).filter(f => f.length));
+    return vmCache[mode];
+  }
+  async function matchLocal(blob, idx) {
+    const AC = g.AudioContext || g.webkitAudioContext, ac = new AC();
+    try {
+      const buf = await decodeBuf(ac, await blob.arrayBuffer()), refs = await vmRefs(ac);
+      const q = g.VMATCH.featuresMulti(buf.getChannelData(0), buf.sampleRate);
+      if (!onScreen() || st.i !== idx) return;
+      if (!q.length) { st.asMiss = (st.asMiss || 0) + 1; st.err = 'Awaaz saaf nahi aayi. Mic ke paas zor se bolo: "' + list()[idx].say + '"'; redraw(); return; }
+      const res = g.VMATCH.decide(g.VMATCH.distances(q, refs), idx, { k: 2, ratio: 0.9 });
+      if (!res.ok) st.asMiss = (st.asMiss || 0) + 1;
+      mark(res.ok);
+    } finally { try { ac.close(); } catch (e) {} }
+  }
+  // stops the recording about a second after the child has finished speaking
+  // ---- Fusion: the three listeners of one attempt ----
+  const NONE = { state: 'none' };
+  async function vmScore(blob, idx) {   // voice match: how well the clip fits each teacher recording
+    const AC = g.AudioContext || g.webkitAudioContext, ac = new AC();
+    try {
+      const buf = await decodeBuf(ac, await blob.arrayBuffer()), refs = await vmRefs(ac);
+      const q = g.VMATCH.featuresMulti(buf.getChannelData(0), buf.sampleRate);
+      return q.length ? g.AFUSE.vmState(g.VMATCH.distances(q, refs), idx) : NONE;
+    } finally { try { ac.close(); } catch (e) {} }
+  }
+  async function aiCheck(blob, item) {   // the parent's AI check (only when the parent turned it on)
+    const j = await g.api('/api/bolo/check', { kind: item.match.kind === 'self' ? 'asletter' : item.match.kind, expected: item.say, audio: { mime: String(blob.type).split(';')[0], data: await b64(blob) } });
+    return { state: j.ok ? 'yes' : 'no', tip: j.tip };
+  }
+  // A letter on its own (byanjan) has no word to match, so the browser's text is checked as the letter alone (with a matra, in Bengali or in Hindi letters).
+  const srHit = (item, alts) => item.match.kind === 'self' ? alts.some(a => C.matchAsm({ letter: item.big, word: '', roman: [] }, a)) : C.check(item, alts);
+  // The browser's own listener runs at the same time as the recording. It is one more opinion: when a phone can not run both, or it hears nothing,
+  // the other listeners decide alone. A language the phone does not have moves on to the next one (Assamese, Bengali, Hindi).
+  function startSR(item) {
+    if (!SR) return { p: Promise.resolve(NONE), stop() {} };
+    let done = false, cur = null, tries = 0, settle;
+    const p = new Promise(ok => { settle = ok; });
+    const fin = v => {
+      if (done) return; done = true;
+      if (cur) { const c = cur; cur = null; c.onresult = c.onerror = c.onend = null; try { c.abort(); } catch (e) {} }
+      settle(v); if (onSRDone) onSRDone(v);
+    };
+    const go = () => {
+      let r; try { r = new SR(); } catch (e) { return fin(NONE); }
+      cur = r; r.lang = AS_LANGS[(st.asLang || 0) % AS_LANGS.length]; r.interimResults = false; r.maxAlternatives = 3; r.continuous = false;
+      r.onresult = e => {
+        const res = e.results && e.results[0], alts = res ? Array.from(res).map(x => x.transcript) : [];
+        fin(alts.length ? { state: srHit(item, alts) ? 'yes' : 'no', alts } : NONE);
+      };
+      r.onerror = e => {
+        const code = e && e.error;
+        if (code === 'aborted') return;
+        if (code === 'language-not-supported' && ++tries < AS_LANGS.length) { nextAsLang(); cur = null; try { r.abort(); } catch (x) {} return go(); }
+        fin({ state: 'none', err: code });
+      };
+      r.onend = () => { if (cur === r) fin(NONE); };
+      try { r.start(); } catch (e) { fin(NONE); }
+    };
+    go();
+    return { p, stop() { fin(NONE); } };
+  }
+  async function finishFuse(blob, item, idx, sr) {
+    const late = ms => new Promise(ok => setTimeout(() => ok(NONE), ms));
+    const srP = sr ? Promise.race([sr.p, late(1800)]) : Promise.resolve(NONE);
+    const vmP = blob ? vmScore(blob, idx).catch(() => NONE) : Promise.resolve(NONE);
+    const aiP = blob && aiOn() ? aiCheck(blob, item).catch(() => { st.aiOff = true; return NONE; }) : Promise.resolve(NONE);
+    const [s, v, a] = await Promise.all([srP, vmP, aiP]);
+    if (sr) { sr.stop(); fuseSR = null; }
+    if (!onScreen() || st.i !== idx) return;
+    const d = g.AFUSE.decide({ sr: s, vm: v, ai: a });
+    st.fuse = d;
+    if (d.verdict === 'pass') mark(true);
+    else {
+      st.asMiss = (st.asMiss || 0) + 1;
+      if (s.state === 'no') nextAsLang();
+      if (d.verdict === 'fail') mark(false);
+      else { st.err = d.verdict === 'unsure' ? 'Thoda aur dheere aur saaf bolo: \"' + item.say + '\"' : 'Kuch sunai nahi diya. Mic ke paas zor se bolo: \"' + item.say + '\"'; redraw(); }
+    }
+    if (a.tip) { st.fb = { ok: d.verdict === 'pass', t: a.tip }; redraw(); }
+  }
+  function watchSilence(stream) {
+    try {
+      const AC = g.AudioContext || g.webkitAudioContext, ac = new AC(), an = ac.createAnalyser(), buf = new Float32Array(1024);
+      an.fftSize = 1024; ac.createMediaStreamSource(stream).connect(an);
+      let heard = 0, quiet = 0;
+      const iv = setInterval(() => {
+        if (!aiRec) { clearInterval(iv); try { ac.close(); } catch (e) {} return; }
+        an.getFloatTimeDomainData(buf); let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+        if (Math.sqrt(s / buf.length) > 0.015) { heard++; quiet = 0; } else if (heard > 3 && ++quiet >= 10) { clearInterval(iv); try { ac.close(); } catch (e) {} aiStop(false); }
+      }, 100);
+    } catch (e) {}
+  }
   async function listenAI() {
     if (over() || !load().set.mic || st.listening) return;
     stopSay(); st.fb = null; st.err = '';
-    const item = list()[st.i];
+    const item = list()[st.i], idx = st.i, local = !aiOn(), fuse = fuseOn();   // local: voice match only; otherwise the AI check; fuse: both and the browser listener together
+    let sr = null;
     try { aiStream = await g.navigator.mediaDevices.getUserMedia({ audio: true }); }
     catch (e) { st.err = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? 'Browser ne mic ki ijazat nahi di. Address bar mein mic allow karo.' : 'Mic nahi mila. Phone ka mic check karo.'; return redraw(); }
     const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(m => g.MediaRecorder.isTypeSupported && g.MediaRecorder.isTypeSupported(m)) || '';
@@ -117,27 +236,36 @@
     r.ondataavailable = e => { if (e.data && e.data.size) aiChunks.push(e.data); };
     r.onstop = async () => {
       const chunks = aiChunks; aiChunks = []; st.listening = false;
-      if (aiDrop || !chunks.length) return redraw();
+      if (aiDrop || (!chunks.length && !fuse)) return redraw();
       st.busy = true; redraw();
       try {
-        const blob = new g.Blob(chunks, { type: mime || r.mimeType || 'audio/webm' });
+        const blob = chunks.length ? new g.Blob(chunks, { type: mime || r.mimeType || 'audio/webm' }) : null;
+        if (fuse) { await finishFuse(blob, item, idx, sr); st.busy = false; redraw(); return; }
+        if (local) { await matchLocal(blob, idx); st.busy = false; redraw(); return; }
         const j = await g.api('/api/bolo/check', { kind: item.match.kind === 'self' ? 'asletter' : item.match.kind, expected: item.say, audio: { mime: String(blob.type).split(';')[0], data: await b64(blob) } });
         st.busy = false;
         if (!onScreen()) return;
         mark(!!j.ok); if (j.tip && !j.ok) { st.fb = { ok: false, t: j.tip }; redraw(); }
       } catch (e) {
+        if (fuse) { st.busy = false; st.err = 'Awaaz check nahi ho paya. Dobara bolo.'; return redraw(); }
+        if (local) { st.busy = false; st.vmOff = true; st.err = 'Awaaz check nahi ho paya, ab browser se check hoga. Dobara bolo.'; return redraw(); }   // the browser check takes over
         st.busy = false; st.aiOff = true;   // the browser check takes over
         st.err = (e && e.message ? e.message + ' ' : '') + 'AI check nahi ho paya, ab browser se check hoga. Dobara bolo.'; redraw();
       }
     };
     try { r.start(); } catch (e) { aiStop(true); st.err = 'Mic shuru nahi ho paya. Dobara try karo.'; return redraw(); }
-    aiTimer = setTimeout(() => aiStop(false), AI_MS);   // 6 seconds is plenty for a letter, a table line or a poem line
+    aiTimer = setTimeout(() => aiStop(false), AI_MS); if (local || fuse) watchSilence(aiStream);
+    if (fuse) {   // the browser listener starts now, next to the recording; once it has an answer the recording ends a moment later
+      onSRDone = v => { if (v && v.state !== 'none') setTimeout(() => { if (aiRec === r) aiStop(false); }, 350); };
+      sr = fuseSR = startSR(item);
+    }   // 6 seconds is plenty for a letter, a table line or a poem line
     redraw();
   }
 
   // ---- voice in ----
   let rec = null, recTimer = 0;
   function stopListen() {
+    if (fuseSR) { const f = fuseSR; fuseSR = null; f.stop(); }
     aiStop(true);
     clearTimeout(recTimer); st.listening = false;
     if (rec) { const r = rec; rec = null; r.onresult = r.onerror = r.onend = null; try { r.abort(); } catch (e) {} }
@@ -172,7 +300,7 @@
     return st.asMiss >= 2 ? 'Browser Assamese awaaz nahi pakad paa raha. Neeche "Maine bol diya" dabao.' : '';
   }
   function listen() {
-    if (aiOn()) return listenAI();
+    if (recOn()) return listenAI();
     if (over() || !load().set.mic || st.listening || !SR) return;
     stopSay(); stopListen(); st.fb = null; st.err = '';
     let r; try { r = new SR(); } catch (e) { st.err = 'Mic shuru nahi ho paya. Dobara try karo.'; redraw(); return; }
@@ -300,10 +428,10 @@
     const bigHTML = by && g.BYANJAN_VIDEO ? g.BYANJAN_VIDEO.stageHTML(it, C.PLACES) : `<div class="bl-big" style="${big}">${esc(it.big)}</div>`;
     const micOff = !s.set.mic;
     const aiAsk = hasKey() && CAN_REC && !aiTick() ? '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13.5px"><input type="checkbox" id="blAiOk" style="margin-top:3px"><span>Parent ki ijazat: AI se jaanch ke liye bachhe ki awaaz Gemini ko jayegi (Orbit save nahi karta). Tick na ho to browser khud check karega.</span></label>' : '';
-    const msg = by && !aiOn() ? 'Suno, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? 'AI sun raha hai...' : aiOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
-    const self = (by && !aiOn()) || (!by && !SR && !micOff) || (asv && (st.asMiss || 0) >= 2 && !aiOn()) ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
+    const msg = by && !recOn() ? 'Suno, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? (aiOn() ? 'AI sun raha hai...' : 'Awaaz check ho rahi hai...') : recOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : localMatch() ? (by ? 'Mic dabao aur letter bolo' : 'Mic dabao aur bolo: letter aur shabd, jaise "ক, কল"') : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
+    const self = (by && !recOn()) || (!by && !SR && !recOn() && !micOff) || ((asv || by) && (st.asMiss || 0) >= 2) ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
     const skip = `<button class="bl-skip" data-bl="next" aria-label="Aage" ${last ? 'disabled' : ''}>${ICON.next}</button>`;
-    const mic = `<div class="bl-micw">${by && !aiOn() ? '' : `<button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || st.praise || (!SR && !aiOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>`}${skip}</div>`;
+    const mic = `<div class="bl-micw">${by && !recOn() ? '' : `<button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || st.praise || (!SR && !recOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>`}${skip}</div>`;
     const enter = st.enter; st.enter = false;
     const title = st.mode === 'table' ? st.table + ' ka table' : st.mode === 'poem' ? (C.POEMS.find(p => p.id === st.poem) || C.POEMS[0]).title : by ? 'অসমীয়া ব্যঞ্জন' : asv ? 'ব্যঞ্জন + শব্দ' : 'A se Z';
     return `<div class="bl-stage${enter ? ' bl-in' : ''}${st.fb && !st.fb.ok ? ' bl-shake' : ''}" style="--rgb:${HUES[st.i % HUES.length]}"><i class="bl-bub"></i><i class="bl-bub"></i><i class="bl-bub"></i>
@@ -356,6 +484,7 @@
   g.document.addEventListener('toggle', e => { if (e.target && e.target.id === 'blPar') st.parOpen = e.target.open; }, true);
 
   g.BOLO = {
+    lastFuse: () => st.fuse,   // how the last Assamese attempt was judged: states and a score only, never the words (used by tests)
     viewHTML() {
       style(); load();
       if (!st.fbInit) { st.fbInit = true; st.i = firstOpen(); }

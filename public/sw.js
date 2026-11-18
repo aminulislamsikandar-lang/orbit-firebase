@@ -10,7 +10,7 @@ const CORE = [
   '/config.js', '/catalog.js', '/custom-course.js', '/warp-loader.js', '/team.js', '/mathvideo-admin.js',
   '/narration-sync.js', '/narration-sprites.js', '/mathvideo-player.js', '/narration-loader.js',
   '/voiceover.js', '/voiceover-admin.js', '/narration-admin.js', '/video-admin.js', '/qvideo.js',
-  '/analytics.js', '/parent-key.js', '/recall.js', '/bolo-core.js', '/bolo-audio/assamese-vyanjan.mp3', '/byanjan-video.js', '/bolo.js', '/kidlink.js', '/vlab.js', '/models3d.js', '/report.js', '/avatar.js', '/studytime.js', '/kidbank.js', '/cloud.js',
+  '/analytics.js', '/parent-key.js', '/recall.js', '/voicematch-core.js', '/assamese-fuse.js', '/bolo-core.js', '/bolo-audio/assamese-vyanjan.mp3', '/byanjan-video.js', '/bolo.js', '/kidlink.js', '/vlab.js', '/models3d.js', '/report.js', '/avatar.js', '/studytime.js', '/kidbank.js', '/cloud.js',
   '/limit-msg.js', '/revision-core.js', '/answer-check.js', '/quiz.js', '/aireview.js', '/classroom.js', '/weekly.js', '/voice-tutor.js',
   '/firebase-config.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png',
   '/questions.json', '/videos.json', '/publicvideos.json'
