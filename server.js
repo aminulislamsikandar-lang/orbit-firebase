@@ -15,13 +15,14 @@ app.disable('x-powered-by');
 app.use(securityHeaders);
 const jsonSmall = express.json({ limit: '10kb' });
 const jsonNarration = express.json({ limit: '128kb' });      // Assamese/Hindi text is 3 bytes per character, so narration text needs more room
+const jsonRec = express.json({ limit: '4.5mb' });               // Bolo "Saath me bolo": the whole recording for the parent (base64, at most 3.2 MB, checked again in bolorec-core.js)
 const jsonAudio = express.json({ limit: '1.5mb' });             // Recall AI voice answer: a short audio clip as base64 (checked again in recall-core.js)
 const jsonPlan = express.json({ limit: '128kb' });             // a video plan with Hindi text is bigger than 10 kb
 const jsonNotes = express.json({ limit: '64kb' });              // a custom question travels with its chapter notes (up to 14000 characters, Assamese is 3 bytes each)
 const NOTES_PATHS = new Set(['/api/read/passage', '/api/answer', '/api/translate', '/api/qtranslate', '/api/more', '/api/visual', '/api/image']);
 const VOICE_AUDIO_PATHS = new Set(['/api/read/evaluate', '/api/talk/turn', '/api/bolo/check']);   // Phase 5: a short recording + the chapter notes
 const jsonImage = express.json({ limit: '4mb' });              // one textbook photo (shrunk by the app to about 0.4 MB) for Add custom course
-app.use((req, res, next) => ((req.path === '/api/custom/extract' || req.path === '/api/answer/check') ? jsonImage : NOTES_PATHS.has(req.path) ? jsonNotes : req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : req.path === '/api/recall/evaluate' ? jsonAudio : VOICE_AUDIO_PATHS.has(req.path) ? jsonAudio : jsonSmall)(req, res, next));
+app.use((req, res, next) => ((req.path === '/api/custom/extract' || req.path === '/api/answer/check') ? jsonImage : NOTES_PATHS.has(req.path) ? jsonNotes : req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : req.path === '/api/bolo/rec/upload' ? jsonRec : req.path === '/api/recall/evaluate' ? jsonAudio : VOICE_AUDIO_PATHS.has(req.path) ? jsonAudio : jsonSmall)(req, res, next));
 
 // The browser reports Content-Security-Policy violations here (the policy is set in firebase.json, in Report-Only mode first). No login, tiny body.
 app.post('/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '8kb' }), cspReport());
@@ -1989,5 +1990,28 @@ app.post('/api/study/push/unsubscribe', studyRoute(STUDY.pushUnsubscribe));
 app.post('/api/study/event', studyRoute(STUDY.event));
 app.get('/api/study/tick', studyRoute(STUDY.tick));
 if (FSDB && STUDY_PUSH) setInterval(() => STUDY.tickCore().catch(e => console.error('[study] tick ' + e.message)), 60000).unref();   // while the server is awake
+
+// ---- Bolo "Saath me bolo": the child's recording for the parent, kept 2 hours (bolorec-core.js, bolorec-routes.js) ----
+// Storage: Backblaze B2 (same bucket, keys bolo-rec/<code>/<id>.bin|json) when B2 is set, else server memory (lost when the server restarts, deleted after 2 hours anyway).
+// A B2 lifecycle rule cannot do 2 hours (minimum 1 day), so the server deletes old files itself (sweep, every 10 minutes and on every upload / list).
+const BOLOREC_STORE = (() => {
+  if (!B2) { const m = new Map(); return { put: async (k, b) => { m.set(k, b); }, get: async k => m.get(k) || null, del: async k => { m.delete(k); }, list: async p => [...m.keys()].filter(k => k.startsWith(p)) }; }
+  const { ListObjectsV2Command, DeleteObjectCommand } = require('@aws-sdk/client-s3'), Bucket = process.env.B2_BUCKET;
+  return {
+    put: async (k, b) => { await B2.send(new PutObjectCommand({ Bucket, Key: k, Body: b, ContentLength: b.length, ContentType: 'application/octet-stream', CacheControl: 'private, no-store' })); },
+    get: async k => { try { const r = await B2.send(new GetObjectCommand({ Bucket, Key: k })); return Buffer.from(await r.Body.transformToByteArray()); } catch (e) { return null; } },
+    del: async k => { await B2.send(new DeleteObjectCommand({ Bucket, Key: k })); },
+    list: async p => { const out = []; let t; do { const r = await B2.send(new ListObjectsV2Command({ Bucket, Prefix: p, ContinuationToken: t })); (r.Contents || []).forEach(o => out.push(o.Key)); t = r.IsTruncated ? r.NextContinuationToken : undefined; } while (t && out.length < 5000); return out; }
+  };
+})();
+const BOLOREC = require('./bolorec-routes').make({ db: FSDB, store: BOLOREC_STORE, now: Date.now });
+const bolorecRoute = h => async (req, res) => {
+  try { const r = await h({ uid: req.user && req.user.uid, body: req.body || {} }); res.status(r.status).json(r.body); }
+  catch (e) { console.error('[bolorec] ' + (e && e.message)); res.status(500).json({ error: 'Kuch gadbad hui. Dobara try karo.' }); }
+};
+app.post('/api/bolo/rec/upload', bolorecRoute(BOLOREC.upload));
+app.post('/api/bolo/rec/list', bolorecRoute(BOLOREC.list));
+app.post('/api/bolo/rec/get', bolorecRoute(BOLOREC.get));
+setInterval(() => BOLOREC.sweep(true).catch(e => console.error('[bolorec] sweep ' + e.message)), 10 * 60 * 1000).unref();
 
 app.listen(PORT, () => console.log('Orbit AI tutor running on port ' + PORT));

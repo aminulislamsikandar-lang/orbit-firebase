@@ -43,3 +43,13 @@ CSP violation: connect-src blocked=https://example.com/x page=https://orbittutor
 ## Reporting a problem
 
 Please tell the project admin directly (do not post a key, a token or a student's data in a public issue). Rotate any key that may have leaked: parents can delete a Gemini key in Google AI Studio at any time.
+
+## Bolo "Saath me bolo" recording (the one place audio is stored)
+
+Everywhere else Orbit never stores a child's voice. Byanjan "Saath me bolo" is the exception, and only when the parent ticks it (Bolo > Parent ke liye, or on the parent's phone in Kid mode):
+
+- The child's phone records the mic from the first letter to the last. Nothing is recognised; only the sound level is measured (`public/bolorec.js`). A letter with no sound is a red alert in the parent's report.
+- The recording goes to `/api/bolo/rec/upload`. Only the child's own login for that code may upload (`kidLinks/{code}.kidUid`). Only a parent who joined that code may list or play it (`kidLinks/{code}/parents/{uid}`). The code alone is not enough.
+- Files live in Backblaze B2 under `bolo-rec/<code>/` (server memory when B2 is not set) and are deleted 2 hours after upload (`TTL_MS` in `public/bolorec-core.js`). B2 lifecycle rules cannot do less than a day, so the server deletes them itself every 10 minutes and on every upload / list.
+- The recording is never sent to an AI and never shown to anyone but the parents of that code.
+- Tests: `tests/bolorec.test.js`, `tests/bolorec-client.test.js`.

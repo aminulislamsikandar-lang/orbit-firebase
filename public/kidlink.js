@@ -2,7 +2,7 @@
 //   Child's phone ("I am a kid"): sees only Bolo. In Bolo > "Parent ke liye" the parent makes an 8-character code (KIDLINK.kidPanelHTML).
 //     The phone shares only a small summary (today's minutes, how many right / to repeat, total right) and reads the limit and mic switch the parent set.
 //   Parent's phone ("I am parent"): sees only the parent screen (KIDLINK.parentHTML): paste the code, see the child's day, set the limit and the mic switch.
-// Data lives in Firestore (window.CLOUD.kids, see firestore.rules: kidLinks). The code is the secret. No audio, no recognised text, no photos are shared.
+// Data lives in Firestore (window.CLOUD.kids, see firestore.rules: kidLinks). The code is the secret. No recognised text and no photos are shared. Audio is shared only for Byanjan "Saath me bolo" and only when the parent ticks it: the recording goes to the parent and is deleted after 2 hours (bolorec.js).
 // The phone's role (kid or parent) is kept on that phone (index.html), so one Google account can be used on both phones.
 (function (g) {
   'use strict';
@@ -64,7 +64,7 @@
     try {
       const r = await C.getSet(S.kid.link.code); if (!r) return;
       let seen = 0; try { seen = +g.localStorage.getItem(REV + S.uid) || 0; } catch (e) {}
-      if (r.rev > seen) { try { g.localStorage.setItem(REV + S.uid, String(r.rev)); } catch (e) {} if (g.BOLO && g.BOLO.applyRemote) g.BOLO.applyRemote({ limit: r.limit, mic: r.mic }); }
+      if (r.rev > seen) { try { g.localStorage.setItem(REV + S.uid, String(r.rev)); } catch (e) {} if (g.BOLO && g.BOLO.applyRemote) g.BOLO.applyRemote({ limit: r.limit, mic: r.mic, rec: r.rec === true }); }
     } catch (e) {}
   }
   // Inside Bolo's "Parent ke liye" box. edit: false while a parent PIN is set and not entered, so the child can not make a code or leave Kid mode.
@@ -128,7 +128,7 @@
   }
   async function parSet(code, patch) {
     const C = cloud(), k = S.par.kids.find(x => x.code === code); if (!C || !k) return;
-    const cur = k.set || { limit: 10, mic: true }, next = { limit: patch.limit != null ? patch.limit : cur.limit, mic: patch.mic != null ? patch.mic : cur.mic, rev: Date.now(), at: Date.now() };
+    const cur = k.set || { limit: 10, mic: true, rec: false }, next = { limit: patch.limit != null ? patch.limit : cur.limit, mic: patch.mic != null ? patch.mic : cur.mic, rec: patch.rec != null ? !!patch.rec : cur.rec === true, rev: Date.now(), at: Date.now() };
     try { await C.putSet(code, next); k.set = next; S.par.err = ''; S.par.msg = 'Bachche ke phone par agli baar khulte hi lag jayega.'; } catch (e) { S.par.err = fail(e); }
     draw();
   }
@@ -184,6 +184,8 @@
         <div class="bl-row" style="margin-top:14px"><label for="klLim-${esc(k.code)}">Roz ki limit</label><b id="klLimV-${esc(k.code)}">${lim} min</b></div>
         <input id="klLim-${esc(k.code)}" data-kl-lim="${esc(k.code)}" type="range" min="5" max="30" step="5" value="${lim}" style="width:100%;accent-color:#22c55e">
         <label class="bl-row" style="justify-content:flex-start"><input type="checkbox" data-kl-mic="${esc(k.code)}" ${mic ? 'checked' : ''} style="accent-color:#22c55e"> Mic allow hai</label>
+        <label class="bl-row" style="justify-content:flex-start"><input type="checkbox" data-kl-rec="${esc(k.code)}" ${k.set && k.set.rec === true ? 'checked' : ''} style="accent-color:#22c55e"> Byanjan "Saath me bolo": bachhe ki awaaz record hokar mujhe mile (2 ghante)</label>
+        ${g.BOLOREC ? g.BOLOREC.parentHTML(k.code) : ''}
         <div class="chips" style="margin-top:8px"><button class="chip" data-kl="leave" data-v="${esc(k.code)}">Is bachche se judna band karo</button></div></div>`;
     }).join('');
     return `<h1 style="font-size:26px;margin-top:14px">Parent</h1><p class="mut" style="margin:4px 0 0">Bachche ka Bolo ka din dekho aur limit badlo.</p>
@@ -210,11 +212,12 @@
     const t = e.target; if (!t || !t.dataset) return;
     if (t.dataset.klLim) parSet(t.dataset.klLim, { limit: +t.value });
     else if (t.dataset.klMic) parSet(t.dataset.klMic, { mic: !!t.checked });
+    else if (t.dataset.klRec) parSet(t.dataset.klRec, { rec: !!t.checked });
   });
   g.document.addEventListener('input', e => { const t = e.target; if (t && t.dataset && t.dataset.klLim) { const l = g.document.getElementById('klLimV-' + t.dataset.klLim); if (l) l.textContent = t.value + ' min'; } });
   // every 30 s: the child's phone reads the parent's settings, the parent's phone refreshes the child's day
   // The parent's screen is not redrawn while a code is being typed or a slider is being used (a redraw would wipe it).
-  const editing = () => { const a = g.document.activeElement, c = g.document.getElementById('klCode'); return !!((c && c.value) || (a && (a.id === 'klCode' || (a.dataset && (a.dataset.klLim || a.dataset.klMic))))); };
+  const editing = () => { const a = g.document.activeElement, c = g.document.getElementById('klCode'); return !!((c && c.value) || (a && (a.id === 'klCode' || (a.dataset && (a.dataset.klLim || a.dataset.klMic || a.dataset.klRec)))) || !!(g.BOLOREC && g.BOLOREC.busy())); };
   function tick() {
     if (!S.uid || (g.document.visibilityState && g.document.visibilityState !== 'visible')) return;
     if (role() === 'kid') pull(); else if (role() === 'parent' && !editing()) parLoad(true);
@@ -223,6 +226,7 @@
 
   g.KIDLINK = {
     normCode, goodCode, fmt, joinCode, kidPanelHTML, parentHTML, touch,
+    kidCode: () => (S.kid.link && S.kid.link.code) || '',
     setUser(u) { const id = u && u.uid ? u.uid : ''; if (id === S.uid) return; S.uid = id; S.kid = { loaded: false, busy: false, err: '', msg: '', link: null, parents: 0 }; S.par = { loaded: false, busy: false, err: '', msg: '', kids: [] }; },
     _state: S, _pull: pull, _push: push, _tick: tick
   };

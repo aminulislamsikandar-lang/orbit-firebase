@@ -1,6 +1,6 @@
 // public/bolo.js - Bolo screen: the child speaks (A to Z, tables, poems), the browser's speech recognition listens, bolo-core.js checks it.
 // index.html calls BOLO.viewHTML() for the "Bolo" page. Normally no server and no AI cost. Only with the parent's Gemini key AND the parent's tick (Task 28) the child's short clip goes to the AI (/api/bolo/check) for the sahi / dobara check.
-// Privacy: Orbit never records, uploads or stores audio or the recognised text. Only "sahi / dobara" marks, time used and the parent's settings are kept, on THIS device (per account).
+// Privacy: normally Orbit never records, uploads or stores audio or the recognised text. The one exception is Byanjan "Saath me bolo" and only when the parent ticks it (Parent ke liye): the child's voice is then recorded and sent to the parent's phone and deleted after 2 hours (bolorec.js). Nothing is recognised. Only "sahi / dobara" marks, time used and the parent's settings are kept, on THIS device (per account).
 (function () {
   'use strict';
   const g = window, C = g.BOLO_CORE;
@@ -31,7 +31,7 @@
       if (j && typeof j === 'object') {
         store.set = Object.assign(store.set, j.set || {});
         store.set.limit = Math.min(30, Math.max(5, Math.round((+store.set.limit || 10) / 5) * 5));
-        store.set.mic = store.set.mic !== false; store.set.pin = typeof store.set.pin === 'string' ? store.set.pin : '';
+        store.set.mic = store.set.mic !== false; store.set.rec = store.set.rec === true; store.set.pin = typeof store.set.pin === 'string' ? store.set.pin : '';
         store.prog = j.prog && typeof j.prog === 'object' ? j.prog : {}; store.days = j.days && typeof j.days === 'object' ? j.days : {};
       }
     } catch (e) {}
@@ -56,7 +56,7 @@
   const hasPin = () => !!load().set.pin;
   const canEdit = () => !hasPin() || st.unlocked;
   function firstOpen() { const m = marks(), n = list().length; for (let i = 0; i < n; i++) if (m[i] !== 'd') return i; return 0; }
-  function reset(mode) { stopListen(); stopSay(); clearAdv(); if (mode) st.mode = mode; st.fb = null; st.err = ''; st.enter = true; st.i = firstOpen(); }
+  function reset(mode) { if (st.auto) st.auto.cancel = true; stopListen(); stopSay(); clearAdv(); if (mode) st.mode = mode; st.fb = null; st.err = ''; st.enter = true; st.i = firstOpen(); }
 
   // ---- voice out ----
   // Byanjan items carry a recorded voice clip (item.audio) and a mouth "video" (byanjan-video.js); everything else uses the browser voice.
@@ -432,6 +432,32 @@
   // The Shabaash pop-up: it shows by itself and goes by itself (taps pass through it), then the next item comes.
   const praiseHTML = () => st.praise ? `<div class="bl-praise" role="status"><div><b>Shabaash!</b><span>${esc(st.praise)}</span><span class="bl-em" aria-hidden="true">${FLY.slice(0, 5).join(' ')}</span></div>${FLY.concat(FLY).map((e, i) => `<span class="bl-fly" aria-hidden="true" style="left:${6 + i * 8}%;animation-delay:${(i % 4) * 0.12}s">${e}</span>`).join('')}</div>` : '';
 
+  // ---- Byanjan "Saath me bolo": letters play one after another, the mic stays on from the first to the last, a silent letter is a red alert (bolorec.js) ----
+  // Needs: the parent's tick (set.rec), the mic switch on, and a Kid-mode code (the recording goes to that parent). Nothing is recognised.
+  const recOK = () => !!(g.BOLOREC && g.BOLOREC.can() && load().set.rec === true && load().set.mic && !over() && g.KIDLINK && g.KIDLINK.kidCode && g.KIDLINK.kidCode());
+  let alertT = 0;
+  function autoHTML() {
+    const red = st.alert ? `<div role="alert" style="margin-top:10px;background:#d64545;color:#fff;border-radius:12px;padding:10px;text-align:center;font-weight:700">Red alert: awaaz nahi aayi (<span lang="as">${esc(st.alert)}</span>)</div>` : '';
+    if (st.auto) return `${red}<div class="bl-two" style="margin-top:10px"><button class="btn bl-sec" data-bl="autostop">Rok do</button></div>`;
+    const note = st.note ? `<p class="mut" role="status" style="margin:10px 0 0;text-align:center">${esc(st.note)}</p>` : '';
+    return `${red}${note}${recOK() ? '<div class="bl-two" style="margin-top:10px"><button class="btn" data-bl="auto">Saath me bolo (shuru)</button></div>' : ''}`;
+  }
+  async function autoRun() {
+    if (st.auto || !recOK()) return;
+    reset('byanjan'); stopSay();
+    const items = list(), A = st.auto = { cancel: false };
+    st.i = 0; st.note = ''; st.err = ''; st.alert = null; redraw();
+    const r = await g.BOLOREC.run({
+      items, code: g.KIDLINK.kidCode(), api: g.api, clipMs: i => items[i].ms || 1000,
+      step: i => { if (st.auto !== A) return; st.i = i; st.fb = null; st.enter = true; redraw(); speak(items[i]); },
+      silent: i => { if (st.auto !== A) return; st.alert = items[i].big; redraw(); clearTimeout(alertT); alertT = setTimeout(() => { st.alert = null; if (onScreen()) redraw(); }, 1800); },
+      cancelled: () => A.cancel || !onScreen()
+    });
+    stopSay(); if (st.auto === A) st.auto = null;
+    st.note = r.err ? r.err : r.sent ? 'Recording parent ko bhej di gayi (2 ghante tak sunai ja sakti hai). Awaaz nahi aayi: ' + r.silent + ' letter.' : '';
+    if (onScreen()) redraw();
+  }
+
   function card() {
     const s = load(), items = list(), it = items[st.i], m = marks(), done = items.filter((_, i) => m[i] === 'd').length, last = st.i >= items.length - 1;
     if (over()) return `<div class="card"><h2 class="sec" style="margin:0 0 6px">Aaj ka time poora hua</h2><p class="mut" style="margin:0">Kal dobara bolenge. Aaj ${today().ok} baar sahi bola.</p><p class="mut" style="margin:10px 0 0">Parent ne roz ki limit ${s.set.limit} minute rakhi hai.</p></div>`;
@@ -440,10 +466,11 @@
     const bigHTML = by && g.BYANJAN_VIDEO ? g.BYANJAN_VIDEO.stageHTML(it, C.PLACES) : `<div class="bl-big" style="${big}">${esc(it.big)}</div>`;
     const micOff = !s.set.mic;
     const aiAsk = (hasKey() || freeAs()) && CAN_REC && !aiTick() ? '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13.5px"><input type="checkbox" id="blAiOk" style="margin-top:3px"><span>Parent ki ijazat: AI se jaanch ke liye bachhe ki awaaz Gemini ko jayegi (Orbit save nahi karta). Tick na ho to phone khud check karega.</span></label>' : '';
-    const msg = by && !recOn() ? 'Suno, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? (aiOn() ? 'AI sun raha hai...' : 'Awaaz check ho rahi hai...') : recOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : localMatch() ? (by ? 'Mic dabao aur letter bolo' : 'Mic dabao aur bolo: letter aur shabd, jaise "ক, কল"') : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
-    const self = (by && !recOn()) || (!by && !SR && !recOn() && !micOff) || ((asv || by) && (st.asMiss || 0) >= 2) ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
+    const msg = st.auto ? 'Saath-saath bolte jao.' : by && !recOn() ? 'Suno, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? (aiOn() ? 'AI sun raha hai...' : 'Awaaz check ho rahi hai...') : recOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : localMatch() ? (by ? 'Mic dabao aur letter bolo' : 'Mic dabao aur bolo: letter aur shabd, jaise "ক, কল"') : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
+    const self = st.auto ? '' : (by && !recOn()) || (!by && !SR && !recOn() && !micOff) || ((asv || by) && (st.asMiss || 0) >= 2) ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
     const skip = `<button class="bl-skip" data-bl="next" aria-label="Aage" ${last ? 'disabled' : ''}>${ICON.next}</button>`;
-    const mic = `<div class="bl-micw">${by && !recOn() ? '' : `<button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || st.praise || (!SR && !recOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>`}${skip}</div>`;
+    const mic = st.auto ? '' : `<div class="bl-micw">${by && !recOn() ? '' : `<button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || st.praise || (!SR && !recOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>`}${skip}</div>`;
+    const autoUI = by ? autoHTML() : '';
     const enter = st.enter; st.enter = false;
     const title = st.mode === 'table' ? st.table + ' ka table' : st.mode === 'poem' ? (C.POEMS.find(p => p.id === st.poem) || C.POEMS[0]).title : by ? 'অসমীয়া ব্যঞ্জন' : asv ? 'ব্যঞ্জন + শব্দ' : 'A se Z';
     return `<div class="bl-stage${enter ? ' bl-in' : ''}${st.fb && !st.fb.ok ? ' bl-shake' : ''}" style="--rgb:${HUES[st.i % HUES.length]}"><i class="bl-bub"></i><i class="bl-bub"></i><i class="bl-bub"></i>
@@ -452,7 +479,7 @@
       ${bigHTML}<p class="bl-sub" ${by ? 'lang="as"' : ''}>${by && it.sub === it.big ? '' : esc(it.sub)}</p>
       ${mic}<p class="bl-msg" role="status">${msg}</p>
       ${st.err ? `<p class="err" role="alert" style="text-align:center">${esc(st.err)}</p>` : ''}
-      ${st.fb && !st.fb.ok ? `<div class="bl-fb" role="status">${esc(st.fb.t)}</div>` : ''}${self}${aiAsk}</div>${praiseHTML()}`;
+      ${st.fb && !st.fb.ok ? `<div class="bl-fb" role="status">${esc(st.fb.t)}</div>` : ''}${self}${aiAsk}${autoUI}</div>${praiseHTML()}`;
   }
 
   function parent() {
@@ -467,6 +494,7 @@
       <div class="bl-row"><label for="blLim">Roz ki limit</label><b id="blLimV">${s.set.limit} min</b></div>
       <input id="blLim" type="range" min="5" max="30" step="5" value="${s.set.limit}" style="width:100%" ${edit ? '' : 'disabled'}>
       <label class="bl-row" style="justify-content:flex-start"><input type="checkbox" id="blMc" ${s.set.mic ? 'checked' : ''} ${edit ? '' : 'disabled'}> Mic allow hai (parent ki ijazat)</label>
+      ${g.BOLOREC && g.BOLOREC.can() ? `<label class="bl-row" style="justify-content:flex-start"><input type="checkbox" id="blRc" ${s.set.rec ? 'checked' : ''} ${edit ? '' : 'disabled'}> Byanjan "Saath me bolo": bachhe ki awaaz record hoke parent ke phone par jaye (2 ghante)</label>` : ''}
       <table class="bl-tbl"><tr><td>Aaj boli gayi cheezein</td><td>${d.ok + d.redo}</td></tr><tr><td>Sahi</td><td>${d.ok}</td></tr><tr><td>Dobara karni hain</td><td>${d.redo}</td></tr><tr><td>Ab tak sahi (sab mode)</td><td>${totalDone()}</td></tr></table>
       ${g.KIDLINK ? g.KIDLINK.kidPanelHTML(edit) : ''}
       ${lock}${pinBox}${st.pinMsg ? `<p class="mut" role="status" style="margin:8px 0 0">${esc(st.pinMsg)}</p>` : ''}
@@ -484,12 +512,15 @@
     else if (a === 'next') { stopListen(); stopSay(); clearAdv(); st.i = Math.min(list().length - 1, st.i + 1); st.fb = null; st.err = ''; st.enter = true; redraw(); if (st.mode === 'byanjan') speak(list()[st.i]); }
     else if (a === 'mic') { if (aiRec) aiStop(false); else listen(); }
     else if (a === 'self') mark(v === '1', true);
+    else if (a === 'auto') autoRun();
+    else if (a === 'autostop') { if (st.auto) st.auto.cancel = true; stopSay(); }
     else if (a === 'pin') pinAction(v);
   });
   g.document.addEventListener('change', e => {
     const t = e.target, id = t && t.id;
     if (id === 'blAiOk') { try { t.checked ? g.localStorage.setItem(OKKEY(), '1') : g.localStorage.removeItem(OKKEY()); } catch (e) {} redraw(); }
     else if (id === 'blLim' && canEdit()) { load().set.limit = +t.value; save(); redraw(); }
+    else if (id === 'blRc' && canEdit()) { load().set.rec = t.checked; save(); redraw(); }
     else if (id === 'blMc' && canEdit()) { load().set.mic = t.checked; if (!t.checked) stopListen(); save(); redraw(); }
   });
   g.document.addEventListener('input', e => { if (e.target && e.target.id === 'blLim') { const l = g.document.getElementById('blLimV'); if (l) l.textContent = e.target.value + ' min'; } });
@@ -502,10 +533,10 @@
       if (!st.fbInit) { st.fbInit = true; st.i = firstOpen(); }
       return `<h1 class="bl-sr">Bolo</h1>${modeChips()}${subPick()}${card()}${parent()}`;
     },
-    leave() { stopListen(); stopSay(); clearAdv(); save(); },
+    leave() { if (st.auto) st.auto.cancel = true; stopListen(); stopSay(); clearAdv(); save(); },
     // Kid mode: what the parent's phone may see (no audio, no text), and the limit / mic switch the parent set there.
     summary() { const d = today(); return { day: C.dayKey(), sec: d.sec, ok: d.ok, redo: d.redo, total: totalDone() }; },
-    applyRemote(set) { const s = load(); if (set && set.limit) s.set.limit = Math.min(30, Math.max(5, Math.round(+set.limit / 5) * 5)); if (set && typeof set.mic === 'boolean') { s.set.mic = set.mic; if (!set.mic) stopListen(); } save(); redraw(); },
+    applyRemote(set) { const s = load(); if (set && set.limit) s.set.limit = Math.min(30, Math.max(5, Math.round(+set.limit / 5) * 5)); if (set && typeof set.mic === 'boolean') { s.set.mic = set.mic; if (!set.mic) stopListen(); } if (set && typeof set.rec === 'boolean') s.set.rec = set.rec; save(); redraw(); },
     _reset() { stopListen(); clearAdv(); store = null; Object.assign(st, { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, err: '', unlocked: false, parOpen: false, pinMsg: '', fbInit: false, aiOff: false, busy: false, enter: true }); }
   };
 })();
