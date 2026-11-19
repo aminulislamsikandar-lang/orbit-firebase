@@ -351,10 +351,11 @@ service cloud.firestore {
       match /state/set {
         allow read: if kidOwner(code) || kidParent(code);
         allow create, update: if kidParent(code)
-          && request.resource.data.keys().hasOnly(['limit', 'mic', 'rec', 'rev', 'at'])
-          && request.resource.data.limit is int && request.resource.data.limit >= 5 && request.resource.data.limit <= 30 && request.resource.data.limit % 5 == 0
+          && request.resource.data.keys().hasOnly(['limit', 'mic', 'rec', 'vol', 'rev', 'at'])
+          && request.resource.data.limit is int && request.resource.data.limit >= 5 && request.resource.data.limit <= 600 && request.resource.data.limit % 5 == 0
           && request.resource.data.mic is bool
           && (!('rec' in request.resource.data) || request.resource.data.rec is bool)
+          && (!('vol' in request.resource.data) || (request.resource.data.vol is int && request.resource.data.vol >= 1 && request.resource.data.vol <= 5))
           && request.resource.data.rev is number && request.resource.data.at is number;
         allow delete: if kidOwner(code);
       }

@@ -21,7 +21,11 @@
   };
 
   // ---- saved data (this device, this account) ----
-  const blank = () => ({ set: { limit: 10, mic: true, pin: '' }, prog: {}, days: {} });
+  const MAXLIM = 600;   // minutes a day: 10 hours (raised from 30 min while the app is being tested)
+  const limTxt = m => m < 60 ? m + ' min' : (m % 60 ? Math.floor(m / 60) + ' ghante ' + (m % 60) + ' min' : (m / 60) + ' ghante');
+  const volOf = v => { v = Math.round(+v); return Number.isFinite(v) ? Math.min(5, Math.max(1, v)) : 3; };   // parent's "how loud" slider for Saath me bolo
+  const VOLN = ['Bahut halka', 'Halka', 'Normal', 'Tez', 'Bahut tez'];
+  const blank = () => ({ set: { limit: 10, mic: true, vol: 3, pin: '' }, prog: {}, days: {} });
   let store = null, storeFor = '';
   function load() {
     if (store && storeFor === uid()) return store;
@@ -30,7 +34,7 @@
       const j = JSON.parse(g.localStorage.getItem(PREFIX + storeFor) || 'null');
       if (j && typeof j === 'object') {
         store.set = Object.assign(store.set, j.set || {});
-        store.set.limit = Math.min(30, Math.max(5, Math.round((+store.set.limit || 10) / 5) * 5));
+        store.set.limit = Math.min(MAXLIM, Math.max(5, Math.round((+store.set.limit || 10) / 5) * 5)); store.set.vol = volOf(store.set.vol);
         store.set.mic = store.set.mic !== false; store.set.rec = store.set.rec === true; store.set.pin = typeof store.set.pin === 'string' ? store.set.pin : '';
         store.prog = j.prog && typeof j.prog === 'object' ? j.prog : {}; store.days = j.days && typeof j.days === 'object' ? j.days : {};
       }
@@ -446,17 +450,17 @@
   // The screen, the recording and the red alerts live in public/saath.js (letters and timings in saath-core.js); this file only checks that Start is allowed.
   function saathCard() {
     if (!g.SAATH) return '<div class="card"><p class="mut" style="margin:0">Ye hissa abhi load nahi hua. Page dobara kholo.</p></div>';
-    return g.SAATH.html({ ready: recOK(), why: over() ? '' : recWhy() });
+    return g.SAATH.html({ ready: recOK(), why: over() ? '' : recWhy(), sens: load().set.vol });
   }
   function saathStart() {
     if (!g.SAATH || g.SAATH.running() || !recOK()) return;
     reset(); stopSay();
-    g.SAATH.start({ code: g.KIDLINK.kidCode(), api: g.api, redraw: () => { if (onScreen()) redraw(); } });
+    g.SAATH.start({ sens: load().set.vol, code: g.KIDLINK.kidCode(), api: g.api, redraw: () => { if (onScreen()) redraw(); } });
   }
 
   function card() {
     const s = load(), items = list(), it = items[st.i], m = marks(), done = items.filter((_, i) => m[i] === 'd').length, last = st.i >= items.length - 1;
-    if (over()) return `<div class="card"><h2 class="sec" style="margin:0 0 6px">Aaj ka time poora hua</h2><p class="mut" style="margin:0">Kal dobara bolenge. Aaj ${today().ok} baar sahi bola.</p><p class="mut" style="margin:10px 0 0">Parent ne roz ki limit ${s.set.limit} minute rakhi hai.</p></div>`;
+    if (over()) return `<div class="card"><h2 class="sec" style="margin:0 0 6px">Aaj ka time poora hua</h2><p class="mut" style="margin:0">Kal dobara bolenge. Aaj ${today().ok} baar sahi bola.</p><p class="mut" style="margin:10px 0 0">Parent ne roz ki limit ${limTxt(s.set.limit)} rakhi hai.</p></div>`;
     if (st.mode === 'saath') return saathCard();
     const by = st.mode === 'byanjan', asv = st.mode === 'asvyanjan';
     const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:60px' : 'font-size:104px';
@@ -487,10 +491,12 @@
     return `<details class="card bl-par" id="blPar" ${st.parOpen ? 'open' : ''}><summary>Parent ke liye</summary><div>
       <p class="mut" style="margin:0 0 10px">Orbit awaaz record ya save nahi karta, na bheje hua text. Sirf "sahi / dobara" ke nishaan, time aur ye settings is phone par rehti hain. Chrome mein sunne ka kaam browser ki voice service karti hai, isliye internet chahiye.</p>
       <div class="bl-row"><span>Aaj Bolo chala</span><b id="blTm">${C.fmtTime(d.sec)}</b></div>
-      <div class="bl-row"><label for="blLim">Roz ki limit</label><b id="blLimV">${s.set.limit} min</b></div>
-      <input id="blLim" type="range" min="5" max="30" step="5" value="${s.set.limit}" style="width:100%" ${edit ? '' : 'disabled'}>
+      <div class="bl-row"><label for="blLim">Roz ki limit</label><b id="blLimV">${limTxt(s.set.limit)}</b></div>
+      <input id="blLim" type="range" min="5" max="${MAXLIM}" step="5" value="${s.set.limit}" style="width:100%" ${edit ? '' : 'disabled'}>
       <label class="bl-row" style="justify-content:flex-start"><input type="checkbox" id="blMc" ${s.set.mic ? 'checked' : ''} ${edit ? '' : 'disabled'}> Mic allow hai (parent ki ijazat)</label>
       ${g.BOLOREC && g.BOLOREC.can() ? `<label class="bl-row" style="justify-content:flex-start"><input type="checkbox" id="blRc" ${s.set.rec ? 'checked' : ''} ${edit ? '' : 'disabled'}> Byanjan "Saath me bolo": bachhe ki awaaz record hoke parent ke phone par jaye (2 ghante)</label>` : ''}
+      <div class="bl-row"><label for="blVol">Saath me bolo: awaaz kitni tez chahiye</label><b id="blVolV">${VOLN[volOf(s.set.vol) - 1]}</b></div>
+      <input id="blVol" type="range" min="1" max="5" step="1" value="${volOf(s.set.vol)}" style="width:100%" ${edit ? '' : 'disabled'}>
       <table class="bl-tbl"><tr><td>Aaj boli gayi cheezein</td><td>${d.ok + d.redo}</td></tr><tr><td>Sahi</td><td>${d.ok}</td></tr><tr><td>Dobara karni hain</td><td>${d.redo}</td></tr><tr><td>Ab tak sahi (sab mode)</td><td>${totalDone()}</td></tr></table>
       ${g.KIDLINK ? g.KIDLINK.kidPanelHTML(edit) : ''}
       ${lock}${pinBox}${st.pinMsg ? `<p class="mut" role="status" style="margin:8px 0 0">${esc(st.pinMsg)}</p>` : ''}
@@ -516,10 +522,11 @@
     const t = e.target, id = t && t.id;
     if (id === 'blAiOk') { try { t.checked ? g.localStorage.setItem(OKKEY(), '1') : g.localStorage.removeItem(OKKEY()); } catch (e) {} redraw(); }
     else if (id === 'blLim' && canEdit()) { load().set.limit = +t.value; save(); redraw(); }
+    else if (id === 'blVol' && canEdit()) { load().set.vol = volOf(t.value); save(); redraw(); }
     else if (id === 'blRc' && canEdit()) { load().set.rec = t.checked; save(); redraw(); }
     else if (id === 'blMc' && canEdit()) { load().set.mic = t.checked; if (!t.checked) stopListen(); save(); redraw(); }
   });
-  g.document.addEventListener('input', e => { if (e.target && e.target.id === 'blLim') { const l = g.document.getElementById('blLimV'); if (l) l.textContent = e.target.value + ' min'; } });
+  g.document.addEventListener('input', e => { const t = e.target; if (!t) return; if (t.id === 'blLim') { const l = g.document.getElementById('blLimV'); if (l) l.textContent = limTxt(+t.value); } else if (t.id === 'blVol') { const l = g.document.getElementById('blVolV'); if (l) l.textContent = VOLN[volOf(t.value) - 1]; } });
   g.document.addEventListener('toggle', e => { if (e.target && e.target.id === 'blPar') st.parOpen = e.target.open; }, true);
 
   g.BOLO = {
@@ -532,7 +539,7 @@
     leave() { if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); stopListen(); stopSay(); clearAdv(); save(); },
     // Kid mode: what the parent's phone may see (no audio, no text), and the limit / mic switch the parent set there.
     summary() { const d = today(); return { day: C.dayKey(), sec: d.sec, ok: d.ok, redo: d.redo, total: totalDone() }; },
-    applyRemote(set) { const s = load(); if (set && set.limit) s.set.limit = Math.min(30, Math.max(5, Math.round(+set.limit / 5) * 5)); if (set && typeof set.mic === 'boolean') { s.set.mic = set.mic; if (!set.mic) stopListen(); } if (set && typeof set.rec === 'boolean') s.set.rec = set.rec; save(); redraw(); },
+    applyRemote(set) { const s = load(); if (set && set.limit) s.set.limit = Math.min(MAXLIM, Math.max(5, Math.round(+set.limit / 5) * 5)); if (set && set.vol != null) s.set.vol = volOf(set.vol); if (set && typeof set.mic === 'boolean') { s.set.mic = set.mic; if (!set.mic) stopListen(); } if (set && typeof set.rec === 'boolean') s.set.rec = set.rec; save(); redraw(); },
     _reset() { stopListen(); clearAdv(); store = null; Object.assign(st, { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, err: '', unlocked: false, parOpen: false, pinMsg: '', fbInit: false, aiOff: false, busy: false, enter: true }); }
   };
 })();

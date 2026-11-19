@@ -11,7 +11,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const $ = id => g.document.getElementById(id);
   const N = K.LETTERS.length;
-  const fresh = () => ({ phase: 'idle', cur: -1, cells: new Array(N).fill(0), voiced: new Array(N).fill(0), letters: [], miss: 0, sent: false, err: '', level: 0, end: null, cancel: false });
+  const fresh = () => ({ phase: 'idle', cur: -1, cells: new Array(N).fill(0), voiced: new Array(N).fill(0), letters: [], miss: 0, sent: false, err: '', level: 0, end: null, cancel: false, mult: 1 });
   let S = fresh();   // phase: idle | calib | run | send | done. cells: 0 not yet, 1 sound came, 2 red alert
 
   function style() {
@@ -23,7 +23,7 @@
 .sa-big{font-size:112px;line-height:1.25;font-weight:700;min-height:140px;color:var(--tx)}
 .sa-st{color:var(--mut);min-height:22px;margin:0;font-size:14px}
 .sa-ms{min-height:20px;margin:6px 0 0;color:#d64545;font-weight:700;font-size:14px}
-.sa-mt{height:6px;border-radius:4px;background:rgba(127,127,127,.2);overflow:hidden;opacity:0;margin:8px 0}.sa-mt.on{opacity:1}.sa-mt i{display:block;height:100%;width:0;background:#1a9d5a}
+.sa-mt{position:relative;height:6px;border-radius:4px;background:rgba(127,127,127,.2);overflow:hidden;opacity:0;margin:8px 0}.sa-mt.on{opacity:1}.sa-mt i{display:block;height:100%;width:0;background:#1a9d5a}.sa-mt b{position:absolute;top:0;bottom:0;width:3px;background:currentColor;left:35%}
 .sa-g{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}
 .sa-c{background:var(--ans);color:var(--tx);border-radius:10px;padding:6px 0;font-size:22px;font-weight:600;min-height:42px;display:flex;align-items:center;justify-content:center;border:2px solid transparent}
 .sa-c.now{border-color:#e0613a;background:#e0613a;color:#fff;transform:scale(1.08)}
@@ -53,7 +53,7 @@
       <div class="sa-bar"><i id="saPr" style="width:${Math.round(S.letters.length / N * 100)}%"></i></div>
       <div class="sa-big" id="saBig" lang="as">${esc(big)}</div>
       <p class="sa-st" id="saSt" role="status">${statusText()}</p><div class="sa-ms" id="saMs" role="alert">${esc(missText())}</div>
-      <div class="sa-mt${busy ? ' on' : ''}" id="saMtw"><i id="saMt"></i></div>
+      <div class="sa-mt${busy ? ' on' : ''}" id="saMtw"><i id="saMt"></i><b id="saMk" style="left:${Math.min(98, 35 * (busy ? S.mult : K.mult(o.sens))).toFixed(1)}%" title="Is line ke upar awaaz aaye to green"></b></div>
       <div class="sa-g" id="saGrid">${grid}</div>${sum}${err}${btn}</div>`;
   }
 
@@ -80,7 +80,7 @@
   async function start(o) {
     o = o || {};
     if (S.phase !== 'idle' && S.phase !== 'done') return;
-    S = fresh(); S.redraw = o.redraw || (() => { if (typeof g.draw === 'function') g.draw(); }); S.phase = 'calib'; redraw();
+    S = fresh(); S.mult = K.mult(o.sens); S.redraw = o.redraw || (() => { if (typeof g.draw === 'function') g.draw(); }); S.phase = 'calib'; redraw();
     let stream = null, ctx = null, rec = null, au = null, tmr = 0, level = () => 0;
     const chunks = [];
     try { stream = await g.navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } }); }
@@ -97,7 +97,7 @@
       rec.start(1000); const t0 = Date.now();
       let peak = 0; const c0 = Date.now(), calib = o.calibMs == null ? 1000 : o.calibMs;
       while (Date.now() - c0 < calib && !S.cancel) { peak = Math.max(peak, level()); await sleep(30); }   // 1 s of quiet: the room's own noise sets the level that counts as a voice
-      const thr = BC.threshold(peak);
+      const base = BC.threshold(peak), thr = base * S.mult;   // base: the room's level x 2.5; the parent's slider scales it (x1 at the middle)
       if (!S.cancel) {
         au = new g.Audio(K.SRC);
         const done = new Promise(r => { S.end = r; au.onended = () => { natural = true; r(); }; au.onerror = () => r(); });
@@ -109,7 +109,7 @@
           const t = au.currentTime, n = Date.now(), dt = n - last, l = level(); last = n;
           const i = K.letterAt(t);
           if (i !== S.cur) { judge(S.cur, off); S.cur = i; paint(); }   // the letter before is decided when the next one begins
-          const m = $('saMt'); if (m) m.style.width = Math.min(100, l / thr * 35) + '%';
+          const m = $('saMt'); if (m) m.style.width = Math.min(100, l / base * 35) + '%';
           if (i >= 0 && t < K.win(i)[1] && l > thr) S.voiced[i] += dt;
         }, 40);
         await done; clearInterval(tmr); tmr = 0;

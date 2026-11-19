@@ -19,6 +19,9 @@
   const fail = e => (e && e.code === 'permission-denied') ? 'Ye kaam nahi ho paaya (ijazat nahi mili). Dobara try karo.' : 'Net ya server ki dikkat. Thodi der baad try karo.';
   const field = 'width:100%;padding:10px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit;margin-top:4px;letter-spacing:2px';
   const min = s => Math.round((+s || 0) / 60);
+  const limTxt = m => m < 60 ? m + ' min' : (m % 60 ? Math.floor(m / 60) + ' ghante ' + (m % 60) + ' min' : (m / 60) + ' ghante');   // limit up to 600 min (10 hours)
+  const volOf = v => { v = Math.round(+v); return Number.isFinite(v) ? Math.min(5, Math.max(1, v)) : 3; };   // parent's "how loud" slider for Saath me bolo
+  const VOLN = ['Bahut halka', 'Halka', 'Normal', 'Tez', 'Bahut tez'];
 
   // ---- child's phone ----
   async function kidLoad(force) {
@@ -64,7 +67,7 @@
     try {
       const r = await C.getSet(S.kid.link.code); if (!r) return;
       let seen = 0; try { seen = +g.localStorage.getItem(REV + S.uid) || 0; } catch (e) {}
-      if (r.rev > seen) { try { g.localStorage.setItem(REV + S.uid, String(r.rev)); } catch (e) {} if (g.BOLO && g.BOLO.applyRemote) g.BOLO.applyRemote({ limit: r.limit, mic: r.mic, rec: r.rec === true }); }
+      if (r.rev > seen) { try { g.localStorage.setItem(REV + S.uid, String(r.rev)); } catch (e) {} if (g.BOLO && g.BOLO.applyRemote) g.BOLO.applyRemote({ limit: r.limit, mic: r.mic, rec: r.rec === true, vol: r.vol }); }
     } catch (e) {}
   }
   // Inside Bolo's "Parent ke liye" box. edit: false while a parent PIN is set and not entered, so the child can not make a code or leave Kid mode.
@@ -128,7 +131,7 @@
   }
   async function parSet(code, patch) {
     const C = cloud(), k = S.par.kids.find(x => x.code === code); if (!C || !k) return;
-    const cur = k.set || { limit: 10, mic: true, rec: false }, next = { limit: patch.limit != null ? patch.limit : cur.limit, mic: patch.mic != null ? patch.mic : cur.mic, rec: patch.rec != null ? !!patch.rec : cur.rec === true, rev: Date.now(), at: Date.now() };
+    const cur = k.set || { limit: 10, mic: true, rec: false, vol: 3 }, next = { limit: patch.limit != null ? patch.limit : cur.limit, mic: patch.mic != null ? patch.mic : cur.mic, rec: patch.rec != null ? !!patch.rec : cur.rec === true, vol: patch.vol != null ? patch.vol : (cur.vol || 3), rev: Date.now(), at: Date.now() };
     try { await C.putSet(code, next); k.set = next; S.par.err = ''; S.par.msg = 'Bachche ke phone par agli baar khulte hi lag jayega.'; } catch (e) { S.par.err = fail(e); }
     draw();
   }
@@ -168,7 +171,7 @@
     return `<div class="kl-hero"><div class="kl-ringw"><svg viewBox="0 0 132 132" role="img" aria-label="Aaj ${min(sec)} minute, limit ${lim} minute"><defs><linearGradient id="klg${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#bef264"/><stop offset=".5" stop-color="#22c55e"/><stop offset="1" stop-color="#0d9488"/></linearGradient></defs>
       <circle class="kl-trk" cx="66" cy="66" r="52"/><circle class="kl-arc" cx="66" cy="66" r="52" stroke="url(#klg${i})" stroke-dasharray="326.7" stroke-dashoffset="${off}"/></svg>
       <div class="kl-ctr"><b>${min(sec)}</b><span>min</span></div></div>
-      <div class="kl-side"><strong>Aaj Bolo chala</strong><p>Roz ki limit ${lim} min mein se ${min(sec)} min</p>${full ? `<span class="kl-pill">${kic('ok')}Aaj ka goal poora</span>` : ''}</div></div>
+      <div class="kl-side"><strong>Aaj Bolo chala</strong><p>Roz ki limit ${limTxt(lim)} mein se ${min(sec)} min</p>${full ? `<span class="kl-pill">${kic('ok')}Aaj ka goal poora</span>` : ''}</div></div>
     <div class="kl-tiles"><div class="kl-t kl-g">${kic('ok')}<b>${ok}</b><span>Aaj sahi</span></div><div class="kl-t kl-a">${kic('redo')}<b>${redo}</b><span>Dobara karni hain</span></div><div class="kl-t kl-c">${kic('star')}<b>${tot}</b><span>Ab tak sahi (sab mode)</span></div></div>
     ${pct == null ? '' : `<div class="kl-meter"><div><span>Aaj sahi jawab ka hissa</span><span>${pct}%</span></div><i role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><u style="width:${pct}%"></u></i></div>`}`;
   }
@@ -181,10 +184,13 @@
       P.seen = P.seen || {}; const anim = !P.seen[k.code]; P.seen[k.code] = true;     // the ring and cards animate the first time only, not on every 30-second refresh (the kid objects are rebuilt on each refresh, so it is kept by code)
       return `<div class="card kl-kid${anim ? ' kl-in' : ''}" data-kl-card="${esc(k.code)}" style="margin-top:12px"><div class="kl-head"><div class="kl-av" aria-hidden="true">${esc(String(k.name || '?').trim().charAt(0).toUpperCase() || '?')}</div><div><h2 class="sec">${esc(k.name)}</h2><small>${k.sum ? 'Aakhri update: ' + esc(new Date(k.sum.at).toLocaleString()) : 'Bachche ke phone se abhi koi update nahi aaya.'}</small></div></div>
         ${kidStats(k, i, sm, lim)}
-        <div class="bl-row" style="margin-top:14px"><label for="klLim-${esc(k.code)}">Roz ki limit</label><b id="klLimV-${esc(k.code)}">${lim} min</b></div>
-        <input id="klLim-${esc(k.code)}" data-kl-lim="${esc(k.code)}" type="range" min="5" max="30" step="5" value="${lim}" style="width:100%;accent-color:#22c55e">
+        <div class="bl-row" style="margin-top:14px"><label for="klLim-${esc(k.code)}">Roz ki limit</label><b id="klLimV-${esc(k.code)}">${limTxt(lim)}</b></div>
+        <input id="klLim-${esc(k.code)}" data-kl-lim="${esc(k.code)}" type="range" min="5" max="600" step="5" value="${lim}" style="width:100%;accent-color:#22c55e">
         <label class="bl-row" style="justify-content:flex-start"><input type="checkbox" data-kl-mic="${esc(k.code)}" ${mic ? 'checked' : ''} style="accent-color:#22c55e"> Mic allow hai</label>
         <label class="bl-row" style="justify-content:flex-start"><input type="checkbox" data-kl-rec="${esc(k.code)}" ${k.set && k.set.rec === true ? 'checked' : ''} style="accent-color:#22c55e"> Byanjan "Saath me bolo": bachhe ki awaaz record hokar mujhe mile (2 ghante)</label>
+        <div class="bl-row" style="margin-top:8px"><label for="klVol-${esc(k.code)}">Saath me bolo: awaaz kitni tez chahiye</label><b id="klVolV-${esc(k.code)}">${VOLN[volOf(k.set && k.set.vol) - 1]}</b></div>
+        <input id="klVol-${esc(k.code)}" data-kl-vol="${esc(k.code)}" type="range" min="1" max="5" step="1" value="${volOf(k.set && k.set.vol)}" style="width:100%;accent-color:#22c55e">
+        <p class="mut" style="margin:2px 0 8px;font-size:12.5px">Halka: dheere bolne par bhi letter green. Tez: zor se bolna padega.</p>
         ${g.BOLOREC ? g.BOLOREC.parentHTML(k.code) : ''}
         <div class="chips" style="margin-top:8px"><button class="chip" data-kl="leave" data-v="${esc(k.code)}">Is bachche se judna band karo</button></div></div>`;
     }).join('');
@@ -213,8 +219,9 @@
     if (t.dataset.klLim) parSet(t.dataset.klLim, { limit: +t.value });
     else if (t.dataset.klMic) parSet(t.dataset.klMic, { mic: !!t.checked });
     else if (t.dataset.klRec) parSet(t.dataset.klRec, { rec: !!t.checked });
+    else if (t.dataset.klVol) parSet(t.dataset.klVol, { vol: volOf(t.value) });
   });
-  g.document.addEventListener('input', e => { const t = e.target; if (t && t.dataset && t.dataset.klLim) { const l = g.document.getElementById('klLimV-' + t.dataset.klLim); if (l) l.textContent = t.value + ' min'; } });
+  g.document.addEventListener('input', e => { const t = e.target; if (t && t.dataset && t.dataset.klLim) { const l = g.document.getElementById('klLimV-' + t.dataset.klLim); if (l) l.textContent = limTxt(+t.value); } else if (t && t.dataset && t.dataset.klVol) { const l = g.document.getElementById('klVolV-' + t.dataset.klVol); if (l) l.textContent = VOLN[volOf(t.value) - 1]; } });
   // every 30 s: the child's phone reads the parent's settings, the parent's phone refreshes the child's day
   // The parent's screen is not redrawn while a code is being typed or a slider is being used (a redraw would wipe it).
   const editing = () => { const a = g.document.activeElement, c = g.document.getElementById('klCode'); return !!((c && c.value) || (a && (a.id === 'klCode' || (a.dataset && (a.dataset.klLim || a.dataset.klMic || a.dataset.klRec)))) || !!(g.BOLOREC && g.BOLOREC.busy())); };
