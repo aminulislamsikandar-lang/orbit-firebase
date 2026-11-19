@@ -15,11 +15,12 @@
  */
 (function (g) {
   "use strict";
-  var ADMINS = ["aminulislamsikandar@gmail.com"];   // keep the same as firestore.rules / MV_ADMIN_EMAILS
+  var ADMINS = ["aminulislamsikandar@gmail.com", "arjinabegum1750@gmail.com", "hafizulalom19112001@gmail.com"];   // keep the same as firestore.rules / MV_ADMIN_EMAILS
   var KEY = "orbit_admin_mode_v1";
   var mode = false;
   try { mode = localStorage.getItem(KEY) === "1"; } catch (e) {}
-  var xhr = null;
+  var xhr = null, maxMb = 300;   // maxMb: the server's limit for one video (VIDEO_MAX_MB), read from /api/ping when the dialog opens
+  var mb = function (n) { return Math.round(n / 104857.6) / 10; };
 
   function user() { return g.orbitUser ? g.orbitUser() : null; }
   function isAdmin() { var u = user(); return !!(u && u.email && ADMINS.indexOf(String(u.email).toLowerCase()) >= 0); }
@@ -155,6 +156,7 @@
     var info = g.orbitQ ? g.orbitQ(qid) : null;
     if (!info) return;
     close();
+    fetch((g.ORBIT_API || "") + "/api/ping").then(function (r) { return r.json(); }).then(function (j) { if (j && j.maxMb > 0) maxMb = j.maxMb; }, function () {});
 
     var parsed = null;   // result of checkCode for the chosen .json/.html
     var file = h("input", { type: "file", id: "qv-file", accept: "video/mp4,.mp4,application/json,.json,text/html,.html,.htm" });
@@ -178,7 +180,9 @@
       if (!f) return;
       var k = kindOf(f);
       if (!k) return say("Sirf .mp4, .json ya .html file chalti hai.", true);
-      if (k === "mp4") return say("Video Backblaze me upload hogi (Render me VIDEO_UPLOAD=true aur bucket ka CORS rule chahiye).");
+      if (k === "mp4") return f.size > maxMb * 1048576
+        ? say("Video bahut badi hai (" + mb(f.size) + " MB). Limit " + maxMb + " MB hai (Backblaze free tier chhota hai). Video compress karo.", true)
+        : say("Video (" + mb(f.size) + " MB, limit " + maxMb + " MB) Backblaze me upload hogi. Render me VIDEO_UPLOAD=true aur bucket ka CORS rule chahiye.");
       freeLab.style.display = "none"; go.textContent = "Save";
       if (f.size > MAX_TEXT) return say("File badi hai (" + Math.round(f.size / 1024) + " KB). " + Math.round(MAX_TEXT / 1024) + " KB tak chalti hai.", true);
       say("File padh raha hoon...");
@@ -231,6 +235,7 @@
       var k = kindOf(f);
       if (!k) return say("Sirf .mp4, .json ya .html file chalti hai.", true);
       if (!f.size) return say("File khaali hai.", true);
+      if (k === "mp4" && f.size > maxMb * 1048576) return say("Video bahut badi hai (" + mb(f.size) + " MB). Limit " + maxMb + " MB hai.", true);
       if (!t) return say("Video ka title likho.", true);
       if (!Number.isInteger(info.chapter) || info.chapter < 1 || info.chapter > 99) return say("Is chapter ka number video ke liye sahi nahi hai.", true);
       lock(true);
