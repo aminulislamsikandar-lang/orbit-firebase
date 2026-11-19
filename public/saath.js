@@ -111,6 +111,7 @@
           if (i !== S.cur) { judge(S.cur, off); S.cur = i; paint(); }   // the letter before is decided when the next one begins
           const m = $('saMt'); if (m) m.style.width = Math.min(100, l / base * 35) + '%';
           if (i >= 0 && t < K.win(i)[1] && l > thr) S.voiced[i] += dt;
+          if (i >= 0 && !S.cells[i] && BC.spoke(S.voiced[i])) { judge(i, off); paint(); }   // green the moment enough sound has come, not only when the letter is over
         }, 40);
         await done; clearInterval(tmr); tmr = 0;
         if (natural) { judge(S.cur, off); await sleep(o.tailMs == null ? 800 : o.tailMs); }   // the last letter, then a short tail so its end is in the recording

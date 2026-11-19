@@ -1,7 +1,7 @@
 // Orbit service worker: keeps the app page, its scripts and the question lists so chapters open offline.
 // API calls (/api/*) are never cached here; answers are stored by the page itself.
 // robots.txt, sitemap.xml and the Google verification file are NOT touched: they always go to the server.
-const SHELL = 'orbit-shell-v46';
+const SHELL = 'orbit-shell-v47';
 const FONTS = 'orbit-fonts-v1';
 const ASSETS = 'orbit-assets-v1';
 

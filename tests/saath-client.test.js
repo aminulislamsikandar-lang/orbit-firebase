@@ -64,5 +64,12 @@ const SA = window.SAATH, K = window.SAATH_CORE;
   const run5 = SA.start({ code: 'ABCD2345', api: async () => { throw new Error('Net nahi hai'); }, calibMs: 50, tailMs: 20, redraw() {} });
   await sleep(200); au.currentTime = 1.8; AMP = 0.3; await sleep(400); au.currentTime = 4.0; await sleep(60); au.onended(); await run5;
   t('failed upload: the error is shown, the session still finished', /Net nahi hai/.test(SA.html({ ready: true })) && !SA.running());
+
+  // the box turns green while the child is still on that letter (as soon as enough sound has come), not only when the letter is over
+  AMP = 0; const run6 = SA.start({ code: 'ABCD2345', api, calibMs: 50, tailMs: 20, redraw() {} });
+  await sleep(200); au.currentTime = 1.8; AMP = 0.3; await sleep(400);
+  const live = SA.html({ ready: true });
+  t('live: the letter is green while it is still the current one (no wait for the next letter)', /sa-c ok[^"]*" data-i="0"/.test(live) && SA._state && SA._state().cur === 0);
+  SA.stop(); await run6;
   console.log(pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);
 })();
