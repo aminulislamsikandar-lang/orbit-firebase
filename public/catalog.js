@@ -14,7 +14,7 @@
     seba: { 10: [['c10-science', 'General Science'], ['c10-maths', 'Mathematics'], ['c10-social', 'Social Science'], ['c10-science-as', 'General Science']] },
     nashib: { 2: [['c2-assamese', 'Assamese']], 6: [['c6-english', 'English'], ['c6-grammar', 'English Grammar'], ['c6-social', 'Social Science'], ['c6-science', 'General Science'], ['c6-hindi', 'Hindi'], ['c6-assamese', 'Assamese'], ['c6-arabic', 'Arabic'], ['c6-maths']], 7: [['c7-english'], ['c7-maths'], ['c7-science']] },
     popular: { 7: [['c7-english'], ['c7-maths'], ['c7-science']] },
-    halimon: { 7: [['c7-english'], ['c7-maths'], ['c7-science']], 8: [['c8-english']] }
+    halimon: { 7: [['c7-english'], ['c7-maths'], ['c7-maths-as'], ['c7-science']], 8: [['c8-english']] }
   };
   const mediums = ['Assamese', 'English'];
   // Class numbers: 1-12 = school classes. 13-18 = college / university years (only for courses a student adds themselves).

@@ -15,7 +15,7 @@
  */
 (function (g) {
   "use strict";
-  var ADMINS = ["aminulislamsikandar@gmail.com"];   // keep the same as firestore.rules / MV_ADMIN_EMAILS
+  var ADMINS = ["aminulislamsikandar@gmail.com", "arjinabegum1750@gmail.com"];   // keep the same as firestore.rules / MV_ADMIN_EMAILS
   var KEY = "orbit_admin_mode_v1";
   var mode = false;
   try { mode = localStorage.getItem(KEY) === "1"; } catch (e) {}

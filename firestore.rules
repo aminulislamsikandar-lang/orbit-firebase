@@ -29,7 +29,7 @@ service cloud.firestore {
     // >>> Replace ADMIN_EMAIL_HERE with your Google email (lowercase), e.g. 'name@gmail.com'. Add more emails separated by commas.
     function isAdmin() {
       return request.auth != null && request.auth.token.email_verified == true
-        && request.auth.token.email in ['aminulislamsikandar@gmail.com'];
+        && request.auth.token.email in ['aminulislamsikandar@gmail.com', 'arjinabegum1750@gmail.com'];
     }
     match /people/{id} {
       allow read: if request.auth != null;

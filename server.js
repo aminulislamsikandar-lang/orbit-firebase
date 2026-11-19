@@ -1555,7 +1555,7 @@ app.post('/api/mathvideo/translate', async (req, res) => {
 // arithmetic check. If it fails, the errors are sent back to the AI and it tries again (within a time budget).
 // Students see their own result at once; it is saved as "pending" and only becomes public after the admin approves.
 const MV = require('./public/mathvideo-admin.js');
-const MV_ADMINS = (process.env.MV_ADMIN_EMAILS || 'aminulislamsikandar@gmail.com').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+const MV_ADMINS = (process.env.MV_ADMIN_EMAILS || 'aminulislamsikandar@gmail.com,arjinabegum1750@gmail.com').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
 const MV_DAILY = Math.max(1, parseInt(process.env.MV_DAILY || '5', 10) || 5);   // AI videos per student per day (admin: unlimited)
 const MV_CACHE = new Map();    // normalized question -> plan (or {unsupported}), so the same question never calls the AI twice
 const MV_USE = new Map();      // uid -> {day, n}
