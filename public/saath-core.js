@@ -24,5 +24,6 @@
   const SENS = [0.4, 0.7, 1, 1.6, 2.4];
   const vol = v => { v = Math.round(+v); return Number.isFinite(v) ? Math.min(5, Math.max(1, v)) : 3; };
   const mult = v => SENS[vol(v) - 1];
-  return { SRC, LETTERS, CUES, ROWS, LEAD, TAIL, win, letterAt, startMs, rows, SENS, vol, mult };
+  const SPOKE_MS = 80;   // this much sound above the line inside a letter's window turns the letter green (two 40 ms checks), so a short "ka" counts as soon as it crosses the line
+  return { SRC, LETTERS, CUES, ROWS, LEAD, TAIL, win, letterAt, startMs, rows, SENS, vol, mult, SPOKE_MS };
 });

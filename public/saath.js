@@ -27,7 +27,7 @@
 .sa-g{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}
 .sa-c{background:var(--ans);color:var(--tx);border-radius:10px;padding:6px 0;font-size:22px;font-weight:600;min-height:42px;display:flex;align-items:center;justify-content:center;border:2px solid transparent}
 .sa-c.now{border-color:#e0613a;background:#e0613a;color:#fff;transform:scale(1.08)}
-.sa-c.ok{background:rgba(26,157,90,.18);border-color:#1a9d5a}.sa-c.no{background:rgba(214,69,69,.18);border-color:#d64545}.sa-c.e{visibility:hidden}
+.sa-c.ok{background:rgba(26,157,90,.18);border-color:#1a9d5a}.sa-c.ok.now{background:#1a9d5a;border-color:#1a9d5a;color:#fff}.sa-c.no{background:rgba(214,69,69,.18);border-color:#d64545}.sa-c.e{visibility:hidden}
 .sa-sum{font-size:15px;margin:12px 0 0;line-height:1.5}
 @media(prefers-reduced-motion:reduce){.sa-c.now{transform:none}.sa-bar i{transition:none}}`;
     g.document.head.appendChild(s);
@@ -71,7 +71,7 @@
 
   function judge(k, off) {
     if (k < 0 || S.cells[k]) return;
-    const ok = BC.spoke(S.voiced[k]);
+    const ok = S.voiced[k] >= K.SPOKE_MS;
     S.cells[k] = ok ? 1 : 2; if (!ok) S.miss++;
     S.letters.push({ i: k, l: K.LETTERS[k], t: K.startMs(off, k), s: ok ? 1 : 0 });   // t: where this letter starts inside the child's recording, so the parent can jump there
   }
@@ -111,7 +111,7 @@
           if (i !== S.cur) { judge(S.cur, off); S.cur = i; paint(); }   // the letter before is decided when the next one begins
           const m = $('saMt'); if (m) m.style.width = Math.min(100, l / base * 35) + '%';
           if (i >= 0 && t < K.win(i)[1] && l > thr) S.voiced[i] += dt;
-          if (i >= 0 && !S.cells[i] && BC.spoke(S.voiced[i])) { judge(i, off); paint(); }   // green the moment enough sound has come, not only when the letter is over
+          if (i >= 0 && !S.cells[i] && S.voiced[i] >= K.SPOKE_MS) { judge(i, off); paint(); }   // green the moment enough sound has come, not only when the letter is over
         }, 40);
         await done; clearInterval(tmr); tmr = 0;
         if (natural) { judge(S.cur, off); await sleep(o.tailMs == null ? 800 : o.tailMs); }   // the last letter, then a short tail so its end is in the recording

@@ -47,7 +47,7 @@ const SA = window.SAATH, K = window.SAATH_CORE;
   // Rok do after the second letter began: the letter already judged is still sent
   uploads.length = 0; AMP = 0;
   const run2 = SA.start({ code: 'ABCD2345', api, calibMs: 50, tailMs: 50, redraw() {} });
-  await sleep(200); au.currentTime = 1.8; AMP = 0.3; await sleep(400); au.currentTime = 4.0; await sleep(100);
+  await sleep(200); au.currentTime = 1.8; AMP = 0.3; await sleep(400); au.currentTime = 4.0; AMP = 0; await sleep(100);
   SA.stop(); await run2; await sleep(20);
   t('Rok do: the finished letter is sent, the one in progress is not, the mic is released', uploads.length === 1 && uploads[0].b.report.letters.length === 1 && uploads[0].b.report.letters[0].s === 1 && stopped === 2 && !SA.running());
 
@@ -71,5 +71,11 @@ const SA = window.SAATH, K = window.SAATH_CORE;
   const live = SA.html({ ready: true });
   t('live: the letter is green while it is still the current one (no wait for the next letter)', /sa-c ok[^"]*" data-i="0"/.test(live) && SA._state && SA._state().cur === 0);
   SA.stop(); await run6;
+
+  // a short sound that crosses the line (about 0.12 s) is enough: the box does not wait for 0.25 s
+  AMP = 0; const run7 = SA.start({ code: 'ABCD2345', api, calibMs: 50, tailMs: 20, redraw() {} });
+  await sleep(200); au.currentTime = 1.8; AMP = 0.3; await sleep(130); AMP = 0; await sleep(150);
+  t('a short burst above the line turns the current letter green', /sa-c ok[^"]*" data-i="0"/.test(SA.html({ ready: true })) && SA._state().cells[0] === 1);
+  SA.stop(); await run7;
   console.log(pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);
 })();
