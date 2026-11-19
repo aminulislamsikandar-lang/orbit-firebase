@@ -718,6 +718,15 @@ function settingsHTML(){
  <h2 class="sec">"Suno" button: awaaz</h2>${chips([['auto','Phone ki awaaz, na ho to AI'],['ai','Hamesha AI awaaz'],['browser','Sirf phone ki awaaz']],ST.tts==='ai'||ST.tts==='browser'?ST.tts:'auto','settts')}
  <p class="mut" style="margin-top:8px">AI awaaz sirf tab chalti hai jab parent ki Gemini key lagi ho (Advanced AI Features), uska kharcha parent ki key se hota hai. Assamese ke liye aksar phone mein awaaz nahi hoti, isliye wahan AI awaaz kaam aati hai.</p>`;
 }
+// ---- Account page (sidebar "Account"): who is logged in + Log out ----
+function loginHTML(){
+ if(!USER)return `<h1 style="font-size:26px;margin-top:14px">Account</h1><p class="mut">Abhi log in nahi ho.</p><button class="btn" data-act="login" ${window.CLOUD?'':'disabled'}>Google se Log in</button>`;
+ const nm=USER.name||'',em=USER.email||'',ini=(nm||em||'?').trim().charAt(0).toUpperCase();
+ return `<h1 style="font-size:26px;margin-top:14px">Account</h1>
+ <div class="card" style="display:flex;align-items:center;gap:14px"><div aria-hidden="true" style="width:52px;height:52px;border-radius:50%;background:var(--on);color:var(--onbg);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;flex:none">${esc(ini)}</div><div style="min-width:0"><div style="font-weight:600">${esc(nm||'Orbit student')}</div><div class="mut" style="overflow-wrap:anywhere">${esc(em)}</div></div></div>
+ <button class="btn" data-act="logout" style="width:100%" ${window.CLOUD?'':'disabled'}>Log out</button>
+ <p class="mut" style="margin-top:10px">Log out karne par ye phone is account se alag ho jayega. Course, favourite aur progress account me safe rehte hain, dobara log in karte hi wapas aa jayenge.</p>`;
+}
 // ---- Google login + cloud sync (Firebase). cloud.js sets window.CLOUD; if it fails to load (offline) the app still works. ----
 let USER=null,LOGINERR='',SYNCT=null,AUTH_READY=false,CLOUDFAIL='';
 // ---- Free contents (no login): only the ready-made notes from /free-notes.json. No AI, videos, favourites or other features. ----
@@ -1319,7 +1328,7 @@ document.addEventListener('click',e=>{
  else if(act==='qvadd'){ui(id).qm=false;draw();if(window.QVideo)window.QVideo.open(id)}
  else if(act==='qvdel'){if(window.QVideo)window.QVideo.remove(id)}
  else if(act==='login'){LOGINERR='';window.CLOUD.login().catch(e=>{const c=e&&e.code;LOGINERR=c==='auth/popup-closed-by-user'?'':c==='auth/operation-not-allowed'?'Firebase Console me Authentication → Google enable karna baaki hai.':c==='auth/unauthorized-domain'?'Ye website Firebase ke Authorized domains me nahi hai.':'Login nahi ho paya. Dobara try karo.';draw()})}
- else if(act==='logout'){window.CLOUD.logout()}
+ else if(act==='logout'){if(!window.CLOUD)return;if(!confirm('Log out karna hai?'))return;window.CLOUD.logout().then(()=>{VIEW='home';openSide(false,true);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}).catch(()=>{alert('Log out nahi ho paya. Dobara try karo.')})}
  else if(act==='freelang'){FREE_LANG=b.dataset.v==='as'?'as':'en';draw()}
  else if(act==='freeopen')freeSet(true);
  else if(act==='freenote')freeSet(true,id);
