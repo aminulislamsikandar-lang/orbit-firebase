@@ -130,6 +130,7 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .rsub{font-size:13px;color:var(--mut);margin-top:2px}
 .rgo{flex:none;color:var(--mut);display:flex}
 .rgo svg,.back svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.exrow{display:flex;align-items:center;justify-content:space-between;gap:10px}.exbtn{font-weight:700;letter-spacing:.5px;margin-top:6px}.exp{margin-top:8px}[data-qid]{scroll-margin-top:12px}.exhit{outline:2px solid var(--on);outline-offset:3px;transition:outline-color .3s}
 .back{display:inline-flex;align-items:center;gap:2px;border:0;background:transparent;color:var(--mut);padding:6px 6px 6px 0;margin-top:6px}
 .rnote{font-size:13px;color:var(--mut);margin:-4px 6px 0}
 /* install banner */
@@ -654,6 +655,19 @@ function listHTML(fn,empty,entries,full){
 }
 const rowHTML=(act,attrs,badge,title,sub,icon)=>`<button class="row" data-act="${act}" ${attrs}><span class="rbadge">${badge}</span><span class="rmain"><div class="rtitle">${esc(title)}</div>${sub?`<div class="rsub">${esc(sub)}</div>`:''}</span><span class="rgo" aria-hidden="true">${icon}</span></button>`;
 const backHTML=label=>`<button class="back" data-act="back">${I.back}<span>${esc(label)}</span></button>`;
+// "EX" on a chapter page: EX -> the exercises (2(A), 2(B) ...) -> the question numbers (1, 2, 3 ...) -> jumps to that question.
+const EXN={key:'',open:false,si:-1};
+const exLabel=(t,i)=>{const m=String(t||'').match(/\b\d+\s*\(\s*[A-Za-z]\s*\)/);return m?m[0].replace(/\s+/g,''):(String(t||'').trim().slice(0,12)||('S'+(i+1)))};
+function exNavHTML(c,ch){
+ const secs=(ch.sections||[]).filter(s=>(s.questions||[]).length);
+ if(!secs.length)return{btn:'',panel:''};
+ const key=c.id+':'+ch.no;if(EXN.key!==key){EXN.key=key;EXN.open=false;EXN.si=-1}
+ const btn=`<button class="chip exbtn" data-act="exnav" aria-expanded="${EXN.open}" aria-label="Exercise aur question number">EX</button>`;
+ if(!EXN.open)return{btn,panel:''};
+ const sec=secs[EXN.si];
+ const panel=`<div class="card exp"><div class="chips" role="group" aria-label="Exercise">${secs.map((x,i)=>`<button class="chip" data-act="exsec" data-id="${i}" aria-pressed="${i===EXN.si}" title="${esc(x.title)}">${esc(exLabel(x.title,i))}</button>`).join('')}</div>${sec?`<div class="chips exq" role="group" aria-label="Question number" style="margin-top:12px">${sec.questions.map((q,i)=>`<button class="chip" data-act="exq" data-id="${esc(q.id)}">${esc(String(q.no||q.label||(i+1)))}</button>`).join('')}</div>`:'<p class="mut" style="margin:10px 0 0">Exercise chuno.</p>'}</div>`;
+ return{btn,panel};
+}
 const head1=t=>`<h1 style="font-size:26px;margin-top:10px">${esc(t)}</h1>`;
 function navHTML(){
  const d=DATA;
@@ -684,7 +698,8 @@ function navHTML(){
   }).join('')}</div>`;
  }
  const ch=c.chapters.find(x=>x.no===NAV.ch);
- return backHTML('Chapters')+head1(ch.no===0?ch.title:`Chapter ${ch.no}: ${ch.title}`)+`<div class="mut">Class ${c.class} · ${esc(cTitle(c))}</div>`+lessonHTML(c,ch)+videosHTML(c,ch)+(window.QUIZ?QUIZ.chapterHTML(c,ch):'')+listHTML(()=>true,'',[{c,ch}],false)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
+ const EXH=exNavHTML(c,ch);
+ return `<div class="exrow">${backHTML('Chapters')}${EXH.btn}</div>${EXH.panel}`+head1(ch.no===0?ch.title:`Chapter ${ch.no}: ${ch.title}`)+`<div class="mut">Class ${c.class} · ${esc(cTitle(c))}</div>`+lessonHTML(c,ch)+videosHTML(c,ch)+(window.QUIZ?QUIZ.chapterHTML(c,ch):'')+listHTML(()=>true,'',[{c,ch}],false)+`<p class="mut" style="margin-top:28px">AI se kabhi galti ho sakti hai. Exam se pehle apni kitab se check kar lo.</p>`;
 }
 function settingsHTML(){
  const chips=(list,cur,act)=>`<div class="chips" role="group">${list.map(([k,n])=>`<button class="chip" data-act="${act}" data-v="${k}" aria-pressed="${cur===k}">${n}</button>`).join('')}</div>`;
@@ -1279,7 +1294,10 @@ document.addEventListener('click',e=>{
  else if(act==='csretry'){COURSE_STATE='wait';draw();if(USER)loadCourse(USER)}
  else if(act==='pcls'||act==='pmed'){if(act==='pcls')NAV.cls=+b.dataset.v;else NAV.med=b.dataset.v;navSave();try{history.replaceState({nav:NAV},'')}catch(e){}draw()}
  else if(act==='pg')navTo({page:b.dataset.p,org:COURSE&&!COURSE.own?COURSE.org:NAV.org,med:COURSE&&!COURSE.own?COURSE.med:NAV.med,cls:b.dataset.cls?+b.dataset.cls:NAV.cls,sub:b.dataset.sub||NAV.sub,ch:b.dataset.ch?+b.dataset.ch:null});
- else if(act==='back')goBack();
+ else if(act==='back'){EXN.open=false;goBack()}
+ else if(act==='exnav'){EXN.open=!EXN.open;if(!EXN.open)EXN.si=-1;draw()}
+ else if(act==='exsec'){EXN.si=EXN.si===+id?-1:+id;draw()}
+ else if(act==='exq'){EXN.open=false;EXN.si=-1;draw();const el=document.querySelector('[data-qid="'+String(id).replace(/["\\]/g,'')+'"]');if(el){try{el.scrollIntoView({behavior:'smooth',block:'start'})}catch(e){el.scrollIntoView()}el.classList.add('exhit');setTimeout(()=>el.classList.remove('exhit'),1800)}}
  else if(act==='lock'){LOCKED=+b.dataset.ch;draw()}
  else if(act==='setd'){ST.dtype=b.dataset.v;stSave();draw()}
  else if(act==='sett'){ST.theme=b.dataset.v;applyTheme();stSave();draw()}

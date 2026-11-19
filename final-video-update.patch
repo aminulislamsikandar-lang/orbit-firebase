@@ -1,0 +1,91 @@
+diff --git a/public/index.html b/public/index.html
+index d7fc9a1..1ed0131 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -782,9 +782,10 @@ function qvHTML(q){
+  const adm=!!(window.QVideo&&window.QVideo.active());
+  return `<div class="vid qv">${vs.map(v=>{const s=VID[v.id]||{};
+   const row=adm?`<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button><button class="qvd" data-act="qvdel" data-id="${esc(v.id)}" aria-label="Ye video hatao">Hatao</button></div>`:'';
+-  return `${row}${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}`}).join('')}</div>`;
++  const hd=!adm&&(s.loading||s.url||s.err)?`<p class="mut" style="margin:6px 0"><b>${esc(v.title||'Video')}</b>${s.loading?' · video load ho raha hai…':''}</p>`:'';
++  return `${row}${hd}${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}`}).join('')}</div>`;
+ }
+-const qvMenuVideos=id=>{const vs=lowData()?[]:qVids(id);return vs.map((v,i)=>`<button class="qmi" role="menuitem" data-act="qvopen" data-id="${esc(v.id)}">${I.vid}<span>Video${vs.length>1?` (${i+1})`:''}</span></button>`).join('')};
++const qvMenuVideos=id=>{const vs=lowData()?[]:qVids(id);return vs.map((v,i)=>`<button class="qmi" role="menuitem" data-act="qvopen" data-id="${esc(v.id)}">${I.vid}<span>${esc(String(v.title||'').trim().slice(0,60)||('Video'+(vs.length>1?` (${i+1})`:'')))}</span></button>`).join('')};
+ const qvMenuItem=id=>window.QVideo&&window.QVideo.active()?`<button class="qmi" role="menuitem" data-act="qvadd" data-id="${id}">${I.vid}<span>Add video</span></button>`:'';
+ window.orbitUser=()=>USER;
+ window.orbitLang=()=>ST.tlang;
+@@ -824,8 +825,16 @@ async function openCodeVideo(rec){
+   }
+  }catch(e){delete s.code;s.loading=false;s.err=errMsg(e);draw()}
+ }
++// Only one video at a time: opening one closes every other (mp4 under a question, HTML/plan overlay, math player).
++function closeOtherVideos(keep){
++ for(const k of Object.keys(VID)){if(k!==keep&&VID[k]&&VID[k].url)delete VID[k].url}
++ document.querySelectorAll('video').forEach(v=>{try{v.pause()}catch(e){}});
++ closePV();
++ try{if(window.MathVideoPlayer&&window.MathVideoPlayer.close)window.MathVideoPlayer.close()}catch(e){}
++}
+ async function openVideo(id){
+  const rec=VIDEOS.find(v=>v.id===id);
++ if(!(VID[id]&&VID[id].url))closeOtherVideos(id);   // tapping the open video again just closes it (below)
+  if(lowData()){const s0=VID[id]=VID[id]||{};s0.err=L4(M_LOWDATA);draw();return}
+  if(rec&&rec.kind&&rec.kind!=='mp4')return openCodeVideo(rec);
+  const s=VID[id]=VID[id]||{};
+diff --git a/public/sw.js b/public/sw.js
+index dc1c001..61eb416 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,7 +1,7 @@
+ // Orbit service worker: keeps the app page, its scripts and the question lists so chapters open offline.
+ // API calls (/api/*) are never cached here; answers are stored by the page itself.
+ // robots.txt, sitemap.xml and the Google verification file are NOT touched: they always go to the server.
+-const SHELL = 'orbit-shell-v42';
++const SHELL = 'orbit-shell-v43';
+ const FONTS = 'orbit-fonts-v1';
+ const ASSETS = 'orbit-assets-v1';
+ 
+diff --git a/tests/mathvideo-power-tf.test.js b/tests/mathvideo-power-tf.test.js
+index 4cc9c56..b12ff90 100644
+--- a/tests/mathvideo-power-tf.test.js
++++ b/tests/mathvideo-power-tf.test.js
+@@ -339,7 +339,7 @@ async function hiddenIdTests() {
+   t('rules: approved library keys unchanged (text, plan only)', /match \/mathVideoAsked\/\{key\}[\s\S]*?hasOnly\(\['text', 'plan'\]\)/.test(rules));
+   const cloud = fs.readFileSync(path.join(ROOT, 'public/cloud.js'), 'utf8');
+   t('cloud.js: qid is added to the request only when present', /pendingAdd\(key, text, plan, qid\)/.test(cloud) && /if \(qid\) d\.qid = qid/.test(cloud));
+-  t('sw.js: SHELL version is v42', /const SHELL = 'orbit-shell-v42'/.test(fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8')));
++  t('sw.js: SHELL version is v43', /const SHELL = 'orbit-shell-v43'/.test(fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8')));
+   const rsci = rules.slice(rules.indexOf('match /scienceVideoAsked/'), rules.indexOf('match /subscriptions/'));
+   t('rules: science library is admin-write, signed-in read, type science, text <= 700', /scienceVideoAsked\/\{key\}[\s\S]*?allow read: if request\.auth != null;[\s\S]*?allow create, update: if isAdmin\(\)[\s\S]*?hasOnly\(\['text', 'plan'\]\)[\s\S]*?plan\.type == 'science'[\s\S]*?size\(\) <= 700/.test(rsci));
+   t('rules: science pending = students add only, admin reads / deletes, own uid, key = 40 hex', /match \/sciencePending\/\{key\}[\s\S]*?hasOnly\(\['text', 'plan', 'uid', 'ts'\]\)[\s\S]*?uid == request\.auth\.uid[\s\S]*?plan\.type == 'science'[\s\S]*?allow read, delete: if isAdmin\(\)/.test(rsci) && /\[0-9a-f\]\{40\}/.test(rsci));
+diff --git a/tests/qvideo-title.test.js b/tests/qvideo-title.test.js
+new file mode 100644
+index 0000000..cf91621
+--- /dev/null
++++ b/tests/qvideo-title.test.js
+@@ -0,0 +1,25 @@
++// The 3-dot menu video item shows the title the admin typed (not a bare "Video"), and a student sees that title + a loading line once the video is tapped.
++const fs = require('fs'), path = require('path');
++const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
++let pass = 0, fail = 0;
++const t = (n, ok) => { if (ok) pass++; else { fail++; console.log('FAIL  ' + n); } };
++const menu = (src.match(/^const qvMenuVideos=.*$/m) || [''])[0];
++t('menu item uses the video title, with "Video" only as the fallback', /v\.title/.test(menu) && /'Video'/.test(menu) && !/<span>Video\$\{/.test(menu));
++t('menu title is escaped and cut to 60 characters', /esc\(String\(v\.title/.test(menu) && /slice\(0,60\)/.test(menu));
++t('student view (not admin) shows title and "load ho raha hai" while loading', /const hd=!adm&&\(s\.loading\|\|s\.url\|\|s\.err\)/.test(src) && /video load ho raha hai/.test(src));
++const f = new Function('esc', 'VIDEOS', 'lowData', 'I', 'qVids', menu + '\nreturn qvMenuVideos;');
++const m = f(s => String(s).replace(/</g, '&lt;'), [], () => false, { vid: '' }, () => [{ id: 'a', title: 'Discuss Q3 <b>' }, { id: 'b', title: '' }]);
++const out = m('x');
++t('rendered: first button shows the title (escaped), blank title falls back to "Video (2)"', out.includes('<span>Discuss Q3 &lt;b></span>') && out.includes('<span>Video (2)</span>'));
++// one video at a time
++t('openVideo closes the other videos before opening a new one (but not when the same video is tapped to close)', /function closeOtherVideos\(keep\)/.test(src) && /if\(!\(VID\[id\]&&VID\[id\]\.url\)\)closeOtherVideos\(id\)/.test(src));
++const fn = (src.match(/function closeOtherVideos[\s\S]*?\n}\n/) || [''])[0];
++let closedPV = 0, mpClosed = 0, paused = 0;
++const run = new Function('VID', 'closePV', 'document', 'window', fn + '\nreturn closeOtherVideos;')(
++  { a: { url: 'u1' }, b: { url: 'u2' }, c: { err: 'x' } }, () => { closedPV++; }, { querySelectorAll: () => [{ pause() { paused++; } }, { pause() { paused++; } }] }, { MathVideoPlayer: { close() { mpClosed++; } } });
++const VIDS = { a: { url: 'u1' }, b: { url: 'u2' } };
++const run2 = new Function('VID', 'closePV', 'document', 'window', fn + '\nreturn closeOtherVideos;')(VIDS, () => { closedPV++; }, { querySelectorAll: () => [{ pause() { paused++; } }] }, { MathVideoPlayer: { close() { mpClosed++; } } });
++run2('b');
++t('closing others: keeps the one being opened, drops the other url, pauses players, closes overlay and math player', VIDS.b.url === 'u2' && !VIDS.a.url && closedPV === 1 && mpClosed === 1 && paused === 1);
++console.log(pass + ' passed, ' + fail + ' failed');
++process.exit(fail ? 1 : 0);
