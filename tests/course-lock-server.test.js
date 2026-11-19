@@ -67,7 +67,7 @@ const blocked = r => r.status === 403 && (r.code === 'no_course' || r.code === '
   // The student leaves the own-courses choice and picks a textbook course: /course/reset drops the cached own lock at once.
   docs.set('studentCourse/owner', { org: 'seba', cls: 10, med: 'Assamese' });
   r = await post('/answer', 'owner', { id: Q10 });
-  t('own lock is cached: the new textbook course is still refused until reset', r.code === 'wrong_course', JSON.stringify(r));
+  t('stale own lock is re-read from Firestore: the new textbook course works at once', !blocked(r), JSON.stringify(r));
   r = await post('/course/reset', 'owner', {});
   t('/course/reset answers ok', r.status === 200, JSON.stringify(r));
   r = await post('/answer', 'owner', { id: Q10 });

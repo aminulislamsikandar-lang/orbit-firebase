@@ -101,7 +101,10 @@ app.use('/api', async (req, res, next) => {
     const b = req.body || {}, lock = await lockOf(req.user.uid);
     const courseIds = COURSELOCK.courseIdsOf(b, { byId: id => BY_ID.get(id), isCourse: id => QUIZ.courses.some(c => c.id === id) });
     if (req.path === '/video') { const vid = String(b.id || ''), v = VBY.get(vid) || await fsVideo(req, vid); if (v) courseIds.push(v.course || 'c10-science'); }
-    const r = COURSELOCK.decide({ admin: adm, canRead, lock, courseIds, custom: b.custom, ids: lock ? CATALOG.idsFor(lock, QUIZ.courses) : [] });
+    const decideWith = lk => COURSELOCK.decide({ admin: adm, canRead, lock: lk, courseIds, custom: b.custom, ids: lk ? CATALOG.idsFor(lk, QUIZ.courses) : [] });
+    let r = decideWith(lock);
+    // The cached lock may be old (course changed in the last 10 minutes). Before saying "not your course", forget the cache and read Firestore once more.
+    if (!r.ok && (r.code === 'wrong_course' || r.code === 'no_course')) { COURSE_CACHE.delete(req.user.uid); r = decideWith(await lockOf(req.user.uid)); }
     if (!r.ok) return res.status(r.status).json({ code: r.code, error: r.error });
     next();
   } catch (e) { console.error('[course] check failed: ' + e.message); next(); }   // a Firestore hiccup must not lock every student out
@@ -1556,7 +1559,7 @@ app.post('/api/mathvideo/translate', async (req, res) => {
 // arithmetic check. If it fails, the errors are sent back to the AI and it tries again (within a time budget).
 // Students see their own result at once; it is saved as "pending" and only becomes public after the admin approves.
 const MV = require('./public/mathvideo-admin.js');
-const MV_ADMINS = (process.env.MV_ADMIN_EMAILS || 'aminulislamsikandar@gmail.com,arjinabegum1750@gmail.com').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+const MV_ADMINS = (process.env.MV_ADMIN_EMAILS || 'aminulislamsikandar@gmail.com,arjinabegum1750@gmail.com,hafizulalom19112001@gmail.com').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
 const MV_DAILY = Math.max(1, parseInt(process.env.MV_DAILY || '5', 10) || 5);   // AI videos per student per day (admin: unlimited)
 const MV_CACHE = new Map();    // normalized question -> plan (or {unsupported}), so the same question never calls the AI twice
 const MV_USE = new Map();      // uid -> {day, n}
