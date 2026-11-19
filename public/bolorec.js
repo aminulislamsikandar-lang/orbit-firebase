@@ -1,7 +1,7 @@
 // public/bolorec.js - Bolo "Saath me bolo" (Byanjan): the mic stays on from the first letter to the last, the letters play one after another and the child speaks along.
 // Nothing is recognised. Only the sound LEVEL is measured: a letter whose window (its clip + a short quiet time) had no sound is a red alert.
 // The whole recording goes to the parent's phone (/api/bolo/rec/*), who can hear it for 2 hours. Needs the parent's tick (Bolo > Parent ke liye) and a Kid-mode code.
-// BOLOREC.run(...) is used by bolo.js on the child's phone. BOLOREC.parentHTML(code) is used by kidlink.js on the parent's phone.
+// BOLOREC.run(...) / BOLOREC.send(...) are used on the child's phone (send is used by saath.js).  BOLOREC.parentHTML(code) is used by kidlink.js on the parent's phone.
 (function (g) {
   'use strict';
   const C = g.BOLOREC_CORE;
@@ -11,6 +11,11 @@
   const b64 = blob => new Promise((res, rej) => { const r = new g.FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(new Error('read')); r.readAsDataURL(blob); });
 
   // ---- child's phone ----
+  // Uploads one finished recording with its report to the parent. o = { code, api, blob, total, letters: [{ i, l, t(ms from the recording start), s(1 = sound came) }] }
+  async function send(o) {
+    const mime = String(o.blob.type || 'audio/webm').split(';')[0];
+    return o.api('/api/bolo/rec/upload', { code: o.code, mime, audio: await b64(o.blob), report: { total: o.total, letters: o.letters } });
+  }
   // o = { items, code, api, clipMs(i), step(i), silent(i), cancelled() } -> { letters, silent, sent, err }
   async function run(o) {
     const out = { letters: [], silent: 0, sent: false, err: '' };
@@ -49,7 +54,7 @@
     if (out.letters.length && chunks.length) {
       try {
         const blob = new g.Blob(chunks, { type: (rec && rec.mimeType) || 'audio/webm' });
-        await o.api('/api/bolo/rec/upload', { code: o.code, mime: String(blob.type).split(';')[0], audio: await b64(blob), report: { total: o.items.length, letters: out.letters } });
+        await send({ code: o.code, api: o.api, blob, total: o.items.length, letters: out.letters });
         out.sent = true;
       } catch (e) { out.err = (e && e.message) || 'Recording bheji nahi ja saki.'; }
     }
@@ -109,5 +114,5 @@
   });
   // The parent's page must not redraw (and cut the sound) while a recording is open and playing or paused half way.
   const busy = () => { const a = g.document.getElementById('brAud'); return !!(a && (!a.paused || a.currentTime > 0.5)); };
-  g.BOLOREC = { can, run, parentHTML, busy };
+  g.BOLOREC = { can, run, send, parentHTML, busy };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -56,7 +56,7 @@
   const hasPin = () => !!load().set.pin;
   const canEdit = () => !hasPin() || st.unlocked;
   function firstOpen() { const m = marks(), n = list().length; for (let i = 0; i < n; i++) if (m[i] !== 'd') return i; return 0; }
-  function reset(mode) { if (st.auto) st.auto.cancel = true; stopListen(); stopSay(); clearAdv(); if (mode) st.mode = mode; st.fb = null; st.err = ''; st.enter = true; st.i = firstOpen(); }
+  function reset(mode) { if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); stopListen(); stopSay(); clearAdv(); if (mode) st.mode = mode; st.fb = null; st.err = ''; st.enter = true; st.i = firstOpen(); }
 
   // ---- voice out ----
   // Byanjan items carry a recorded voice clip (item.audio) and a mouth "video" (byanjan-video.js); everything else uses the browser voice.
@@ -443,51 +443,39 @@
     return '';
   };
   const recOK = () => !recWhy() && !over();
-  let alertT = 0;
-  function autoHTML() {
-    const red = st.alert ? `<div role="alert" style="margin-top:10px;background:#d64545;color:#fff;border-radius:12px;padding:10px;text-align:center;font-weight:700">Red alert: awaaz nahi aayi (<span lang="as">${esc(st.alert)}</span>)</div>` : '';
-    if (st.auto) return `${red}<div class="bl-two" style="margin-top:10px"><button class="btn bl-sec" data-bl="autostop">Rok do</button></div>`;
-    const note = st.note ? `<p class="mut" role="status" style="margin:10px 0 0;text-align:center">${esc(st.note)}</p>` : '';
-    return `${red}${note}${recOK() ? '<div class="bl-two" style="margin-top:10px"><button class="btn" data-bl="auto">Saath me bolo (shuru)</button></div>' : `<p class="mut" style="margin:10px 0 0;text-align:center">${esc(recWhy())}</p>`}`;
+  // The screen, the recording and the red alerts live in public/saath.js (letters and timings in saath-core.js); this file only checks that Start is allowed.
+  function saathCard() {
+    if (!g.SAATH) return '<div class="card"><p class="mut" style="margin:0">Ye hissa abhi load nahi hua. Page dobara kholo.</p></div>';
+    return g.SAATH.html({ ready: recOK(), why: over() ? '' : recWhy() });
   }
-  async function autoRun() {
-    if (st.auto || !recOK()) return;
+  function saathStart() {
+    if (!g.SAATH || g.SAATH.running() || !recOK()) return;
     reset(); stopSay();
-    const items = list(), A = st.auto = { cancel: false };
-    st.i = 0; st.note = ''; st.err = ''; st.alert = null; redraw();
-    const r = await g.BOLOREC.run({
-      items, code: g.KIDLINK.kidCode(), api: g.api, clipMs: i => items[i].ms || 1000,
-      step: i => { if (st.auto !== A) return; st.i = i; st.fb = null; st.enter = true; redraw(); speak(items[i]); },
-      silent: i => { if (st.auto !== A) return; st.alert = items[i].big; redraw(); clearTimeout(alertT); alertT = setTimeout(() => { st.alert = null; if (onScreen()) redraw(); }, 1800); },
-      cancelled: () => A.cancel || !onScreen()
-    });
-    stopSay(); if (st.auto === A) st.auto = null;
-    st.note = r.err ? r.err : r.sent ? 'Recording parent ko bhej di gayi (2 ghante tak sunai ja sakti hai). Awaaz nahi aayi: ' + r.silent + ' letter.' : '';
-    if (onScreen()) redraw();
+    g.SAATH.start({ code: g.KIDLINK.kidCode(), api: g.api, redraw: () => { if (onScreen()) redraw(); } });
   }
 
   function card() {
     const s = load(), items = list(), it = items[st.i], m = marks(), done = items.filter((_, i) => m[i] === 'd').length, last = st.i >= items.length - 1;
     if (over()) return `<div class="card"><h2 class="sec" style="margin:0 0 6px">Aaj ka time poora hua</h2><p class="mut" style="margin:0">Kal dobara bolenge. Aaj ${today().ok} baar sahi bola.</p><p class="mut" style="margin:10px 0 0">Parent ne roz ki limit ${s.set.limit} minute rakhi hai.</p></div>`;
-    const sa = st.mode === 'saath', by = st.mode === 'byanjan' || sa, asv = st.mode === 'asvyanjan';
+    if (st.mode === 'saath') return saathCard();
+    const by = st.mode === 'byanjan', asv = st.mode === 'asvyanjan';
     const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:60px' : 'font-size:104px';
     const bigHTML = by && g.BYANJAN_VIDEO ? g.BYANJAN_VIDEO.stageHTML(it, C.PLACES) : `<div class="bl-big" style="${big}">${esc(it.big)}</div>`;
     const micOff = !s.set.mic;
     const aiAsk = (hasKey() || freeAs()) && CAN_REC && !aiTick() ? '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13.5px"><input type="checkbox" id="blAiOk" style="margin-top:3px"><span>Parent ki ijazat: AI se jaanch ke liye bachhe ki awaaz Gemini ko jayegi (Orbit save nahi karta). Tick na ho to phone khud check karega.</span></label>' : '';
-    const msg = st.auto ? 'Saath-saath bolte jao.' : sa ? 'Start dabao, phir letters ke saath bolte jao.' : by && !recOn() ? 'Suno, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? (aiOn() ? 'AI sun raha hai...' : 'Awaaz check ho rahi hai...') : recOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : localMatch() ? (by ? 'Mic dabao aur letter bolo' : 'Mic dabao aur bolo: letter aur shabd, jaise "ক, কল"') : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
-    const self = sa ? '' : (by && !recOn()) || (!by && !SR && !recOn() && !micOff) || ((asv || by) && (st.asMiss || 0) >= 2) ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
+    const msg = by && !recOn() ? 'Suno, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? (aiOn() ? 'AI sun raha hai...' : 'Awaaz check ho rahi hai...') : recOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : localMatch() ? (by ? 'Mic dabao aur letter bolo' : 'Mic dabao aur bolo: letter aur shabd, jaise "ক, কল"') : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
+    const self = (by && !recOn()) || (!by && !SR && !recOn() && !micOff) || ((asv || by) && (st.asMiss || 0) >= 2) ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
     const skip = `<button class="bl-skip" data-bl="next" aria-label="Aage" ${last ? 'disabled' : ''}>${ICON.next}</button>`;
-    const mic = sa ? '' : `<div class="bl-micw">${by && !recOn() ? '' : `<button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || st.praise || (!SR && !recOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>`}${skip}</div>`;
-    const autoUI = sa ? autoHTML() : '';
+    const mic = `<div class="bl-micw">${by && !recOn() ? '' : `<button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || st.praise || (!SR && !recOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>`}${skip}</div>`;
     const enter = st.enter; st.enter = false;
-    const title = st.mode === 'table' ? st.table + ' ka table' : st.mode === 'poem' ? (C.POEMS.find(p => p.id === st.poem) || C.POEMS[0]).title : sa ? 'সাথে বলো · অসমীয়া ব্যঞ্জন' : by ? 'অসমীয়া ব্যঞ্জন' : asv ? 'ব্যঞ্জন + শব্দ' : 'A se Z';
+    const title = st.mode === 'table' ? st.table + ' ka table' : st.mode === 'poem' ? (C.POEMS.find(p => p.id === st.poem) || C.POEMS[0]).title : by ? 'অসমীয়া ব্যঞ্জন' : asv ? 'ব্যঞ্জন + শব্দ' : 'A se Z';
     return `<div class="bl-stage${enter ? ' bl-in' : ''}${st.fb && !st.fb.ok ? ' bl-shake' : ''}" style="--rgb:${HUES[st.i % HUES.length]}"><i class="bl-bub"></i><i class="bl-bub"></i><i class="bl-bub"></i>
       <div class="bl-top"><span class="bl-ttl">${esc(title)}</span><span class="bl-cnt">${done} / ${items.length}</span></div>
       <div class="bl-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${items.length}" aria-valuenow="${done}"><span style="width:${Math.round(done / items.length * 100)}%"></span></div>
       ${bigHTML}<p class="bl-sub" ${by ? 'lang="as"' : ''}>${by && it.sub === it.big ? '' : esc(it.sub)}</p>
       ${mic}<p class="bl-msg" role="status">${msg}</p>
       ${st.err ? `<p class="err" role="alert" style="text-align:center">${esc(st.err)}</p>` : ''}
-      ${st.fb && !st.fb.ok ? `<div class="bl-fb" role="status">${esc(st.fb.t)}</div>` : ''}${self}${aiAsk}${autoUI}</div>${praiseHTML()}`;
+      ${st.fb && !st.fb.ok ? `<div class="bl-fb" role="status">${esc(st.fb.t)}</div>` : ''}${self}${aiAsk}</div>${praiseHTML()}`;
   }
 
   function parent() {
@@ -520,8 +508,8 @@
     else if (a === 'next') { stopListen(); stopSay(); clearAdv(); st.i = Math.min(list().length - 1, st.i + 1); st.fb = null; st.err = ''; st.enter = true; redraw(); if (st.mode === 'byanjan') speak(list()[st.i]); }
     else if (a === 'mic') { if (aiRec) aiStop(false); else listen(); }
     else if (a === 'self') mark(v === '1', true);
-    else if (a === 'auto') autoRun();
-    else if (a === 'autostop') { if (st.auto) st.auto.cancel = true; stopSay(); }
+    else if (a === 'auto') saathStart();
+    else if (a === 'autostop') { if (g.SAATH) g.SAATH.stop(); }
     else if (a === 'pin') pinAction(v);
   });
   g.document.addEventListener('change', e => {
@@ -541,7 +529,7 @@
       if (!st.fbInit) { st.fbInit = true; st.i = firstOpen(); }
       return `<h1 class="bl-sr">Bolo</h1>${modeChips()}${subPick()}${card()}${parent()}`;
     },
-    leave() { if (st.auto) st.auto.cancel = true; stopListen(); stopSay(); clearAdv(); save(); },
+    leave() { if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); stopListen(); stopSay(); clearAdv(); save(); },
     // Kid mode: what the parent's phone may see (no audio, no text), and the limit / mic switch the parent set there.
     summary() { const d = today(); return { day: C.dayKey(), sec: d.sec, ok: d.ok, redo: d.redo, total: totalDone() }; },
     applyRemote(set) { const s = load(); if (set && set.limit) s.set.limit = Math.min(30, Math.max(5, Math.round(+set.limit / 5) * 5)); if (set && typeof set.mic === 'boolean') { s.set.mic = set.mic; if (!set.mic) stopListen(); } if (set && typeof set.rec === 'boolean') s.set.rec = set.rec; save(); redraw(); },
