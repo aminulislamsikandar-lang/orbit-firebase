@@ -77,6 +77,7 @@
   // Everything a mode needs: key (used for saving progress), title, and items {big, sub, say, match:{kind, ...}}
   function items(mode, opt) {
     opt = opt || {};
+    if (mode === 'saath') return items('byanjan', opt);   // "Saath me bolo" is its own topic chip with the same letters; the Byanjan topic itself is not touched
     if (mode === 'alpha') return WORDS.map((w, i) => { const c = String.fromCharCode(65 + i); return { big: c, sub: c + ' for ' + w, say: c + ' for ' + w, match: { kind: 'letter', letter: c, word: w } }; });
     if (mode === 'table') {
       const t = TABLES.includes(+opt.table) ? +opt.table : 2;
@@ -89,7 +90,7 @@
     const p = POEMS.find(x => x.id === opt.poem) || POEMS[0];
     return p.lines.map(l => ({ big: l.split(' ')[0].replace(/[^A-Za-z]/g, ''), sub: l, say: l, match: { kind: 'line', line: l } }));
   }
-  const stateKey = (mode, opt) => mode === 'asvyanjan' ? 'asv' : mode === 'byanjan' ? 'byanjan' : mode === 'table' ? 't' + ((opt && +opt.table) || 2) : mode === 'poem' ? 'p-' + ((opt && opt.poem) || POEMS[0].id) : 'alpha';
+  const stateKey = (mode, opt) => mode === 'saath' ? 'saath' : mode === 'asvyanjan' ? 'asv' : mode === 'byanjan' ? 'byanjan' : mode === 'table' ? 't' + ((opt && +opt.table) || 2) : mode === 'poem' ? 'p-' + ((opt && opt.poem) || POEMS[0].id) : 'alpha';
 
   // ---- matching ----
   const norm = s => String(s == null ? '' : s).toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9\u0900-\u097f ]+/g, ' ').replace(/\s+/g, ' ').trim();

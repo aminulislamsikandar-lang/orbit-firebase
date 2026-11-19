@@ -421,7 +421,7 @@
     g.document.head.appendChild(s); return '';
   }
 
-  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['asvyanjan', 'ক – কল', '#00969f']];
+  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['saath', 'সাথে বলো', '#e0613a'], ['asvyanjan', 'ক – কল', '#00969f']];
   const chipRow = (label, arr) => `<div class="chips bl-chips" role="group" aria-label="${label}">${arr.map(m => `<button class="chip" style="--c:${m[3]}" data-bl="${m[0]}" data-v="${m[1]}" aria-pressed="${m[4]}">${m[2]}</button>`).join('')}</div>`;
   const modeChips = () => chipRow('Kya bolna hai', MODES.map(m => ['mode', m[0], m[1], m[2], st.mode === m[0]]));
   function subPick() {   // the second row of chips (table number, or which poem) - still only chips at the top
@@ -432,19 +432,27 @@
   // The Shabaash pop-up: it shows by itself and goes by itself (taps pass through it), then the next item comes.
   const praiseHTML = () => st.praise ? `<div class="bl-praise" role="status"><div><b>Shabaash!</b><span>${esc(st.praise)}</span><span class="bl-em" aria-hidden="true">${FLY.slice(0, 5).join(' ')}</span></div>${FLY.concat(FLY).map((e, i) => `<span class="bl-fly" aria-hidden="true" style="left:${6 + i * 8}%;animation-delay:${(i % 4) * 0.12}s">${e}</span>`).join('')}</div>` : '';
 
-  // ---- Byanjan "Saath me bolo": letters play one after another, the mic stays on from the first to the last, a silent letter is a red alert (bolorec.js) ----
+  // ---- The "সাথে বলো" topic chip (Saath me bolo): letters play one after another, the mic stays on from the first to the last, a silent letter is a red alert (bolorec.js) ----
   // Needs: the parent's tick (set.rec), the mic switch on, and a Kid-mode code (the recording goes to that parent). Nothing is recognised.
-  const recOK = () => !!(g.BOLOREC && g.BOLOREC.can() && load().set.rec === true && load().set.mic && !over() && g.KIDLINK && g.KIDLINK.kidCode && g.KIDLINK.kidCode());
+  const recWhy = () => {   // why Start is not available yet ('' = ready); shown to the child so the button is never just missing
+    if (!(g.BOLOREC && g.BOLOREC.can())) return 'Is browser me recording nahi chalegi. Chrome ya Safari ka naya version use karo.';
+    const s = load().set;
+    if (!s.mic) return 'Parent ne mic band kiya hai. Parent section se allow karo.';
+    if (s.rec !== true) return 'Recording parent ki ijazat se chalti hai. Neeche "Parent ke liye" kholo aur "Saath me bolo" ka tick lagao.';
+    if (!(g.KIDLINK && g.KIDLINK.kidCode && g.KIDLINK.kidCode())) return 'Recording parent ke phone par jaati hai. Kid mode me bachhe ka code parent ke phone se jodo (Parent ke liye).';
+    return '';
+  };
+  const recOK = () => !recWhy() && !over();
   let alertT = 0;
   function autoHTML() {
     const red = st.alert ? `<div role="alert" style="margin-top:10px;background:#d64545;color:#fff;border-radius:12px;padding:10px;text-align:center;font-weight:700">Red alert: awaaz nahi aayi (<span lang="as">${esc(st.alert)}</span>)</div>` : '';
     if (st.auto) return `${red}<div class="bl-two" style="margin-top:10px"><button class="btn bl-sec" data-bl="autostop">Rok do</button></div>`;
     const note = st.note ? `<p class="mut" role="status" style="margin:10px 0 0;text-align:center">${esc(st.note)}</p>` : '';
-    return `${red}${note}${recOK() ? '<div class="bl-two" style="margin-top:10px"><button class="btn" data-bl="auto">Saath me bolo (shuru)</button></div>' : ''}`;
+    return `${red}${note}${recOK() ? '<div class="bl-two" style="margin-top:10px"><button class="btn" data-bl="auto">Saath me bolo (shuru)</button></div>' : `<p class="mut" style="margin:10px 0 0;text-align:center">${esc(recWhy())}</p>`}`;
   }
   async function autoRun() {
     if (st.auto || !recOK()) return;
-    reset('byanjan'); stopSay();
+    reset(); stopSay();
     const items = list(), A = st.auto = { cancel: false };
     st.i = 0; st.note = ''; st.err = ''; st.alert = null; redraw();
     const r = await g.BOLOREC.run({
@@ -461,18 +469,18 @@
   function card() {
     const s = load(), items = list(), it = items[st.i], m = marks(), done = items.filter((_, i) => m[i] === 'd').length, last = st.i >= items.length - 1;
     if (over()) return `<div class="card"><h2 class="sec" style="margin:0 0 6px">Aaj ka time poora hua</h2><p class="mut" style="margin:0">Kal dobara bolenge. Aaj ${today().ok} baar sahi bola.</p><p class="mut" style="margin:10px 0 0">Parent ne roz ki limit ${s.set.limit} minute rakhi hai.</p></div>`;
-    const by = st.mode === 'byanjan', asv = st.mode === 'asvyanjan';
+    const sa = st.mode === 'saath', by = st.mode === 'byanjan' || sa, asv = st.mode === 'asvyanjan';
     const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:60px' : 'font-size:104px';
     const bigHTML = by && g.BYANJAN_VIDEO ? g.BYANJAN_VIDEO.stageHTML(it, C.PLACES) : `<div class="bl-big" style="${big}">${esc(it.big)}</div>`;
     const micOff = !s.set.mic;
     const aiAsk = (hasKey() || freeAs()) && CAN_REC && !aiTick() ? '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13.5px"><input type="checkbox" id="blAiOk" style="margin-top:3px"><span>Parent ki ijazat: AI se jaanch ke liye bachhe ki awaaz Gemini ko jayegi (Orbit save nahi karta). Tick na ho to phone khud check karega.</span></label>' : '';
-    const msg = st.auto ? 'Saath-saath bolte jao.' : by && !recOn() ? 'Suno, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? (aiOn() ? 'AI sun raha hai...' : 'Awaaz check ho rahi hai...') : recOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : localMatch() ? (by ? 'Mic dabao aur letter bolo' : 'Mic dabao aur bolo: letter aur shabd, jaise "ক, কল"') : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
-    const self = st.auto ? '' : (by && !recOn()) || (!by && !SR && !recOn() && !micOff) || ((asv || by) && (st.asMiss || 0) >= 2) ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
+    const msg = st.auto ? 'Saath-saath bolte jao.' : sa ? 'Start dabao, phir letters ke saath bolte jao.' : by && !recOn() ? 'Suno, mukh ki taraf dekho, phir khud bolo. Bol diya to "Maine bol diya" dabao.' : micOff ? 'Parent ne mic band kiya hai. Parent section se allow karo.' : st.busy ? (aiOn() ? 'AI sun raha hai...' : 'Awaaz check ho rahi hai...') : recOn() && st.listening ? 'Sun raha hoon... bolo, phir mic dobara dabao' : aiOn() ? 'Mic dabao aur bolo (AI check karega)' : localMatch() ? (by ? 'Mic dabao aur letter bolo' : 'Mic dabao aur bolo: letter aur shabd, jaise "ক, কল"') : !SR ? 'Is browser mein sunne ka feature nahi hai. Chrome ya Edge use karo, ya neeche khud check karo.' : st.listening ? 'Sun raha hoon... bolo' : 'Mic dabao aur bolo';
+    const self = sa ? '' : (by && !recOn()) || (!by && !SR && !recOn() && !micOff) || ((asv || by) && (st.asMiss || 0) >= 2) ? `<div class="bl-two"><button class="btn" data-bl="self" data-v="1">${ICON.ok}<span>Maine bol diya</span></button><button class="btn bl-sec" data-bl="self" data-v="0">${ICON.redo}<span>Dobara bolunga</span></button></div>` : '';
     const skip = `<button class="bl-skip" data-bl="next" aria-label="Aage" ${last ? 'disabled' : ''}>${ICON.next}</button>`;
-    const mic = st.auto ? '' : `<div class="bl-micw">${by && !recOn() ? '' : `<button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || st.praise || (!SR && !recOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>`}${skip}</div>`;
-    const autoUI = by ? autoHTML() : '';
+    const mic = sa ? '' : `<div class="bl-micw">${by && !recOn() ? '' : `<button class="bl-mic ${st.listening ? 'on' : ''}" data-bl="mic" aria-label="Bolo" ${micOff || st.busy || st.praise || (!SR && !recOn()) || (st.listening && !aiRec) ? 'disabled' : ''}>${ICON.mic}</button>`}${skip}</div>`;
+    const autoUI = sa ? autoHTML() : '';
     const enter = st.enter; st.enter = false;
-    const title = st.mode === 'table' ? st.table + ' ka table' : st.mode === 'poem' ? (C.POEMS.find(p => p.id === st.poem) || C.POEMS[0]).title : by ? 'অসমীয়া ব্যঞ্জন' : asv ? 'ব্যঞ্জন + শব্দ' : 'A se Z';
+    const title = st.mode === 'table' ? st.table + ' ka table' : st.mode === 'poem' ? (C.POEMS.find(p => p.id === st.poem) || C.POEMS[0]).title : sa ? 'সাথে বলো · অসমীয়া ব্যঞ্জন' : by ? 'অসমীয়া ব্যঞ্জন' : asv ? 'ব্যঞ্জন + শব্দ' : 'A se Z';
     return `<div class="bl-stage${enter ? ' bl-in' : ''}${st.fb && !st.fb.ok ? ' bl-shake' : ''}" style="--rgb:${HUES[st.i % HUES.length]}"><i class="bl-bub"></i><i class="bl-bub"></i><i class="bl-bub"></i>
       <div class="bl-top"><span class="bl-ttl">${esc(title)}</span><span class="bl-cnt">${done} / ${items.length}</span></div>
       <div class="bl-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${items.length}" aria-valuenow="${done}"><span style="width:${Math.round(done / items.length * 100)}%"></span></div>

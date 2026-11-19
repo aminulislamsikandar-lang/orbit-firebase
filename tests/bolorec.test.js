@@ -28,6 +28,9 @@ const REP = { total: 3, letters: [{ i: 0, l: 'ক', t: 1000, s: 1 }, { i: 1, l: 
   t('cleanReport: junk input gives an empty report', C.cleanReport(null).letters.length === 0 && C.cleanReport('x').total === 0);
   t('silentOf lists the letters with no sound', C.silentOf(REP).length === 1 && C.silentOf(REP)[0].l === 'খ');
 
+  const BC = require('../public/bolo-core.js');
+  t('new topic "saath": same 40 letters and clips as Byanjan, its own progress key, Byanjan unchanged', BC.items('saath').length === 40 && BC.items('saath')[3].audio === BC.items('byanjan')[3].audio && BC.stateKey('saath') === 'saath' && BC.stateKey('byanjan') === 'byanjan' && BC.items('byanjan').length === 40);
+
   // ---- routes ----
   let clock = 1800000000000; const now = () => clock;
   const store = memStore(), S = R.make({ db: fakeDb(), store, now });
