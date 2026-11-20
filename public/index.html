@@ -945,7 +945,7 @@ function draw(){
  const needCourse=!!USER&&(COURSE_STATE!=='set'||(COURSE&&COURSE.kid===true&&!KIDROLE))&&!(PEEK&&VIEW==='study');   // logged in but no course yet (or still loading it): only the course screen is shown
  let body;
  if(needCourse){openSide(false,true);body=courseGateHTML()}
- else if(KIDM){openSide(false,true);body=KIDROLE==='parent'?(window.KIDLINK?KIDLINK.parentHTML():''):(window.BOLO?BOLO.viewHTML():'')}
+ else if(KIDM){openSide(false,true);body=KIDROLE==='parent'?(window.KIDLINK?KIDLINK.parentHTML():''):(window.BOLO?(BOLO.kidStart&&BOLO.kidStart(),BOLO.viewHTML()):'')}
  else if(VIEW==='home')body=navHTML();
  else if(VIEW==='fav'||VIEW==='pins'){
   const fn=VIEW==='fav'?q=>isSaved(q.id):q=>isPinned(q.id);

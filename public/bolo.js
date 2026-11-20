@@ -539,10 +539,13 @@
       if (!st.fbInit) { st.fbInit = true; st.i = firstOpen(); }
       return `<h1 class="bl-sr">Bolo</h1>${modeChips()}${subPick()}${card()}${parent()}`;
     },
+    kidStart() {   // Kid mode (child), first screen of every app open: ABC Levels, at the level the child was last trying to pass. Later redraws and the child's own topic taps are left alone.
+      if (st.kidInit) return; st.kidInit = true; st.mode = 'abclv'; st.fbInit = false; if (g.ABCLV && g.ABCLV.openAtLast) g.ABCLV.openAtLast();
+    },
     leave() { stopAbc(); if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); stopListen(); stopSay(); clearAdv(); save(); },
     // Kid mode: what the parent's phone may see (no audio, no text), and the limit / mic switch the parent set there.
     summary() { const d = today(); return { day: C.dayKey(), sec: d.sec, ok: d.ok, redo: d.redo, total: totalDone() }; },
     applyRemote(set) { const s = load(); if (set && set.limit) s.set.limit = Math.min(MAXLIM, Math.max(5, Math.round(+set.limit / 5) * 5)); if (set && set.vol != null) s.set.vol = volOf(set.vol); if (set && typeof set.mic === 'boolean') { s.set.mic = set.mic; if (!set.mic) stopListen(); } if (set && typeof set.rec === 'boolean') s.set.rec = set.rec; save(); redraw(); },
-    _reset() { stopListen(); clearAdv(); store = null; Object.assign(st, { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, err: '', unlocked: false, parOpen: false, pinMsg: '', fbInit: false, aiOff: false, busy: false, enter: true }); }
+    _reset() { stopListen(); clearAdv(); store = null; Object.assign(st, { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, err: '', unlocked: false, parOpen: false, pinMsg: '', fbInit: false, kidInit: false, aiOff: false, busy: false, enter: true }); }
   };
 })();

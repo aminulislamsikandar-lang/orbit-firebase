@@ -92,7 +92,7 @@
   const clear = el => { while (el.firstChild) el.removeChild(el.firstChild); };
 
   const CSS = '.lv-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0}'
-    + '.lv-link{border:0;background:transparent;color:var(--mut);padding:6px 6px 6px 0}'
+    + '.lv-link{border:0;background:#16a34a;color:#fff;font-weight:700;border-radius:18px;padding:6px 14px;box-shadow:0 3px 0 #0f7a36}'   // green = tap here (the same rule as the answer and result buttons)
     + '.lv-pill{border:1px solid var(--ln);background:var(--card);border-radius:18px;padding:3px 12px;font-weight:700}'
     + '.lv-trail{position:relative;margin:16px 0 4px}'
     + '.lv-trail:before{content:"";position:absolute;left:50%;top:30px;bottom:30px;width:6px;margin-left:-3px;border-radius:6px;background:repeating-linear-gradient(var(--ln) 0 12px,transparent 12px 22px)}'
@@ -109,21 +109,23 @@
     + '.lv-pic{font-size:88px;line-height:1.15;border:0;background:transparent;cursor:pointer;padding:0}'
     + '.lv-big{font-size:84px;line-height:1.05;font-weight:700}.lv-ask{font-size:19px;margin:6px 0 10px}.lv-msg{min-height:28px;margin-top:8px;font-weight:600}'
     + '.lv-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}'
-    + '.lv-opt{font-size:38px;font-weight:700;padding:14px;border:1px solid var(--ln);background:var(--card);border-radius:16px}.lv-opt.ok{background:#2e7d32;color:#fff;border-color:#2e7d32}'
+    + '.lv-opt{font-size:38px;font-weight:700;padding:14px;border:0;background:#16a34a;color:#fff;border-radius:16px;box-shadow:0 4px 0 #0f7a36}.lv-opt.ok{background:#14532d;color:#fff;box-shadow:0 4px 0 #0b3a1f}'
     + '.lv-rowt{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:12px 0}'
     + '.lv-slot{width:46px;height:56px;border:2px solid var(--ln);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;background:var(--bg)}'
     + '.lv-slot.gap{border-style:dashed;border-color:#16a34a}.lv-slot.ok{background:#2e7d32;border-color:#2e7d32;color:#fff}'
-    + '.lv-tile{width:60px;height:60px;font-size:28px;font-weight:700;border:1px solid var(--ln);background:var(--card);border-radius:14px}.lv-tile.used{visibility:hidden}'
+    + '.lv-tile{width:60px;height:60px;font-size:28px;font-weight:700;border:0;background:#16a34a;color:#fff;border-radius:14px;box-shadow:0 3px 0 #0f7a36}.lv-tile.used{visibility:hidden}'
     + '.lv-no{animation:lvsh .4s;background:#c62828!important;color:#fff!important}'
     + '.lv-res .lv-big{font-size:60px}.lv-res .lv-stars{font-size:48px;letter-spacing:6px;margin:6px 0;color:#f5b301}.lv-res .lv-stars span{display:inline-block;animation:lvpop .5s both}'
     + '.lv-acts{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px}'
+    + '.lv-acts .btn{background:#16a34a;color:#fff;box-shadow:0 3px 0 #0f7a36}'   // Agla level, Dobara khelo / Phir se khelo, Levels: all green
     + '@keyframes lvbob{50%{transform:translateY(-5px)}}@keyframes lvsh{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}@keyframes lvpop{0%{transform:scale(0)}70%{transform:scale(1.25)}100%{transform:scale(1)}}'
     + '@media(prefers-reduced-motion:reduce){.lv-row.now .lv-node,.lv-no,.lv-res .lv-stars span{animation:none}}';
   function css() { if (g.document.getElementById('abclv-css')) return; const s = h('style', null, CSS); s.id = 'abclv-css'; g.document.head.appendChild(s); }
 
   // ---- state (the screen is always drawn from this, so a redraw of the page keeps the child exactly where they were) ----
-  let ROOT = null, S = { r: null }, cur = null, Q = null, RES = null, lock = false;
+  let ROOT = null, S = { r: null }, cur = null, Q = null, RES = null, lock = false, RESUME = false;
   let best = null;
+  const tryingLevel = b => { for (let i = 0; i < LV.length; i++) if (isOpen(b, i) && b[i] < LV[i].pass) return i; return -1; };   // the first open level not yet passed (same level the map marks as "now")
   const loadBest = () => { if (best) return best; best = LV.map(() => 0); try { const a = JSON.parse(g.localStorage.getItem(BESTKEY) || 'null'); if (Array.isArray(a)) LV.forEach((_, i) => { best[i] = Math.max(0, Math.min(100, +a[i] || 0)); }); } catch (e) { /* blocked storage */ } return best; };
   const saveBest = () => { try { g.localStorage.setItem(BESTKEY, JSON.stringify(best)); } catch (e) { /* storage full or blocked */ } };
   const show = nodes => { clear(ROOT); nodes.forEach(x => ROOT.appendChild(x)); };
@@ -250,8 +252,15 @@
 
   g.ABCLV = {
     viewHTML() { return '<h2 class="sec">' + L('title') + '</h2><div id="abclv-root"></div>'; },
-    mount(root) { const el = root && root.querySelector('#abclv-root'); if (!el) return; ROOT = el; css(); (S.r || map)(); },
-    leave() { stopAll(); timers.splice(0).forEach(clearTimeout); clearTimeout(stT); S = { r: null }; ROOT = null; cur = null; Q = null; RES = null; lock = false; },
+    mount(root) {
+      const el = root && root.querySelector('#abclv-root'); if (!el) return; ROOT = el; css();
+      if (RESUME && !S.r) {   // Kid mode, first open: go straight to the level the child was last trying to pass (all levels passed: the level map)
+        RESUME = false; const n = tryingLevel(loadBest()); if (n >= 0) { play(n); return; }
+      }
+      (S.r || map)();
+    },
+    openAtLast() { RESUME = true; },   // Kid mode asks for this once per app open (bolo.js kidStart)
+    leave() { stopAll(); timers.splice(0).forEach(clearTimeout); clearTimeout(stT); S = { r: null }; ROOT = null; cur = null; Q = null; RES = null; lock = false; RESUME = false; },
     _makeQ: makeQ, _isOpen: isOpen, _stars: stars, _data: { AL, D, WORDS, LV, TOTAL }, _resetBest() { best = null; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);
