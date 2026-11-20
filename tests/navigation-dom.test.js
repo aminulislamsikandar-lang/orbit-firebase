@@ -37,8 +37,9 @@ async function boot() {
   const items = () => [...side().querySelectorAll('.sitem')].map(b => b.dataset.v);
 
   // 1. Nothing was removed from the menu.
-  const need = ['home', 'fav', 'pins', 'getvideo', 'pubvideo', 'vlab', 'models3d', 'abc', 'recall', 'bolo', 'read', 'talk', 'ai', 'class', 'report', 'study', 'pyq', 'pass', 'topper', 'faculty', 'dev', 'settings', 'login'];
+  const need = ['home', 'fav', 'pins', 'getvideo', 'pubvideo', 'vlab', 'models3d', 'recall', 'bolo', 'read', 'talk', 'ai', 'class', 'report', 'study', 'pyq', 'pass', 'topper', 'faculty', 'dev', 'settings', 'login'];
   t('every menu item is still in the menu', need.every(v => items().includes(v)), 'missing: ' + need.filter(v => !items().includes(v)).join(','));
+  t('ABC Games moved out of the menu (it is a topic on the Bolo page now)', !items().includes('abc'));
   t('menu has no duplicate items', new Set(items()).size === items().length);
 
   // 2. Grouped, with the rarely used group closed.

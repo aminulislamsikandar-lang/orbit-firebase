@@ -1328,6 +1328,7 @@ app.post('/api/image', async (req, res) => {
 const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const VIDEOS = require('./videos');
+const PUBCH = require('./public/publicchapters.js');   // chapters whose videos every logged-in student may watch (no subscription needed)
 const VBY = new Map(VIDEOS.map(v => [v.id, v]));
 const B2HOST = (process.env.B2_ENDPOINT || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const B2 = B2HOST && process.env.B2_KEY_ID && process.env.B2_APP_KEY && process.env.B2_BUCKET
@@ -1340,7 +1341,7 @@ const B2 = B2HOST && process.env.B2_KEY_ID && process.env.B2_APP_KEY && process.
   : null;
 
 async function hasAccess(req, v) {
-  if (process.env.REQUIRE_SUBSCRIPTION !== 'true' || v.free) return true;
+  if (process.env.REQUIRE_SUBSCRIPTION !== 'true' || v.free || PUBCH.isPublicVideo(v)) return true;
   try {
     // Read the student's own subscription doc with THEIR login token, so Firestore rules decide (no service account needed).
     const r = await fetch(`https://firestore.googleapis.com/v1/projects/${process.env.FIREBASE_PROJECT_ID}/databases/(default)/documents/subscriptions/${req.user.uid}`,
@@ -1364,7 +1365,7 @@ async function fsVideo(req, id) {
     const f = (await r.json()).fields || {};
     const key = f.key && f.key.stringValue;
     if (!key) return null;
-    const v = { id, key, free: !!(f.free && f.free.booleanValue) };
+    const v = { id, key, free: !!(f.free && f.free.booleanValue), course: f.course && f.course.stringValue, chapter: f.chapter && Number(f.chapter.integerValue) };
     FV.set(id, { t: Date.now(), v });
     if (FV.size > 300) FV.delete(FV.keys().next().value);
     return v;

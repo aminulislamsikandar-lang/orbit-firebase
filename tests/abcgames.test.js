@@ -31,11 +31,12 @@ ok(JSON.stringify(A._makeGaps(() => 0.3)) === JSON.stringify(A._makeGaps(() => 0
 ok(!/\.(innerHTML|outerHTML)\s*\+?=/.test(src) && !/insertAdjacentHTML|document\.write|eval\(/.test(src), 'no HTML sinks');
 ok(!/https?:\/\//.test(src), 'no external URLs');
 ok(!/fetch\(|XMLHttpRequest|sendBeacon/.test(src), 'no network calls');
-for (const k of ['/abcgames.js', "VIEW==='abc'", 'ABC.mount', "item('abc'", 'ABC.leave', "'models3d','abc'"]) ok(idx.includes(k), k + ' is wired into index.html');
+for (const k of ['/abcgames.js', "VIEW==='abc'", 'ABC.mount', 'ABC.leave']) ok(idx.includes(k), k + ' is wired into index.html');
+ok(!idx.includes("item('abc'") && !idx.includes("'models3d','abc'"), 'ABC Games is no longer in the sidebar (it moved to the Bolo page)');
+ok(/\['abc', 'ABC Games'/.test(fs.readFileSync(path.join(ROOT, 'public', 'bolo.js'), 'utf8')), 'ABC Games is a topic chip on the Bolo page');
 ok((idx.match(/ABC\.leave\(\)/g) || []).length >= 2, 'leave is called from go() and from the back button');
 ok(sw.includes('/abcgames.js'), 'cached for offline');
 ok(+(/orbit-shell-v(\d+)/.exec(sw) || [])[1] >= 51, 'service worker cache version bumped');
-ok(!/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/u.test(idx.slice(idx.indexOf("item('abc'"), idx.indexOf("item('abc'") + 40)), 'menu item has no emoji');
 ok(src.length < 30000, 'stays small (' + src.length + ' bytes)');
 
 // ---- fake browser ----
