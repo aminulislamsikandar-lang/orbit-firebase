@@ -216,6 +216,7 @@ window.CLOUD = {
   deletePerson(id, tombstone) { return tombstone ? setDoc(doc(db, 'people', id), tombstone) : deleteDoc(doc(db, 'people', id)); },
   async login() {
     const provider = new GoogleAuthProvider();
+    if (window.ORBIT_TWA) { await signInWithRedirect(auth, provider); return; }   // inside the Android app a pop-up window cannot hand the result back
     try { await signInWithPopup(auth, provider); }
     catch (e) {
       if (e.code === 'auth/popup-blocked') { await signInWithRedirect(auth, provider); return; }

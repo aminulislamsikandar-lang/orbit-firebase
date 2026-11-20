@@ -9,3 +9,11 @@ public/notes/
 public/learn/
 public/class-*/
 public/seba-class-10-notes/
+android/*.keystore
+android/*.jks
+android/app/
+android/build/
+android/.gradle/
+android/*.aab
+android/*.apk
+android/local.properties

@@ -3,7 +3,7 @@
     "site": "orbittutorial",
     "public": "public",
     "predeploy": ["node build-questions.js", "node build-seo.js"],
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "ignore": ["firebase.json", "**/.DS_Store", "**/node_modules/**"],
     "headers": [
       {
         "source": "**",

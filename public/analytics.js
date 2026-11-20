@@ -23,7 +23,7 @@
   var CLARITY_ID = "zbdsqya72b";   // Clarity project "Orbit Tutorial"
 
   var LOCAL = /^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(location.hostname) || location.protocol === "file:";
-  var started = false, off = LOCAL, last = "", queue = [], pendingLogin = false;
+  var started = false, off = LOCAL || !!g.ORBIT_TWA, last = "", queue = [], pendingLogin = false;
 
   var EVENTS = {
     ask: "ai_answer", re: "ai_answer", like: "save_answer", cp: "copy_answer", qcp: "copy_question",

@@ -1,0 +1,31 @@
+{
+  "packageId": "app.web.orbittutorial",
+  "host": "orbittutorial.web.app",
+  "name": "Orbit Tutorial",
+  "launcherName": "Orbit",
+  "display": "standalone",
+  "orientation": "portrait",
+  "themeColor": "#111111",
+  "themeColorDark": "#111111",
+  "navigationColor": "#111111",
+  "navigationColorDark": "#111111",
+  "backgroundColor": "#111111",
+  "enableNotifications": false,
+  "startUrl": "/?source=twa",
+  "iconUrl": "https://orbittutorial.web.app/icon-512.png",
+  "maskableIconUrl": "https://orbittutorial.web.app/icon-maskable-512.png",
+  "webManifestUrl": "https://orbittutorial.web.app/manifest.webmanifest",
+  "fullScopeUrl": "https://orbittutorial.web.app/",
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "signingKey": {
+    "path": "./orbit-upload.keystore",
+    "alias": "orbit-upload"
+  },
+  "fallbackType": "customtabs",
+  "minSdkVersion": 23,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "enableSiteSettingsShortcut": false,
+  "shortcuts": []
+}
