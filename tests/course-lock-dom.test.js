@@ -37,7 +37,12 @@ async function boot({ stored, cache, getFails, hash = '', uid = 'u1' }) {
   // 1. First login: only the picker. No school list, no subjects, no menu.
   let s = await boot({});
   t('first login shows the course picker', /Apna course chuno/.test(s.app()));
-  t('picker lists schools and boards but no subjects yet', /SEBA/.test(s.app()) && /Nashib Ali Academy/.test(s.app()) && !/Mathematics/.test(s.app()));
+  t('picker shows the four tiles but no subjects yet', /SCHOOL/i.test(s.app()) && /CUSTOM/i.test(s.app()) && /BOARD/i.test(s.app()) && /KID/i.test(s.app()) && !/Mathematics/.test(s.app()) && !/SEBA/.test(s.app()));
+  s.click('[data-act=cstep][data-v=school]');
+  t('School tile lists the schools', /Nashib Ali Academy/.test(s.app()) && /Halimon Nessa Academy/.test(s.app()) && !/SEBA/.test(s.app()));
+  s.click('[data-act=cstep][data-v=""]');
+  s.click('[data-act=cstep][data-v=board]');
+  t('Board tile lists the boards', /SEBA/.test(s.app()) && /CBSE/.test(s.app()) && !/Nashib/.test(s.app()));
   t('the menu bar is hidden on the picker', /display:none/.test(s.w.document.querySelector('.top').outerHTML));
   s.click('[data-act=csorg][data-v=seba]');
   t('after choosing SEBA, only its classes are offered', /Class 10/.test(s.app()) && !/Class 6\b/.test(s.app()));
@@ -73,21 +78,21 @@ async function boot({ stored, cache, getFails, hash = '', uid = 'u1' }) {
 
   // 4. A saved course can not be changed by the student (server/rules refuse); the app shows a clear message.
   s = await boot({ stored: null });
-  s.click('[data-act=csorg][data-v=halimon]'); s.click('[data-act=cscls][data-v="8"]'); s.click('[data-act=csmed][data-v=Assamese]');
+  s.click('[data-act=cstep][data-v=school]'); s.click('[data-act=csorg][data-v=halimon]'); s.click('[data-act=cscls][data-v="8"]'); s.click('[data-act=csmed][data-v=Assamese]');
   s.box.stored = { org: 'seba', cls: 10, med: 'Assamese' };   // someone already saved a course for this account
   s.click('[data-act=cssave]'); await tick(80);
-  t('a refused save shows a message and keeps the picker', /pehle se chuna hua/.test(s.app()) && /Apna course chuno/.test(s.app()));
+  t('a refused save shows a message and keeps the picker', /pehle se chuna hua/.test(s.app()) && !!s.w.document.querySelector('[data-act=csorg]') && !s.w.document.querySelector('.top .back'));
   s.w.close();
 
   // 5. A class/medium with no content yet can not be locked.
   s = await boot({});
-  s.click('[data-act=csorg][data-v=cbse]'); s.click('[data-act=cscls][data-v="10"]'); s.click('[data-act=csmed][data-v=English]');
+  s.click('[data-act=cstep][data-v=board]'); s.click('[data-act=csorg][data-v=cbse]'); s.click('[data-act=cscls][data-v="10"]'); s.click('[data-act=csmed][data-v=English]');
   t('empty course: "Coming soon" and no Pakka karo button', /Coming soon/.test(s.app()) && !/Pakka karo/.test(s.app()));
   s.w.close();
 
   // 6. "My school or college is not in the list" -> own courses (school, college, master's)
   s = await boot({});
-  t('the picker offers "my school or college is not in the list"', /Mera school ya college list mein nahi hai/.test(s.app()));
+  t('the picker offers "my school or college is not in the list"', !!s.w.document.querySelector('[data-act=csown]') && /CUSTOM/i.test(s.app()));
   s.click('[data-act=csown]');
   t('own option explains Add course and shows Pakka karo', /Add course/.test(s.app()) && /Master's/.test(s.app()) && /Pakka karo/.test(s.app()) && !/Class\b.*Medium/.test(s.app()));
   s.click('[data-act=cssave]'); await tick(80);

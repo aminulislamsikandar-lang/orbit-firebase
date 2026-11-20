@@ -67,9 +67,9 @@ async function boot(db, uid, { role } = {}) {
   let kid = await boot(db, 'kid1');
   t('course screen has a Kid mode button', !!kid.d.querySelector('[data-act=kidmode]'));
   kid.click('[data-act=kidmode]');
-  t('Kid mode asks who is on this phone', /Main bachcha hoon/.test(kid.app()) && /I am parent/.test(kid.app()) && !/School ya Board/.test(kid.app()));
+  t('Kid mode asks who is on this phone', /Main bachcha hoon/.test(kid.app()) && /I am parent/.test(kid.app()) && !/Apna course chuno/.test(kid.app()));
   kid.click('[data-act=kidback]');
-  t('Wapas returns to the course screen', /School ya Board/.test(kid.app()));
+  t('Wapas returns to the course screen', /Apna course chuno/.test(kid.app()));
   kid.click('[data-act=kidmode]'); kid.click('[data-act=kidrole][data-v=kid]'); await tick(100);
   t('the account is locked to Kid mode', JSON.stringify(db.course.kid1) === '{"kid":true}');
   t('the phone remembers it is the child\'s', kid.w.localStorage.getItem('orbit_kidrole_v1_kid1') === 'kid');
@@ -125,7 +125,7 @@ async function boot(db, uid, { role } = {}) {
   kid.w.document.querySelector('#blPar').open = true;
   t('"Kid mode band karo" is there for the parent', !!kid.d.querySelector('[data-act=csback]') && !kid.d.querySelector('[data-act=csback]').disabled);
   kid.click('[data-act=csback]'); await tick(150);
-  t('Kid mode closes: the lock is gone and the course screen is back', !db.course.kid1 && /School ya Board/.test(kid.app()) && kid.w.localStorage.getItem('orbit_kidrole_v1_kid1') === null);
+  t('Kid mode closes: the lock is gone and the course screen is back', !db.course.kid1 && /Apna course chuno/.test(kid.app()) && kid.w.localStorage.getItem('orbit_kidrole_v1_kid1') === null);
   kid.w.close();
 
   // 8. The same account on a second phone: the lock is there, the phone still has to say who it is.
@@ -138,7 +138,7 @@ async function boot(db, uid, { role } = {}) {
 
   // 9. The parent can also leave Kid mode.
   par.click('[data-act=csback]'); await tick(150);
-  t('the parent phone can leave Kid mode', !db.course.par1 && /School ya Board/.test(par.app()));
+  t('the parent phone can leave Kid mode', !db.course.par1 && /Apna course chuno/.test(par.app()));
   par.w.close();
 
   console.log(pass + ' passed, ' + fail + ' failed');

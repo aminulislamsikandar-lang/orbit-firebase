@@ -132,6 +132,21 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .rgo{flex:none;color:var(--mut);display:flex}
 .rgo svg,.back svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
 .exrow{display:flex;align-items:center;justify-content:space-between;gap:10px}.exbtn{font-weight:700;letter-spacing:.5px;margin-top:6px}.exp{margin-top:8px}[data-qid]{scroll-margin-top:12px}.exhit{outline:2px solid var(--on);outline-offset:3px;transition:outline-color .3s}
+.gtg{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}
+.gt{border:1px solid var(--ln);background:var(--card);border-radius:14px;min-height:150px;padding:16px 8px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.gt:hover{border-color:var(--tx)}
+.gt:active{background:var(--bg)}
+.gtt{display:block;width:100%;text-align:center;font-family:'Baloo 2',system-ui,sans-serif;font-size:34px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tx);background:linear-gradient(100deg,var(--mut) 44%,var(--tx) 50%,var(--mut) 56%);background:linear-gradient(100deg,color-mix(in srgb,var(--tx) 30%,var(--bg)) 44%,var(--tx) 50%,color-mix(in srgb,var(--tx) 30%,var(--bg)) 56%);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:gshimmer 2.2s linear infinite}
+@keyframes gshimmer{from{background-position:100% 0}to{background-position:0 0}}
+@media(prefers-reduced-motion:reduce){.gtt{animation:none;background:none;-webkit-text-fill-color:var(--tx)}}
+.gl{display:grid;gap:10px;margin:12px 0}
+.gr{display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left;border:1px solid var(--ln);background:var(--card);border-radius:14px;padding:14px 16px;font-weight:600}
+.gr[hidden]{display:none}
+.gr small{display:block;color:var(--mut);font-weight:400;font-size:13px}
+.gr[aria-pressed=true]{background:var(--on);color:var(--onbg);border-color:var(--on)}
+.gr[aria-pressed=true] small{color:inherit;opacity:.8}
+.gsq{width:100%;padding:12px 14px;border:1px solid var(--ln);border-radius:12px;background:var(--card);color:var(--tx);font:inherit;margin-top:6px}
+body.kidmode{--bg:#fff3c4;--card:#fff;--tx:#2b1a4a;--mut:#7a5a9a;--ln:#ffcf5c;--ans:#fff8de;--on:#ff4f9a;--onbg:#fff;--hov:rgba(255,79,154,.12);background:radial-gradient(circle at 15% 8%,#ffd6ec 0,transparent 42%),radial-gradient(circle at 92% 30%,#c9ecff 0,transparent 42%),#fff3c4}
 .back{display:inline-flex;align-items:center;gap:2px;border:0;background:transparent;color:var(--mut);padding:6px 6px 6px 0;margin-top:6px}
 .rnote{font-size:13px;color:var(--mut);margin:-4px 6px 0}
 /* install banner */
@@ -262,7 +277,7 @@ try{
 function navSave(){try{localStorage.setItem(NKEY,JSON.stringify(NAV))}catch(e){}}
 // ---- Course lock: one course per student (School/Board + Class + Medium). Saved in Firestore (studentCourse/<uid>), remembered per account on this device. ----
 // COURSE_STATE: 'wait' (loading) | 'none' (must choose) | 'err' (could not load) | 'set'. The server checks the same course on every AI request.
-let KIDROLE='',KID_STEP='',KID_CODE='',OWN_PENDING=false,COURSE=null,COURSE_STATE='wait',RAWD=null,CS={org:'',cls:0,med:''},CSERR='',CSBUSY=false,PEEK=location.hash==='#study';   // PEEK: a parent opened "Padhai ka time" (from the course screen, or by tapping the alert): no course is needed for that one view
+let KIDROLE='',KID_STEP='',KID_CODE='',OWN_PENDING=false,COURSE=null,COURSE_STATE='wait',RAWD=null,CS={org:'',cls:0,med:''},CSERR='',CSTEP='',CSBUSY=false,PEEK=location.hash==='#study';   // PEEK: a parent opened "Padhai ka time" (from the course screen, or by tapping the alert): no course is needed for that one view
 const COURSEKEY=uid=>'orbit_course_v1_'+uid;
 const courseLabel=l=>CATALOG.labelOf(l);
 const lockedIds=()=>COURSE&&RAWD?CATALOG.idsFor(COURSE,RAWD.courses):null;
@@ -342,7 +357,7 @@ async function releaseCourse(){
  CSBUSY=true;CSERR='';draw();
  try{
   if(!OWN_PENDING){await window.CLOUD.course.clear();try{await api('/course/reset',{})}catch(e){console.warn('course reset',e)}}
-  COURSE=null;COURSE_STATE='none';OWN_PENDING=false;CS={org:'',cls:0,med:''};KIDROLE='';KID_STEP='';
+  COURSE=null;COURSE_STATE='none';OWN_PENDING=false;CS={org:'',cls:0,med:''};CSTEP='';KIDROLE='';KID_STEP='';
   try{localStorage.removeItem(COURSEKEY(USER.uid));localStorage.removeItem(KIDROLEKEY(USER.uid))}catch(e){}
   NAV={page:'home'};navSave();VIEW='home';courseChanged();
  }catch(e){CSERR='Course badal nahi paye. Internet check karke dobara try karo.'}
@@ -369,16 +384,22 @@ function courseGateHTML(){
  if(KID_STEP==='code')return head+kidCodeHTML();
  if(KID_STEP==='role'||(COURSE&&COURSE.kid&&!KIDROLE))return head+kidRoleHTML();
  const chips=(list,cur,act,lab)=>`<div class="chips" role="group">${list.map(v=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${cur===v}">${lab(v)}</button>`).join('')}</div>`;
+ const err=CSERR?`<p class="err">${esc(CSERR)}</p>`:'';
+ const backBtn=`<button class="back" data-act="cstep" data-v="">${I.back}<span>Back</span></button>`;
+ const parent=`<p class="mut" style="margin-top:24px">Parent ho? <button class="chip" data-act="csparent">Padhai ka time (parent ke liye)</button></p></div>`;
+ if(CS.own)return head+backBtn+`<h1 style="font-size:26px;margin-top:8px">Custom</h1><p class="mut">Tum apna school, college ya university khud jodoge (Add course). Class 1 se College aur Master's tak chalega.</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?'Save ho raha hai…':'Pakka karo'}</button>`+err+parent;
+ if(!CSTEP)return head+`<h1 style="font-size:26px;margin-top:16px">Apna course chuno</h1><p class="mut">Ye course tab tak lock rahega jab tak tum use hata nahi dete (Course badlo).</p>`
+  +`<div class="gtg"><button class="gt" data-act="cstep" data-v="school"><span class="gtt">School</span></button><button class="gt" data-act="csown"><span class="gtt">Custom</span></button><button class="gt" data-act="cstep" data-v="board"><span class="gtt">Board</span></button><button class="gt" data-act="kidmode"><span class="gtt">Kid</span></button></div>`+err+parent;
+ const isB=CSTEP==='board',g=CATALOG.groups.find(x=>x.t===(isB?'Boards':'Schools'))||{items:[]};
+ const rows=g.items.map(o=>`<button class="gr" data-act="csorg" data-v="${o.id}" data-nm="${esc(o.name.toLowerCase())}" aria-pressed="${CS.org===o.id}"><span>${esc(o.name)}${o.sub?`<small>${esc(o.sub)}</small>`:''}</span></button>`).join('');
  const ready=CATALOG.validLock(CS)&&!CS.own,n=ready?CATALOG.idsFor(CS,RAWD.courses).length:0;
- return head+`<h1 style="font-size:26px;margin-top:16px">Apna course chuno</h1><p class="mut">Ye course tab tak lock rahega jab tak tum use hata nahi dete (Course badlo).</p>`
-  +`<h2 class="sec">School ya Board</h2>`+chips(CATALOG.orgIds(),CS.org,'csorg',id=>esc(CATALOG.orgName(id)))
-  +`<div class="chips" role="group"><button class="chip" data-act="csown" aria-pressed="${!!CS.own}">Mera school ya college list mein nahi hai</button></div>`
-   +`<div class="chips" role="group"><button class="chip" data-act="kidmode">Kid mode: sirf Bolo (chhote bachhon ke liye)</button></div>`
-  +(CS.own?`<p class="mut" style="margin-top:14px">Tum apna school, college ya university khud jodoge (Add course). Class 1 se College aur Master's tak chalega.</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?'Save ho raha hai…':'Pakka karo'}</button>`:'')
-  +(CS.org&&!CS.own?`<h2 class="sec">Class</h2>`+chips(CATALOG.classes[CS.org]||[],CS.cls,'cscls',clsLabel):'')
-  +(CS.org&&CS.cls&&!CS.own?`<h2 class="sec">Medium</h2>`+chips(MEDIUMS,CS.med,'csmed',v=>v):'')
-  +(ready&&!CS.own?(n?`<p class="mut" style="margin-top:14px">${esc(courseLabel(CS))}: ${n} subjects</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?'Save ho raha hai…':'Pakka karo'}</button>`:`<p class="mut" style="margin-top:14px">${esc(courseLabel(CS))}: abhi content nahi hai (Coming soon). Koi aur chuno.</p>`):'')
-  +(CSERR?`<p class="err">${esc(CSERR)}</p>`:'')+`<p class="mut" style="margin-top:24px">Parent ho? <button class="chip" data-act="csparent">Padhai ka time (parent ke liye)</button></p></div>`;
+ return head+backBtn+`<h1 style="font-size:26px;margin-top:8px">${isB?'Board':'School'}</h1>`
+  +(isB?'':`<input id="gsq" class="gsq" type="search" placeholder="Search your school" aria-label="Search your school" autocomplete="off">`)
+  +`<div class="gl">${rows}</div>`+(isB?'':`<p class="mut" id="gsnone" hidden>Koi school nahi mila. <button class="chip" data-act="csown">Custom mein jodo</button></p>`)
+  +(CS.org?`<h2 class="sec">Class</h2>`+chips(CATALOG.classes[CS.org]||[],CS.cls,'cscls',clsLabel):'')
+  +(CS.org&&CS.cls?`<h2 class="sec">Medium</h2>`+chips(MEDIUMS,CS.med,'csmed',v=>v):'')
+  +(ready?(n?`<p class="mut" style="margin-top:14px">${esc(courseLabel(CS))}: ${n} subjects</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?'Save ho raha hai…':'Pakka karo'}</button>`:`<p class="mut" style="margin-top:14px">${esc(courseLabel(CS))}: abhi content nahi hai (Coming soon). Koi aur chuno.</p>`):'')
+  +err+parent;
 }
 function ownHomeHTML(){   // a student whose school or college is not in the list: only the courses they add themselves
  const g=CATALOG.groups.find(x=>x.custom),ini=n=>esc(String(n).split(' ').map(w=>w[0]||'').join('').slice(0,2).toUpperCase());
@@ -912,9 +933,11 @@ function screenInfo(){
  if(n.org)o.org=n.org;if(n.cls)o.cls=n.cls;if(n.sub)o.sub=n.sub;if(n.med)o.med=n.med;if(n.ch)o.ch=n.ch;
  return o}
 function draw(){
+ document.body.classList.remove('kidmode');
  if((AUTH_READY||(CLOUDFAIL&&navigator.onLine))&&!USER){openSide(false,true);$('#app').innerHTML=PARENT_LINK&&window.PARENT_KEY?`<div class="logo" style="margin:14px 0">${LOGO}Orbit Tutorial</div>`+PARENT_KEY.viewHTML():FREE?freeHTML():gateHTML();window.scrollTo(0,0);if(window.Analytics)window.Analytics.screen({name:FREE&&!(PARENT_LINK&&window.PARENT_KEY)?'free_notes':'login_gate'});return}
  if(!DATA)return;
  const d=DATA,y=window.scrollY;
+ document.body.classList.toggle('kidmode',!!(USER&&(KID_STEP||(COURSE&&COURSE.kid===true))));   // Kid screens are the only colourful ones
  const KIDM=kidOn();if(KIDM)VIEW=KIDROLE==='parent'?'kidparent':'bolo';   // Kid mode: the child sees only Bolo, the parent only the parent screen
  const needCourse=!!USER&&(COURSE_STATE!=='set'||(COURSE&&COURSE.kid===true&&!KIDROLE))&&!(PEEK&&VIEW==='study');   // logged in but no course yet (or still loading it): only the course screen is shown
  let body;
@@ -1297,7 +1320,8 @@ document.addEventListener('click',e=>{
  else if(act==='cscls'){CS.cls=+b.dataset.v;CS.med='';CSERR='';draw()}
  else if(act==='csmed'){CS.med=b.dataset.v;CSERR='';draw()}
  else if(act==='csparent'){PEEK=true;go('study')}
- else if(act==='csown'){CS={own:true};CSERR='';draw()}
+ else if(act==='csown'){CS={own:true};CSTEP='';CSERR='';draw()}
+ else if(act==='cstep'){CSTEP=b.dataset.v||'';CS={org:'',cls:0,med:''};CSERR='';draw();window.scrollTo(0,0)}
  else if(act==='kidmode'){KID_STEP='role';CSERR='';draw()}
  else if(act==='kidrole'){if(b.dataset.v==='parent'){KID_STEP='code';CSERR='';draw()}else saveKid('kid')}
  else if(act==='kidback'){KID_STEP=KID_STEP==='code'?'role':'';CSERR='';draw()}
@@ -1419,6 +1443,7 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/voice-tutor.js"></script>
 <script src="/vlab.js"></script>
 <script src="/models3d.js"></script>
+<script>document.addEventListener('input',e=>{const t=e.target;if(!t||t.id!=='gsq')return;const q=t.value.trim().toLowerCase();let n=0;document.querySelectorAll('.gr[data-nm]').forEach(b=>{const ok=b.dataset.nm.indexOf(q)>-1;b.hidden=!ok;if(ok)n++});const z=document.getElementById('gsnone');if(z)z.hidden=n>0});</script>
 <script src="/abcgames.js"></script>
 <script src="/report.js"></script>
 <script src="/avatar.js"></script>
