@@ -132,11 +132,11 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .rgo{flex:none;color:var(--mut);display:flex}
 .rgo svg,.back svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
 .exrow{display:flex;align-items:center;justify-content:space-between;gap:10px}.exbtn{font-weight:700;letter-spacing:.5px;margin-top:6px}.exp{margin-top:8px}[data-qid]{scroll-margin-top:12px}.exhit{outline:2px solid var(--on);outline-offset:3px;transition:outline-color .3s}
-.gtg{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}
-.gt{border:1px solid var(--ln);background:var(--card);border-radius:14px;min-height:150px;padding:16px 8px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.gtg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
+.gt{border:1px solid var(--ln);background:var(--card);border-radius:14px;min-height:150px;padding:16px 8px;display:flex;align-items:center;justify-content:center;cursor:pointer;min-width:0;overflow:hidden}
 .gt:hover{border-color:var(--tx)}
 .gt:active{background:var(--bg)}
-.gtt{display:block;width:100%;text-align:center;font-family:'Baloo 2',system-ui,sans-serif;font-size:34px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tx);background:linear-gradient(100deg,var(--mut) 44%,var(--tx) 50%,var(--mut) 56%);background:linear-gradient(100deg,color-mix(in srgb,var(--tx) 30%,var(--bg)) 44%,var(--tx) 50%,color-mix(in srgb,var(--tx) 30%,var(--bg)) 56%);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:gshimmer 2.2s linear infinite}
+.gtt{display:block;width:100%;text-align:center;font-family:'Baloo 2',system-ui,sans-serif;font-size:min(34px,8vw);font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tx);background:linear-gradient(100deg,var(--mut) 44%,var(--tx) 50%,var(--mut) 56%);background:linear-gradient(100deg,color-mix(in srgb,var(--tx) 30%,var(--bg)) 44%,var(--tx) 50%,color-mix(in srgb,var(--tx) 30%,var(--bg)) 56%);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:gshimmer 2.2s linear infinite}
 @keyframes gshimmer{from{background-position:100% 0}to{background-position:0 0}}
 @media(prefers-reduced-motion:reduce){.gtt{animation:none;background:none;-webkit-text-fill-color:var(--tx)}}
 .gl{display:grid;gap:10px;margin:12px 0}

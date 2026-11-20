@@ -1,0 +1,64 @@
+/* Orbit – 123 section (scoped to #orbit-numbers). Baloo 2 font Orbit mein pehle se hona chahiye. */
+/* Theme: ABC section jaisa */
+#orbit-numbers{--ink:#241a4d;--muted:#7a5aa6;--gold:#f5b800;--gold-d:#d99a00;--green:#16a34a;--card:#fff;--line:#f6d98a;
+--bg:linear-gradient(135deg,#ffe3ee 0%,#fff3c4 45%,#d9f0f7 100%)}
+#orbit-numbers,#orbit-numbers *{box-sizing:border-box}
+#orbit-numbers{font-family:'Baloo 2',system-ui,sans-serif;color:var(--ink);min-height:100%}
+#orbit-numbers .wrap{max-width:760px;margin:0 auto;padding:16px}
+#orbit-numbers .tabs{display:flex;gap:10px;margin:8px 0 18px}
+#orbit-numbers .tab{padding:10px 22px;border-radius:999px;border:2px solid var(--gold);background:#fff;color:var(--gold-d);font:700 18px 'Baloo 2';cursor:pointer}
+#orbit-numbers .tab.on{background:var(--green);border-color:var(--green);color:#fff}
+#orbit-numbers h2{margin:6px 0 2px;font-size:26px;font-weight:800}
+#orbit-numbers .sub{color:var(--muted);margin:0}
+#orbit-numbers .head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+#orbit-numbers .pill{background:#fff;border:2px solid var(--line);border-radius:999px;padding:4px 16px;font-weight:700;font-size:18px;white-space:nowrap}
+#orbit-numbers .path{position:relative;margin-top:18px;padding:6px 0}
+#orbit-numbers .path:before{content:"";position:absolute;left:50%;top:20px;bottom:20px;border-left:6px dashed var(--gold);transform:translateX(-50%);opacity:.8}
+#orbit-numbers .node{display:flex;align-items:center;gap:14px;margin:0 0 26px;width:calc(50% + 40px);cursor:pointer;position:relative}
+#orbit-numbers .node.r{margin-left:calc(50% - 40px);flex-direction:row-reverse;text-align:right}
+#orbit-numbers .circle{flex:none;width:80px;height:80px;border-radius:50%;background:var(--gold);color:#fff;font:800 34px 'Baloo 2';display:grid;place-items:center;box-shadow:0 7px 0 var(--gold-d)}
+#orbit-numbers .node.lock .circle{background:#cfc8dc;box-shadow:0 7px 0 #aaa2bb}
+#orbit-numbers .node.lock{cursor:not-allowed;opacity:.8}
+#orbit-numbers .t{font-weight:800;font-size:19px;line-height:1.15}
+#orbit-numbers .d{color:var(--muted);font-size:15px}
+#orbit-numbers .s{font-size:15px;color:var(--muted)}
+#orbit-numbers .st{color:var(--gold);letter-spacing:2px}
+#orbit-numbers .st .o{color:#e5d8a8}
+#orbit-numbers .games{display:grid;gap:14px;margin-top:16px}
+#orbit-numbers .g{background:var(--card);border-radius:22px;padding:16px 18px;display:flex;gap:14px;align-items:center;cursor:pointer;box-shadow:0 5px 0 var(--line)}
+#orbit-numbers .g .em{font-size:40px}
+#orbit-numbers .g b{font-size:19px}
+#orbit-numbers .g span{display:block;color:var(--muted);font-size:15px}
+#orbit-numbers .hs{margin-left:auto;font-weight:700;color:var(--gold-d);white-space:nowrap}
+#orbit-numbers /* quiz */
+#orbit-numbers .top{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+#orbit-numbers .back{border:0;background:#fff;border-radius:999px;padding:8px 16px;font:700 16px 'Baloo 2';cursor:pointer;box-shadow:0 3px 0 var(--line)}
+#orbit-numbers .bar{flex:1;height:12px;background:#fff;border-radius:99px;overflow:hidden}
+#orbit-numbers .bar i{display:block;height:100%;background:var(--green);width:0;transition:width .3s}
+#orbit-numbers .q{background:#fff;border-radius:26px;padding:20px;text-align:center;box-shadow:0 6px 0 var(--line)}
+#orbit-numbers .q .p{color:var(--muted);font-size:18px;font-weight:700}
+#orbit-numbers .q .big{font-size:46px;font-weight:800;margin:10px 0;line-height:1.2;word-break:break-word}
+#orbit-numbers .opts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+#orbit-numbers .opt{border:0;border-radius:18px;padding:16px 8px;background:var(--gold);color:#fff;font:800 26px 'Baloo 2';box-shadow:0 5px 0 var(--gold-d);cursor:pointer}
+#orbit-numbers .opt.ok{background:var(--green);box-shadow:0 5px 0 #0f7a36}
+#orbit-numbers .opt.no{background:#ef5b5b;box-shadow:0 5px 0 #b93a3a}
+#orbit-numbers .res{text-align:center;background:#fff;border-radius:26px;padding:26px;box-shadow:0 6px 0 var(--line)}
+#orbit-numbers .res .big{font-size:54px}
+#orbit-numbers .btn{margin:8px 6px 0;border:0;border-radius:999px;padding:12px 26px;background:var(--green);color:#fff;font:800 19px 'Baloo 2';cursor:pointer}
+#orbit-numbers .btn.alt{background:#fff;color:var(--gold-d);border:2px solid var(--gold)}
+#orbit-numbers .timer{font-weight:800;font-size:20px;color:var(--gold-d)}
+#orbit-numbers .bgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+#orbit-numbers .balloon{height:84px;border:0;border-radius:50% 50% 48% 48%;color:#fff;font:800 30px 'Baloo 2';cursor:pointer;box-shadow:inset -6px -8px 0 rgba(0,0,0,.12);transition:transform .2s,opacity .25s}
+#orbit-numbers .balloon.c0{background:#f5b800}#orbit-numbers .balloon.c1{background:#ef5b5b}#orbit-numbers .balloon.c2{background:#16a34a}#orbit-numbers .balloon.c3{background:#7a5aa6}#orbit-numbers .balloon.c4{background:#2aa7d6}
+#orbit-numbers .balloon.gone{transform:scale(1.5);opacity:0;pointer-events:none}
+#orbit-numbers .mgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px}
+#orbit-numbers .mc{height:90px;border:0;border-radius:18px;background:var(--gold);color:#fff;font:800 30px 'Baloo 2';box-shadow:0 5px 0 var(--gold-d);cursor:pointer;word-break:break-all;padding:4px}
+#orbit-numbers .mc.open{background:#fff;color:var(--ink);box-shadow:0 5px 0 var(--line)}
+#orbit-numbers .mc.done{background:var(--green);color:#fff;box-shadow:0 5px 0 #0f7a36;pointer-events:none}
+#orbit-numbers .tgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+#orbit-numbers .tb{height:84px;border:0;border-radius:20px;background:var(--gold);color:#fff;font:800 36px 'Baloo 2';box-shadow:0 5px 0 var(--gold-d);cursor:pointer}
+#orbit-numbers .tb.done{background:var(--green);box-shadow:0 5px 0 #0f7a36;opacity:.55;pointer-events:none}
+#orbit-numbers .shake{animation:nshake .35s}
+@keyframes nshake{25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+
+#orbit-numbers .rep{margin-top:6px;border:2px solid var(--line);background:#fff;color:var(--gold-d);border-radius:999px;padding:4px 16px;font:700 15px 'Baloo 2';cursor:pointer}
