@@ -1,13 +1,13 @@
 // Orbit service worker: keeps the app page, its scripts and the question lists so chapters open offline.
 // API calls (/api/*) are never cached here; answers are stored by the page itself.
 // robots.txt, sitemap.xml and the Google verification file are NOT touched: they always go to the server.
-const SHELL = 'orbit-shell-v52';
+const SHELL = 'orbit-shell-v53';
 const FONTS = 'orbit-fonts-v1';
 const ASSETS = 'orbit-assets-v1';
 
 // Same-origin files the app needs to run offline (JSON lists + scripts + icons).
 const CORE = [
-  '/config.js', '/catalog.js', '/custom-course.js', '/warp-loader.js', '/team.js', '/mathvideo-admin.js',
+  '/config.js', '/catalog.js', '/custom-course.js', '/warp-loader.js', '/busy.js', '/team.js', '/mathvideo-admin.js',
   '/narration-sync.js', '/narration-sprites.js', '/mathvideo-player.js', '/narration-loader.js',
   '/voiceover.js', '/voiceover-admin.js', '/narration-admin.js', '/video-admin.js', '/qvideo.js',
   '/analytics.js', '/parent-key.js', '/recall.js', '/voicematch-core.js', '/assamese-fuse.js', '/bolo-core.js', '/bolorec-core.js', '/bolorec.js', '/saath-core.js', '/saath.js', '/bolo-audio/assamese-vyanjan.mp3', '/bolo-audio/saath-byanjan.mp3', '/byanjan-video.js', '/bolo.js', '/kidlink.js', '/vlab.js', '/models3d.js', '/abcgames.js', '/report.js', '/avatar.js', '/studytime.js', '/kidbank.js', '/cloud.js',

@@ -177,7 +177,7 @@ body.kidmode{--bg:#fff3c4;--card:#fff;--tx:#2b1a4a;--mut:#7a5a9a;--ln:#ffcf5c;--
 <div id="scrim" class="scrim"></div>
 <aside id="side" class="side" aria-label="Menu" aria-hidden="true" inert></aside>
 <div id="inst" class="inst" hidden></div>
-<div id="app"><h1 style="font-size:26px;margin-top:14px">Orbit Tutorial</h1><p class="mut">Free AI study helper for school students in Assam: textbook-style answers, diagrams and translations for Class 7, Class 8 and Class 10 (English, Mathematics, Science). Log in with Google to start.</p><p class="mut">Loading…</p></div>
+<div id="app"><h1 style="font-size:26px;margin-top:14px">Orbit Tutorial</h1><p class="mut">Free AI study helper for school students in Assam: textbook-style answers, diagrams and translations for Class 7, Class 8 and Class 10 (English, Mathematics, Science). Log in with Google to start.</p><p class="mut"><span class="busy-spin" aria-hidden="true"></span>Loading…</p></div>
 <footer class="mut" style="text-align:center;font-size:13px;padding:18px 12px 28px"><a href="/learn/" style="color:inherit">All classes and subjects</a> · <a href="/seba-class-10-notes/" style="color:inherit">SEBA Class 10 notes</a> · <a href="/notes/" style="color:inherit">Free notes</a></footer>
 <script src="/config.js"></script>
 <script src="/catalog.js"></script>
@@ -185,8 +185,10 @@ body.kidmode{--bg:#fff3c4;--card:#fff;--tx:#2b1a4a;--mut:#7a5a9a;--ln:#ffcf5c;--
 <script src="/revision-core.js"></script>
 <script src="/custom-course.js"></script>
 <script src="/warp-loader.js"></script>
+<script src="/busy.js"></script>
 <script>
 const $=s=>document.querySelector(s);
+const SPN='<span class="busy-spin" aria-hidden="true"></span>';   // small spinner for buttons that wait
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const LOGO='<svg viewBox="0 0 48 48" style="width:1.1em;height:1.1em;flex:none" role="img" aria-label="Orbit logo"><ellipse cx="24" cy="24" rx="20" ry="9" fill="none" stroke="currentColor" stroke-width="2.5" transform="rotate(-25 24 24)"/><circle cx="24" cy="24" r="8" fill="currentColor"/><circle cx="42.1" cy="15.5" r="3.5" fill="currentColor"/></svg>';
 const ic=p=>`<svg viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
@@ -373,13 +375,13 @@ function kidRoleHTML(){
 function kidCodeHTML(){
  return `<h1 style="font-size:26px;margin-top:16px">I am parent</h1><p class="mut">Bachche ke phone par Bolo kholo, "Parent ke liye" mein "Code banao" dabao, aur wo code yahan paste karo.</p>
   <input id="kidCode" value="${esc(KID_CODE)}" maxlength="9" autocomplete="off" autocapitalize="characters" placeholder="ABCD-EFGH" aria-label="Bachche ka code" style="width:100%;padding:12px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit;font-size:20px;letter-spacing:3px;margin-top:10px">
-  <button class="btn" data-act="kidjoin" ${CSBUSY?'disabled':''} style="margin-top:12px">${CSBUSY?'Jud raha hai…':'Jodo'}</button>`
+  <button class="btn" data-act="kidjoin" ${CSBUSY?'disabled':''} style="margin-top:12px">${CSBUSY?SPN+'Jud raha hai…':'Jodo'}</button>`
   +(CSERR?`<p class="err">${esc(CSERR)}</p>`:'')
   +`<p class="mut" style="margin-top:24px"><button class="chip" data-act="kidback">← Wapas</button></p></div>`;
 }
 function courseGateHTML(){
  const head=`<div style="max-width:420px;margin:0 auto;padding:18px 16px"><div class="logo" style="font-size:26px">${LOGO}Orbit Tutorial</div>`;
- if(COURSE_STATE==='wait'||(COURSE_STATE==='none'&&!RAWD))return head+`<p class="mut" style="margin-top:24px">Tumhara course load ho raha hai…</p></div>`;
+ if(COURSE_STATE==='wait'||(COURSE_STATE==='none'&&!RAWD))return head+`<div style="margin-top:24px">${window.WARP?WARP.block('Tumhara course load ho raha hai…',36):'<p class="mut">Tumhara course load ho raha hai…</p>'}</div></div>`;
  if(COURSE_STATE==='err')return head+`<p class="err" style="margin-top:24px">Course load nahi hua. Internet check karke dobara try karo.</p><button class="btn" data-act="csretry">Dobara try karo</button></div>`;
  if(KID_STEP==='code')return head+kidCodeHTML();
  if(KID_STEP==='role'||(COURSE&&COURSE.kid&&!KIDROLE))return head+kidRoleHTML();
@@ -387,7 +389,7 @@ function courseGateHTML(){
  const err=CSERR?`<p class="err">${esc(CSERR)}</p>`:'';
  const backBtn=`<button class="back" data-act="cstep" data-v="">${I.back}<span>Back</span></button>`;
  const parent=`<p class="mut" style="margin-top:24px">Parent ho? <button class="chip" data-act="csparent">Padhai ka time (parent ke liye)</button></p></div>`;
- if(CS.own)return head+backBtn+`<h1 style="font-size:26px;margin-top:8px">Custom</h1><p class="mut">Tum apna school, college ya university khud jodoge (Add course). Class 1 se College aur Master's tak chalega.</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?'Save ho raha hai…':'Pakka karo'}</button>`+err+parent;
+ if(CS.own)return head+backBtn+`<h1 style="font-size:26px;margin-top:8px">Custom</h1><p class="mut">Tum apna school, college ya university khud jodoge (Add course). Class 1 se College aur Master's tak chalega.</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?SPN+'Save ho raha hai…':'Pakka karo'}</button>`+err+parent;
  if(!CSTEP)return head+`<h1 style="font-size:26px;margin-top:16px">Apna course chuno</h1><p class="mut">Ye course tab tak lock rahega jab tak tum use hata nahi dete (Course badlo).</p>`
   +`<div class="gtg"><button class="gt" data-act="cstep" data-v="school"><span class="gtt">School</span></button><button class="gt" data-act="csown"><span class="gtt">Custom</span></button><button class="gt" data-act="cstep" data-v="board"><span class="gtt">Board</span></button><button class="gt" data-act="kidmode"><span class="gtt">Kid</span></button></div>`+err+parent;
  const isB=CSTEP==='board',g=CATALOG.groups.find(x=>x.t===(isB?'Boards':'Schools'))||{items:[]};
@@ -398,7 +400,7 @@ function courseGateHTML(){
   +`<div class="gl">${rows}</div>`+(isB?'':`<p class="mut" id="gsnone" hidden>Koi school nahi mila. <button class="chip" data-act="csown">Custom mein jodo</button></p>`)
   +(CS.org?`<h2 class="sec">Class</h2>`+chips(CATALOG.classes[CS.org]||[],CS.cls,'cscls',clsLabel):'')
   +(CS.org&&CS.cls?`<h2 class="sec">Medium</h2>`+chips(MEDIUMS,CS.med,'csmed',v=>v):'')
-  +(ready?(n?`<p class="mut" style="margin-top:14px">${esc(courseLabel(CS))}: ${n} subjects</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?'Save ho raha hai…':'Pakka karo'}</button>`:`<p class="mut" style="margin-top:14px">${esc(courseLabel(CS))}: abhi content nahi hai (Coming soon). Koi aur chuno.</p>`):'')
+  +(ready?(n?`<p class="mut" style="margin-top:14px">${esc(courseLabel(CS))}: ${n} subjects</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?SPN+'Save ho raha hai…':'Pakka karo'}</button>`:`<p class="mut" style="margin-top:14px">${esc(courseLabel(CS))}: abhi content nahi hai (Coming soon). Koi aur chuno.</p>`):'')
   +err+parent;
 }
 function ownHomeHTML(){   // a student whose school or college is not in the list: only the courses they add themselves
@@ -650,12 +652,12 @@ function lessonHTML(c,ch){
  ${langChips(c)}
  <div class="chips" role="group" aria-label="Translation style">${ltsOf(c).map(([k,n])=>`<button class="chip" data-act="lssty" data-v="${k}" aria-pressed="${LS.sty===k}">${n}</button>`).join('')}</div>
  <button class="btn" data-act="lsall">Poora lesson translate karo</button>
- ${L.map((t,i)=>{const r=lget(lkey(c,ch,i));return `<div class="lp"><p>${esc(t)}</p>${r&&r.text?`<div class="ans">${fmt(r.text)}</div>`:`<button class="chip" data-act="lstr" data-p="${i}" ${r&&r.loading?'disabled':''}>${r&&r.loading?'Ho raha hai…':'Translate'}</button>`}${r&&r.err?`<div class="err" role="alert">${esc(r.err)}</div>`:''}</div>`}).join('')}
+ ${L.map((t,i)=>{const r=lget(lkey(c,ch,i));return `<div class="lp"><p>${esc(t)}</p>${r&&r.text?`<div class="ans">${fmt(r.text)}</div>`:`<button class="chip" data-act="lstr" data-p="${i}" ${r&&r.loading?'disabled':''}>${r&&r.loading?SPN+'Ho raha hai…':'Translate'}</button>`}${r&&r.err?`<div class="err" role="alert">${esc(r.err)}</div>`:''}</div>`}).join('')}
  ${(ch.words||[]).length?`<h2 class="sec">Word Note</h2>${ch.words.map(([w,m])=>`<p class="pt"><b>${esc(w)}</b>: ${esc(m)}</p>`).join('')}`:''}</div>`;
 }
 function rulesHTML(c,ch,si){
  lsFix(c);const r=lget(rkey(c,ch,si));
- return `<div class="card rul"><div class="qn">Rules (AI)</div>${langChips(c)}${r&&r.text?`<div class="ans">${fmt(r.text)}</div>`:`<button class="btn" data-act="rul" data-si="${si}" ${r&&r.loading?'disabled':''}>${r&&r.loading?'Soch raha hoon…':'Rules samjhao'}</button>`}${r&&r.err?`<div class="err" role="alert">${esc(r.err)}</div>`:''}</div>`;
+ return `<div class="card rul"><div class="qn">Rules (AI)</div>${langChips(c)}${r&&r.text?`<div class="ans">${fmt(r.text)}</div>`:`<button class="btn" data-act="rul" data-si="${si}" ${r&&r.loading?'disabled':''}>${r&&r.loading?SPN+'Soch raha hoon…':'Rules samjhao'}</button>`}${r&&r.err?`<div class="err" role="alert">${esc(r.err)}</div>`:''}</div>`;
 }
 async function lessonTr(c,ch,i){
  const k=lkey(c,ch,i),o=lget(k);
@@ -781,8 +783,8 @@ function syncSoon(){
  clearTimeout(SYNCT);
  SYNCT=setTimeout(()=>window.CLOUD.push({saved:SAVED,pins:PINS,settings:ST}).catch(e=>console.warn('sync failed',e)),1500);
 }
-window.onCloudFail=e=>{CLOUDFAIL=String((e&&e.message)||e||'unknown');console.error('cloud.js failed',e);if(navigator.onLine&&!USER)draw()};
-window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.KIDLINK)window.KIDLINK.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(window.STUDY)window.STUDY.setUser(u);if(u&&FREE){FREE=false;FREE_ID=null;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';PEEK=false;COURSE=null;COURSE_STATE='wait';if(RAWD)courseChanged();if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u);loadCourse(u)}if(DATA||!u)draw()};
+window.onCloudFail=e=>{if(window.BUSY)BUSY.endBoot();CLOUDFAIL=String((e&&e.message)||e||'unknown');console.error('cloud.js failed',e);if(navigator.onLine&&!USER)draw()};
+window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.BUSY){BUSY.endBoot();BUSY.wrapCloud()}if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.KIDLINK)window.KIDLINK.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(window.STUDY)window.STUDY.setUser(u);if(u&&FREE){FREE=false;FREE_ID=null;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';PEEK=false;COURSE=null;COURSE_STATE='wait';if(RAWD)courseChanged();if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u);loadCourse(u)}if(DATA||!u)draw()};
 // First login on a device: merge this device's data with the cloud. After that the cloud copy wins.
 window.onCloudData=cd=>{
  if(window.RECALL&&RECALL.sync)RECALL.sync();   // Recall tracker + topic records: phone <-> account
@@ -820,7 +822,7 @@ function videosHTML(c,ch){
  const vs=VIDEOS.filter(v=>!v.qid&&(v.course||'c10-science')===c.id&&v.chapter===ch.no);if(!vs.length)return'';
  if(lowData())return`<div class="vid"><p class="mut">${esc(L4(M_LOWDATA))}</p></div>`;
  return `<div class="vid"><h2 class="sec">Video lessons</h2>${vs.map(v=>{const s=VID[v.id]||{};
-  return `<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button>${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}</div>`}).join('')}</div>`;
+  return `<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?SPN+'…':''}</button>${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}</div>`}).join('')}</div>`;
 }
 // ---- videos tied to ONE question: the admin adds them with 3-dot menu > Add video (public/qvideo.js, Admin mode) ----
 const qVids=qid=>VIDEOS.filter(v=>v.qid===qid);
@@ -828,7 +830,7 @@ function qvHTML(q){
  const vs=qVids(q.id);if(!vs.length||lowData())return'';
  const adm=!!(window.QVideo&&window.QVideo.active());
  return `<div class="vid qv">${vs.map(v=>{const s=VID[v.id]||{};
-  const row=adm?`<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?' …':''}</button><button class="qvd" data-act="qvdel" data-id="${esc(v.id)}" aria-label="Ye video hatao">Hatao</button></div>`:'';
+  const row=adm?`<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?SPN+'…':''}</button><button class="qvd" data-act="qvdel" data-id="${esc(v.id)}" aria-label="Ye video hatao">Hatao</button></div>`:'';
   const hd=!adm&&(s.loading||s.url||s.err)?`<p class="mut" style="margin:6px 0"><b>${esc(v.title||'Video')}</b>${s.loading?' · video load ho raha hai…':''}</p>`:'';
   return `${row}${hd}${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}`}).join('')}</div>`;
 }
@@ -1060,7 +1062,7 @@ async function qTr(id,lang){
 function qtrHTML(q){
  const u=ui(q.id);if(!u.qt)return'';
  const k=q.id+'|'+u.qt,r=QTR[k]||{};
- return `<div class="qtr"><div class="chips" role="group" aria-label="Question translation language">${trKeys(courseOfId(q.id)).map(l=>`<button class="chip" data-act="qtrset" data-id="${q.id}" data-to="${l}" aria-pressed="${u.qt===l}">${TRL[l].n}</button>`).join('')}</div>${r.loading?'<div class="mut" style="margin-top:8px">Anuvaad ho raha hai…</div>':''}${r.text?`<div class="ans trans"><b>${esc(TRL[u.qt].n)}</b><br>${fmt(r.text)}</div>`:''}${r.err?`<div class="err" role="alert">${esc(r.err)}</div>`:''}</div>`;
+ return `<div class="qtr"><div class="chips" role="group" aria-label="Question translation language">${trKeys(courseOfId(q.id)).map(l=>`<button class="chip" data-act="qtrset" data-id="${q.id}" data-to="${l}" aria-pressed="${u.qt===l}">${TRL[l].n}</button>`).join('')}</div>${r.loading?(window.WARP?WARP.block('Anuvaad ho raha hai…',32):'<div class="mut" style="margin-top:8px">Anuvaad ho raha hai…</div>'):''}${r.text?`<div class="ans trans"><b>${esc(TRL[u.qt].n)}</b><br>${fmt(r.text)}</div>`:''}${r.err?`<div class="err" role="alert">${esc(r.err)}</div>`:''}</div>`;
 }
 
 let awakeAt=0,awakeP=null;
