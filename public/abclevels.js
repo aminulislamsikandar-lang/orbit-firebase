@@ -113,6 +113,8 @@
     + '.lv-rowt{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:12px 0}'
     + '.lv-slot{width:46px;height:56px;border:2px solid var(--ln);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;background:var(--bg)}'
     + '.lv-slot.gap{border-style:dashed;border-color:#16a34a}.lv-slot.ok{background:#2e7d32;border-color:#2e7d32;color:#fff}'
+    + '.lv-slot.tg{background:linear-gradient(90deg,rgba(255,122,168,.35),rgba(255,200,97,.35),rgba(110,231,183,.35),rgba(125,211,252,.35),rgba(196,181,253,.35),rgba(255,122,168,.35)),var(--bg);background-size:300% 100%,100% 100%;animation:lvtg 2.4s linear infinite,lvtgg 1.2s ease-in-out infinite;color:#16a34a}'
+    + '@keyframes lvtg{to{background-position:300% 0,0 0}}@keyframes lvtgg{0%,100%{box-shadow:inset 0 0 4px 0 rgba(255,255,255,.2)}50%{box-shadow:inset 0 0 16px 5px rgba(255,255,255,.45)}}'
     + '.lv-tile{width:60px;height:60px;font-size:28px;font-weight:700;border:0;background:#16a34a;color:#fff;border-radius:14px;box-shadow:0 3px 0 #0f7a36}.lv-tile.used{visibility:hidden}'
     + '.lv-no{animation:lvsh .4s;background:#c62828!important;color:#fff!important}'
     + '.lv-res .lv-big{font-size:60px}.lv-res .lv-stars{font-size:48px;letter-spacing:6px;margin:6px 0;color:#f5b301}.lv-res .lv-stars span{display:inline-block;animation:lvpop .5s both}'
@@ -189,13 +191,13 @@
       c.appendChild(h('div', 'lv-big', q.l)); c.appendChild(h('div', 'lv-ask', L('askCase')));
       opts(c, q.opts, q.l.toLowerCase(), q.l + '. ' + q.l.toLowerCase()); intro = q.l;
     } else if (q.k === 'gap1') {
-      const row = h('div', 'lv-rowt'); q.seg.forEach((l, k) => row.appendChild(h('div', 'lv-slot' + (k === q.m ? ' gap' : ''), k === q.m ? '?' : l)));
+      const row = h('div', 'lv-rowt'); q.seg.forEach((l, k) => row.appendChild(h('div', 'lv-slot' + (k === q.m ? ' gap tg' : ''), k === q.m ? '?' : l)));
       c.appendChild(h('div', 'lv-ask', L('askGap1'))); c.appendChild(row);
       opts(c, q.opts, q.seg[q.m], q.seg.join(', ')); intro = 'Which letter is missing?';
     } else if (q.k === 'gap3') {
       c.appendChild(h('div', 'lv-ask', L('askGap3')));
       const row = h('div', 'lv-rowt');
-      q.seg.forEach((l, k) => { if (!q.miss.includes(k)) row.appendChild(h('div', 'lv-slot', l)); else if (q.fill[k]) row.appendChild(h('div', 'lv-slot ok', l)); else row.appendChild(h('div', 'lv-slot gap', k === q.sel ? '?' : '')); });
+      q.seg.forEach((l, k) => { if (!q.miss.includes(k)) row.appendChild(h('div', 'lv-slot', l)); else if (q.fill[k]) row.appendChild(h('div', 'lv-slot ok', l)); else row.appendChild(h('div', 'lv-slot gap' + (k === q.sel ? ' tg' : ''), k === q.sel ? '?' : '')); });
       c.appendChild(row);
       const tr = h('div', 'lv-rowt');
       q.tiles.forEach((l, k) => tr.appendChild(btn('lv-tile' + (q.used[k] ? ' used' : ''), l, function () {
