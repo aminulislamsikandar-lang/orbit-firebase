@@ -178,6 +178,7 @@ const ic=p=>`<svg viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
 const HEART='<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/>';
 const I={
  plus:ic('<path d="M12 5v14"/><path d="M5 12h14"/>'),
+ abc:ic('<path d="M5 20L12 4l7 16"/><path d="M8.5 14h7"/>'),
  ai:ic('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>'),
  recall:ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
  report:ic('<path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/>'),
@@ -929,6 +930,7 @@ function draw(){
  else if(VIEW==='pubvideo')body=pvHTML();
  else if(VIEW==='vlab')body=window.VLAB?VLAB.viewHTML():'';
  else if(VIEW==='models3d')body=window.M3D?M3D.viewHTML():'';
+ else if(VIEW==='abc')body=window.ABC?ABC.viewHTML():'';
  else if(VIEW==='ai')body=window.PARENT_KEY?PARENT_KEY.viewHTML():'';
  else if(VIEW==='recall')body=window.RECALL?RECALL.viewHTML():'';
  else if(VIEW==='class')body=window.CLASSROOM?CLASSROOM.viewHTML():'';
@@ -945,6 +947,7 @@ function draw(){
  drawSide();
  if(VIEW==='vlab'&&window.VLAB)VLAB.mount($('#app'));
  if(VIEW==='models3d'&&window.M3D)M3D.mount($('#app'));
+ if(VIEW==='abc'&&window.ABC)ABC.mount($('#app'));
  if(window.AVATAR)AVATAR.set(anySay());
  if(window.STUDY)STUDY.sync();
  if(window.Analytics)window.Analytics.screen(screenInfo());
@@ -960,7 +963,7 @@ function drawSide(){
  const item=(v,ico,label,badge)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
  ${item('home','home','Home')}${COURSE&&!COURSE.own?'':item('custom','plus','My Courses')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}
- ${grp('learn','Seekho',['getvideo','pubvideo','vlab','models3d'],item('getvideo','vid','Get Video')+item('pubvideo','vid','Public Videos')+item('vlab','lab','Virtual Lab')+item('models3d','cube','3D Models'),true)}
+ ${grp('learn','Seekho',['getvideo','pubvideo','vlab','models3d','abc'],item('getvideo','vid','Get Video')+item('pubvideo','vid','Public Videos')+item('vlab','lab','Virtual Lab')+item('models3d','cube','3D Models')+item('abc','abc','ABC Games'),true)}
  ${grp('practice','Practice',['recall','bolo','read','talk','ai'],item('recall','recall','Recall AI')+item('bolo','mic','Bolo')+item('read','mic','Padhne ki jaanch')+item('talk','mic','Baat-cheet')+item('ai','ai','Advanced AI Features'),true)}
  ${grp('me','Meri progress',['class','report','study'],item('class','class','My Class')+item('report','report','Weekly Report')+item('study','recall','Padhai ka time'),true)}
  ${grp('more','Aur',['pyq','pass','topper','faculty','dev'],item('pyq','pyq','PYQ')+item('pass','pass','Pass mark')+item('topper','topper','Topper')+item('faculty','fac','Faculty')+item('dev','dev','Developer'),false)}
@@ -998,7 +1001,7 @@ function go(v){
  if(kidOn())return;   // Kid mode: no other page
  if(v==='home'){openSide(false,true);navTo({page:'home'});return}
  stopSay();
- VIEW=v;if(window.BOLO&&v!=='bolo')BOLO.leave();if(v==='class'&&window.CLASSROOM)CLASSROOM.refresh();if(window.VOICE&&v!=='read'&&v!=='talk')VOICE.leave();if(window.VLAB&&v!=='vlab')VLAB.leave();if(window.STUDY&&v!=='study')STUDY.leave();if(window.M3D&&v!=='models3d')M3D.leave();
+ VIEW=v;if(window.BOLO&&v!=='bolo')BOLO.leave();if(v==='class'&&window.CLASSROOM)CLASSROOM.refresh();if(window.VOICE&&v!=='read'&&v!=='talk')VOICE.leave();if(window.VLAB&&v!=='vlab')VLAB.leave();if(window.STUDY&&v!=='study')STUDY.leave();if(window.M3D&&v!=='models3d')M3D.leave();if(window.ABC&&v!=='abc')ABC.leave();
  draw();openSide(false,true);window.scrollTo(0,0);
  try{if(!(history.state&&history.state.view===v))history.pushState({nav:NAV,view:v},'')}catch(e){}
 }
@@ -1007,7 +1010,7 @@ window.addEventListener('popstate',e=>{
  if(!(e.state&&e.state.nav)||!DATA)return;
  const v=e.state.view||'home';
  stopSay();
- if(window.BOLO&&v!=='bolo')BOLO.leave();if(window.VLAB&&v!=='vlab')VLAB.leave();if(window.STUDY&&v!=='study')STUDY.leave();if(window.M3D&&v!=='models3d')M3D.leave();if(window.VOICE&&v!=='read'&&v!=='talk')VOICE.leave();NAV=e.state.nav;LOCKED=null;VIEW=v;fixNav();navSave();if(v==='class'&&window.CLASSROOM)CLASSROOM.refresh();draw();openSide(false,true);window.scrollTo(0,0);
+ if(window.BOLO&&v!=='bolo')BOLO.leave();if(window.VLAB&&v!=='vlab')VLAB.leave();if(window.STUDY&&v!=='study')STUDY.leave();if(window.M3D&&v!=='models3d')M3D.leave();if(window.ABC&&v!=='abc')ABC.leave();if(window.VOICE&&v!=='read'&&v!=='talk')VOICE.leave();NAV=e.state.nav;LOCKED=null;VIEW=v;fixNav();navSave();if(v==='class'&&window.CLASSROOM)CLASSROOM.refresh();draw();openSide(false,true);window.scrollTo(0,0);
 });
 try{history.replaceState({nav:NAV},'')}catch(e){}
 function pin(id){if(PINS[id])delete PINS[id];else PINS[id]=Date.now();pinPersist();draw()}
@@ -1416,6 +1419,7 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/voice-tutor.js"></script>
 <script src="/vlab.js"></script>
 <script src="/models3d.js"></script>
+<script src="/abcgames.js"></script>
 <script src="/report.js"></script>
 <script src="/avatar.js"></script>
 <script src="/kidbank.js"></script>
