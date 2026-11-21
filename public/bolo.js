@@ -60,7 +60,7 @@
   const hasPin = () => !!load().set.pin;
   const canEdit = () => !hasPin() || st.unlocked;
   function firstOpen() { const m = marks(), n = list().length; for (let i = 0; i < n; i++) if (m[i] !== 'd') return i; return 0; }
-  const stopAbc = () => { if (g.ABC) g.ABC.leave(); if (g.ABCLV) g.ABCLV.leave(); };   // the ABC topics keep their own speech and timers: stop them when the child changes topic or leaves
+  const stopAbc = () => { if (g.ABC) g.ABC.leave(); if (g.ABCLV) g.ABCLV.leave(); if (g.NUMG) g.NUMG.leave(); if (g.NUMLV) g.NUMLV.leave(); };   // the ABC topics keep their own speech and timers: stop them when the child changes topic or leaves
   function reset(mode) { if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); stopListen(); stopSay(); clearAdv(); if (mode) { st.mode = mode; stopAbc(); } st.fb = null; st.err = ''; st.enter = true; st.i = firstOpen(); }
 
   // ---- voice out ----
@@ -426,7 +426,7 @@
     g.document.head.appendChild(s); return '';
   }
 
-  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['saath', 'সাথে বলো', '#e0613a'], ['asvyanjan', 'ক – কল', '#00969f'], ['abc', 'ABC Games', '#f59e0b'], ['abclv', 'ABC Levels', '#16a34a']];
+  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['saath', 'সাথে বলো', '#e0613a'], ['asvyanjan', 'ক – কল', '#00969f'], ['abc', 'ABC Games', '#f59e0b'], ['abclv', 'ABC Levels', '#16a34a'], ['numg', '123 Games', '#f59e0b'], ['numlv', '123 Levels', '#16a34a']];
   const chipRow = (label, arr) => `<div class="chips bl-chips" role="group" aria-label="${label}">${arr.map(m => `<button class="chip" style="--c:${m[3]}" data-bl="${m[0]}" data-v="${m[1]}" aria-pressed="${m[4]}">${m[2]}</button>`).join('')}</div>`;
   const modeChips = () => chipRow('Kya bolna hai', MODES.map(m => ['mode', m[0], m[1], m[2], st.mode === m[0]]));
   function subPick() {   // the second row of chips (table number, or which poem) - still only chips at the top
@@ -464,6 +464,8 @@
     if (over()) return `<div class="card"><h2 class="sec" style="margin:0 0 6px">Aaj ka time poora hua</h2><p class="mut" style="margin:0">Kal dobara bolenge. Aaj ${today().ok} baar sahi bola.</p><p class="mut" style="margin:10px 0 0">Parent ne roz ki limit ${limTxt(s.set.limit)} rakhi hai.</p></div>`;
     if (st.mode === 'abc') return g.ABC ? g.ABC.viewHTML() : '';   // ABC Games (moved here from the menu) and ABC Levels draw their own page; index.html mounts them after the page is drawn
     if (st.mode === 'abclv') return g.ABCLV ? g.ABCLV.viewHTML() : '';
+    if (st.mode === 'numg') return g.NUMG ? g.NUMG.viewHTML() : '';   // 123 Games and 123 Levels: the same way as the ABC topics
+    if (st.mode === 'numlv') return g.NUMLV ? g.NUMLV.viewHTML() : '';
     if (st.mode === 'saath') return saathCard();
     const by = st.mode === 'byanjan', asv = st.mode === 'asvyanjan';
     const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:60px' : 'font-size:104px';

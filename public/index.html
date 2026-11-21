@@ -974,7 +974,7 @@ function draw(){
  if(VIEW==='vlab'&&window.VLAB)VLAB.mount($('#app'));
  if(VIEW==='models3d'&&window.M3D)M3D.mount($('#app'));
  if(VIEW==='abc'&&window.ABC)ABC.mount($('#app'));
- if(VIEW==='bolo'){if(window.ABC)ABC.mount($('#app'));if(window.ABCLV)ABCLV.mount($('#app'))}   // ABC Games and ABC Levels now live inside the Bolo page (they mount only when their topic is open)
+ if(VIEW==='bolo'){if(window.ABC)ABC.mount($('#app'));if(window.ABCLV)ABCLV.mount($('#app'));if(window.NUMG)NUMG.mount($('#app'));if(window.NUMLV)NUMLV.mount($('#app'))}   // ABC Games, ABC Levels, 123 Games and 123 Levels now live inside the Bolo page (they mount only when their topic is open)
  if(window.AVATAR)AVATAR.set(anySay());
  if(window.STUDY)STUDY.sync();
  if(window.Analytics)window.Analytics.screen(screenInfo());
@@ -1450,6 +1450,9 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script>document.addEventListener('input',e=>{const t=e.target;if(!t||t.id!=='gsq')return;const q=t.value.trim().toLowerCase();let n=0;document.querySelectorAll('.gr[data-nm]').forEach(b=>{const ok=b.dataset.nm.indexOf(q)>-1;b.hidden=!ok;if(ok)n++});const z=document.getElementById('gsnone');if(z)z.hidden=n>0});</script>
 <script src="/abcgames.js"></script>
 <script src="/abclevels.js"></script>
+<script src="/numcore.js"></script>
+<script src="/numgames.js"></script>
+<script src="/numlevels.js"></script>
 <script src="/report.js"></script>
 <script src="/avatar.js"></script>
 <script src="/kidbank.js"></script>

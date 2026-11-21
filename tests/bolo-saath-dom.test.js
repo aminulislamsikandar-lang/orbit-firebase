@@ -30,7 +30,7 @@ const tick = () => new Promise(r => setTimeout(r, 20));
 (async () => {
   let b = boot({ rec: true }, 'ABCD2345');
   const chip = [...b.d.querySelectorAll('.bl-chips [data-bl=mode]')].find(x => x.dataset.v === 'saath');
-  t('a topic chip সাথে বলো exists, after ব্যঞ্জন', !!chip && chip.textContent === 'সাথে বলো' && [...b.d.querySelectorAll('.bl-chips [data-bl=mode]')].map(x => x.dataset.v).join() === 'alpha,table,poem,byanjan,saath,asvyanjan,abc,abclv');
+  t('a topic chip সাথে বলো exists, after ব্যঞ্জন', !!chip && chip.textContent === 'সাথে বলো' && [...b.d.querySelectorAll('.bl-chips [data-bl=mode]')].map(x => x.dataset.v).join() === 'alpha,table,poem,byanjan,saath,asvyanjan,abc,abclv,numg,numlv');
   b.click('[data-bl=mode][data-v=byanjan]');
   t('Byanjan topic is untouched: no Start button, its own buttons stay the same', !b.q('[data-bl=auto]') && !b.q('[data-bl=autostop]') && [...b.d.querySelectorAll('.bl-stage button')].map(x => x.dataset.bl).join() === 'next,self,self' && !!b.q('.bl-stage'));
   b.click('[data-bl=mode][data-v=saath]');
