@@ -54,13 +54,19 @@
       <p class="mut" style="margin:10px 0 0;font-size:12.5px">AI se galti ho sakti hai. Shak ho to apne teacher ya kitab se milao.</p></div>`;
   }
 
-  // The block that goes into the question's 3-dot menu.
+  // The menu item for the question's 3-dot menu: opens or closes the photo block below the question.
+  function menuItem(id) {
+    if (!id) return '';
+    const s = st(id), cam = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+    return `<button class="qmi" role="menuitem" data-ac="toggle" data-id="${esc(id)}">${cam}<span>${s.open ? 'Answer check band karo' : 'Apna answer check karo (photo)'}</span></button>`;
+  }
+
+  // The photo block, shown under the question only after "Apna answer check karo (photo)" was chosen in the 3-dot menu.
   function html(q) {
     if (!q || !q.id) return '';
     const id = q.id, s = st(id);
-    const chip = `<div class="chips"><button class="chip" data-ac="toggle" data-id="${esc(id)}" aria-expanded="${s.open}">Apna answer check karo (photo)</button></div>`;
-    if (!s.open) return chip;
-    return chip + `<div class="card" style="margin-top:10px">
+    if (!s.open) return '';
+    return `<div class="card" style="margin-top:10px">
       <p class="mut" style="margin:0 0 8px">Kaapi mein haath se likha answer ki photo lo. AI padhega, kitab ke notes se milayega aur batayega kahan galti hui. Maths mein har line check hoti hai.</p>
       <p class="mut" style="margin:0 0 8px;font-size:12.5px">Sirf answer wale page ki photo lo (chehra ya naam nahi). Photo save nahi hoti, sirf padhi jaati hai. Ye roz ki photo limit mein ginti hai (parent ki key ho to limit nahi).</p>
       <input type="file" accept="image/*" hidden data-ac-file="${esc(id)}">
@@ -71,7 +77,7 @@
   doc.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-ac]'); if (!b || b.disabled) return;
     const id = b.dataset.id, a = b.dataset.ac;
-    if (a === 'toggle') { const s = st(id); s.open = !s.open; redraw(); }
+    if (a === 'toggle') { const s = st(id); s.open = !s.open; try { if (typeof ui === 'function') ui(id).qm = false; } catch (err) {} redraw(); }
     else if (a === 'pick') { const f = b.parentNode && b.parentNode.querySelector('[data-ac-file]'); if (f) f.click(); }
   });
   doc.addEventListener('change', e => {
@@ -82,5 +88,5 @@
     check(t.dataset.acFile, f);
   });
 
-  g.ACHECK = { html, hooks, _state: S, _check: check };
+  g.ACHECK = { html, menuItem, hooks, _state: S, _check: check };
 })(window);
