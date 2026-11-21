@@ -41,6 +41,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .seofoot a{color:inherit;text-decoration:none;-webkit-user-select:none;user-select:none}
 .seofoot a:hover{text-decoration:underline}
 .seofoot .soc{margin-top:4px}
+body.nofoot .seofoot{display:none}   /* the footer links belong to the front page only (draw() sets nofoot everywhere else) */
 .seofoot .soc a,.seofoot .soc span{display:inline-flex;align-items:center;padding:6px 8px}
 .seofoot .soc span{cursor:default}
 .seofoot .soc svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
@@ -945,7 +946,7 @@ function screenInfo(){
  return o}
 function draw(){
  document.body.classList.remove('kidmode');
- if((AUTH_READY||(CLOUDFAIL&&navigator.onLine))&&!USER){openSide(false,true);$('#app').innerHTML=PARENT_LINK&&window.PARENT_KEY?`<div class="logo" style="margin:14px 0">${LOGO}Orbit Tutorial</div>`+PARENT_KEY.viewHTML():FREE?freeHTML():gateHTML();window.scrollTo(0,0);if(window.Analytics)window.Analytics.screen({name:FREE&&!(PARENT_LINK&&window.PARENT_KEY)?'free_notes':'login_gate'});return}
+ if((AUTH_READY||(CLOUDFAIL&&navigator.onLine))&&!USER){openSide(false,true);$('#app').innerHTML=PARENT_LINK&&window.PARENT_KEY?`<div class="logo" style="margin:14px 0">${LOGO}Orbit Tutorial</div>`+PARENT_KEY.viewHTML():FREE?freeHTML():gateHTML();document.body.classList.toggle('nofoot',!!(FREE||(PARENT_LINK&&window.PARENT_KEY)));window.scrollTo(0,0);if(window.Analytics)window.Analytics.screen({name:FREE&&!(PARENT_LINK&&window.PARENT_KEY)?'free_notes':'login_gate'});return}
  if(!DATA)return;
  const d=DATA,y=window.scrollY;
  document.body.classList.toggle('kidmode',!!(USER&&(KID_STEP||(COURSE&&COURSE.kid===true))));   // Kid screens are the only colourful ones
@@ -976,6 +977,7 @@ function draw(){
  else if(VIEW==='settings')body=settingsHTML();
  else if(VIEW==='login')body=loginHTML();
  else body=soonHTML();
+ document.body.classList.toggle('nofoot',!(VIEW==='home'&&!needCourse&&!KIDM));   // footer links: home screen only
  if(VIEW!=='home'&&!needCourse&&!KIDM&&body.indexOf('class="back"')<0)body=`<button class="back" data-act="nav" data-v="home">${I.back}<span>Home</span></button>`+body;
  $('#app').innerHTML=`<div class="top"${needCourse?' style="display:none"':''}>${KIDM?'':`<button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button>`}<div class="logo">${LOGO}Orbit Tutorial</div></div>${body}`;
  drawSide();
