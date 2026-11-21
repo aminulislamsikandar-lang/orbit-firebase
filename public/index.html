@@ -400,7 +400,7 @@ function courseGateHTML(){
  const backBtn=`<button class="back" data-act="cstep" data-v="">${I.back}<span>Back</span></button>`;
  const parent='</div>';   // the "I am mentor" door (Padhai ka time for parents) now lives on the Kid mode screen (kidRoleHTML)
  if(CS.own)return head+backBtn+`<h1 style="font-size:26px;margin-top:8px">Custom</h1><p class="mut">Tum apna school, college ya university khud jodoge (Add course). Class 1 se College aur Master's tak chalega.</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?SPN+'Save ho raha hai…':'Pakka karo'}</button>`+err+parent;
- if(!CSTEP)return head+`<h1 style="font-size:26px;margin-top:16px">Apna course chuno</h1><p class="mut">Ye course tab tak lock rahega jab tak tum use hata nahi dete (Course badlo).</p>`
+ if(!CSTEP)return head+`<h1 style="font-size:26px;margin-top:16px">Apna course chuno</h1>`
   +`<div class="gtg"><button class="gt" data-act="cstep" data-v="school"><span class="gtt">School</span></button><button class="gt" data-act="csown"><span class="gtt">Custom</span></button><button class="gt" data-act="cstep" data-v="board"><span class="gtt">Board</span></button><button class="gt" data-act="kidmode"><span class="gtt">Kid</span></button></div>`+err+parent;
  const isB=CSTEP==='board',g=CATALOG.groups.find(x=>x.t===(isB?'Boards':'Schools'))||{items:[]};
  const rows=g.items.map(o=>`<button class="gr" data-act="csorg" data-v="${o.id}" data-nm="${esc(o.name.toLowerCase())}" aria-pressed="${CS.org===o.id}"><span>${esc(o.name)}${o.sub?`<small>${esc(o.sub)}</small>`:''}</span></button>`).join('');
