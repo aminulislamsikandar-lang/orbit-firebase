@@ -838,7 +838,9 @@ window.onCloudData=cd=>{
  if(DATA)draw();
 };
 // ---- recorded video lessons (files in Backblaze B2; the server hands out a short-lived link) ----
-let VIDEOS=[],STATIC_V=[],CLOUD_V=[];const VID={};   // id -> {loading,url,err}
+let VIDEOS=[],STATIC_V=[],CLOUD_V=[];const VID={};   // id -> {loading,url,err,sub}
+const payBtnHTML=()=>'<button class="btn" data-act="payunlock">Videos unlock karo</button>';   // shown under a "subscription chahiye" message (public/pay.js, Razorpay)
+window.addEventListener('orbit-paid',()=>{Object.keys(VID).forEach(k=>{VID[k].err='';VID[k].sub=false});if(DATA)draw()});
 function mergeV(){   // videos.js (deployed with the site) + videos added from the admin panel (Firestore); same id: the admin panel one wins
  const m=new Map();STATIC_V.forEach(v=>m.set(v.id,v));
  CLOUD_V.forEach(v=>{if(v&&v.id&&v.title&&Number.isInteger(v.chapter))m.set(v.id,{id:v.id,course:v.course||'c10-science',chapter:v.chapter,title:v.title,free:!!v.free,qid:typeof v.qid==='string'?v.qid:'',kind:(v.kind==='plan'||v.kind==='html')?v.kind:'mp4'})});
@@ -848,7 +850,7 @@ function videosHTML(c,ch){
  const vs=VIDEOS.filter(v=>!v.qid&&(window.PUBLIC_CHAPTERS?PUBLIC_CHAPTERS.belongs(v,c.id,ch.no):(v.course||'c10-science')===c.id&&v.chapter===ch.no));if(!vs.length)return'';
  if(lowData())return`<div class="vid"><p class="mut">${esc(L4(M_LOWDATA))}</p></div>`;
  return `<div class="vid"><h2 class="sec">Video lessons</h2>${vs.map(v=>{const s=VID[v.id]||{};
-  return `<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?SPN+'…':''}</button>${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}</div>`}).join('')}</div>`;
+  return `<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?SPN+'…':''}</button>${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}${s.sub?payBtnHTML():''}</div>`}).join('')}</div>`;
 }
 // ---- videos tied to ONE question: the admin adds them with 3-dot menu > Add video (public/qvideo.js, Admin mode) ----
 const qVids=qid=>VIDEOS.filter(v=>v.qid===qid);
@@ -858,7 +860,7 @@ function qvHTML(q){
  return `<div class="vid qv">${vs.map(v=>{const s=VID[v.id]||{};
   const row=adm?`<div><button class="btn" data-act="vid" data-id="${esc(v.id)}" ${s.loading?'disabled':''}>▶ ${esc(v.title)}${s.loading?SPN+'…':''}</button><button class="qvd" data-act="qvdel" data-id="${esc(v.id)}" aria-label="Ye video hatao">Hatao</button></div>`:'';
   const hd=!adm&&(s.loading||s.url||s.err)?`<p class="mut" style="margin:6px 0"><b>${esc(v.title||'Video')}</b>${s.loading?' · video load ho raha hai…':''}</p>`:'';
-  return `${row}${hd}${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}`}).join('')}</div>`;
+  return `${row}${hd}${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}${s.sub?payBtnHTML():''}`}).join('')}</div>`;
 }
 const qvMenuVideos=id=>{const vs=lowData()?[]:qVids(id);return vs.map((v,i)=>`<button class="qmi" role="menuitem" data-act="qvopen" data-id="${esc(v.id)}">${I.vid}<span>${esc(String(v.title||'').trim().slice(0,60)||('Video'+(vs.length>1?` (${i+1})`:'')))}</span></button>`).join('')};
 const qvMenuItem=id=>window.QVideo&&window.QVideo.active()?`<button class="qmi" role="menuitem" data-act="qvadd" data-id="${id}">${I.vid}<span>Add video</span></button>`:'';
@@ -914,8 +916,8 @@ async function openVideo(id){
  if(rec&&rec.kind&&rec.kind!=='mp4')return openCodeVideo(rec);
  const s=VID[id]=VID[id]||{};
  if(s.url){delete s.url;draw();return}
- s.loading=true;s.err='';draw();
- try{const j=await api('/api/video',{id});s.url=j.url}catch(e){s.err=errMsg(e)}
+ s.loading=true;s.err='';s.sub=false;draw();
+ try{const j=await api('/api/video',{id});s.url=j.url}catch(e){s.err=errMsg(e);s.sub=!!e&&e.code==='subscription_required'}
  s.loading=false;draw();
 }
 fetch('/videos.json').then(r=>r.ok?r.json():[]).then(v=>{STATIC_V=v;mergeV()}).catch(()=>{});
@@ -1385,6 +1387,7 @@ document.addEventListener('click',e=>{
  else if(act==='say')say(id);
  else if(act==='cp')copy(id);
  else if(act==='vid')openVideo(id);
+ else if(act==='payunlock'){if(window.OrbitPay)window.OrbitPay.start()}
  else if(act==='qvopen'){const v=VIDEOS.find(x=>x.id===id);if(v&&v.qid)ui(v.qid).qm=false;openVideo(id)}
  else if(act==='qvadd'){ui(id).qm=false;draw();if(window.QVideo)window.QVideo.open(id)}
  else if(act==='qvdel'){if(window.QVideo)window.QVideo.remove(id)}
@@ -1487,6 +1490,7 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/avatar.js"></script>
 <script src="/kidbank.js"></script>
 <script src="/studytime.js"></script>
+<script src="/pay.js"></script>
 <script type="module">import('/cloud.js').catch(e=>window.onCloudFail&&window.onCloudFail(e))</script>
 </body>
 </html>

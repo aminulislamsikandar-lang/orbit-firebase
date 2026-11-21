@@ -1404,7 +1404,7 @@ app.post('/api/video', async (req, res) => {
   const v = VBY.get(vid) || await fsVideo(req, vid);
   if (!v) return res.status(400).json({ error: 'Video nahi mili.' });
   if (!B2) return res.status(500).json({ error: 'Video storage abhi set nahi hai.' });
-  if (!(await hasAccess(req, v))) return res.status(403).json({ error: 'Ye video dekhne ke liye subscription chahiye.' });
+  if (!(await hasAccess(req, v))) return res.status(403).json({ code: 'subscription_required', error: 'Ye video dekhne ke liye subscription chahiye.' });
   try {
     const url = await getSignedUrl(B2, new GetObjectCommand({ Bucket: process.env.B2_BUCKET, Key: v.key }), { expiresIn: 3600 });
     // Try the link once ourselves, so a storage problem shows up as a clear message instead of a dead video player.
@@ -2044,5 +2044,19 @@ app.post('/api/bolo/rec/upload', bolorecRoute(BOLOREC.upload));
 app.post('/api/bolo/rec/list', bolorecRoute(BOLOREC.list));
 app.post('/api/bolo/rec/get', bolorecRoute(BOLOREC.get));
 setInterval(() => BOLOREC.sweep(true).catch(e => console.error('[bolorec] sweep ' + e.message)), 10 * 60 * 1000).unref();
+
+// ---- Razorpay payment (pay-core.js, pay-routes.js, public/pay.js, docs/PAYMENTS.md) ----
+// One payment unlocks the paid videos: the server writes subscriptions/<uid>.until, the same document hasAccess() reads (REQUIRE_SUBSCRIPTION=true).
+// Render env: RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET (test keys first), optional PAY_AMOUNT_RUPEES (default 99) and PAY_DAYS (default 365).
+// Needs FIREBASE_SERVICE_ACCOUNT (FSDB). Without the keys or FSDB the routes answer "payment abhi set nahi hai" and nothing else changes.
+const PAYLIM = createLimiter(10, 60000);
+const PAY = require('./pay-routes').make({ db: FSDB, Timestamp: admin.firestore.Timestamp, env: process.env, fetchFn: fetch, now: Date.now });
+const payRoute = h => async (req, res) => {
+  if (PAYLIM.hit(rateKey(req))) return res.status(429).json({ error: 'Bahut zyada koshish. Ek minute baad dobara try karo.' });
+  try { const r = await h({ uid: req.user && req.user.uid, body: req.body || {} }); res.status(r.status).json(r.body); }
+  catch (e) { console.error('[pay] ' + (e && e.message)); res.status(500).json({ error: 'Kuch gadbad hui. Dobara try karo.' }); }
+};
+app.post('/api/pay/order', payRoute(PAY.order));
+app.post('/api/pay/verify', payRoute(PAY.verify));
 
 app.listen(PORT, () => console.log('Orbit AI tutor running on port ' + PORT));
