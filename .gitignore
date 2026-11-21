@@ -17,3 +17,8 @@ android/.gradle/
 android/*.aab
 android/*.apk
 android/local.properties
+public/about/
+public/faq/
+public/privacy/
+public/terms/
+public/contact/
