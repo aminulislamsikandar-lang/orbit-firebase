@@ -219,6 +219,7 @@ const I={
  stop:ic('<rect x="6" y="6" width="12" height="12" rx="2"/>'),
  cp:ic('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 0 1 1-1h9"/>'),
  ok:ic('<path d="M5 13l4 4L19 7"/>'),
+ ready:ic('<path d="M13 2L4 14h8l-1 8 9-12h-8z"/>'),
  chev:ic('<path d="M6 9l6 6 6-6"/>'),
  menu:ic('<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/>'),
  close:ic('<path d="M6 6l12 12"/><path d="M18 6L6 18"/>'),
@@ -462,6 +463,21 @@ try{CACHE=JSON.parse(localStorage.getItem(CKEY)||'{}')||{}}catch(e){CACHE={}}
 function cachePersist(){try{localStorage.setItem(CKEY,JSON.stringify(CACHE))}catch(e){}}
 for(const id in SAVED)if(!CACHE[id])CACHE[id]={text:SAVED[id].text,at:SAVED[id].at};
 for(const id in CACHE)if(CACHE[id]&&CACHE[id].text)ANS[id]={text:CACHE[id].text};
+// Ready answer (3-dot menu): READY.ids[id]=true when somebody already generated this question's answer on the server. After each screen is drawn,
+// readyScan() asks the server once which of the visible questions have one (no AI call), then redraws so the menu item appears only for those.
+const READY={ids:{},seen:{},wait:0,busy:false};
+function readyScan(){
+ if(READY.busy||Date.now()<READY.wait||typeof USER==='undefined'||!USER||!navigator.onLine)return;
+ const ids=[];
+ document.querySelectorAll('.q[data-qid]').forEach(el=>{
+  const id=el.dataset.qid,x=IDX[rid(id)];
+  if(READY.seen[id]||(ANS[id]&&ANS[id].text)||(x&&x.course&&x.course.custom)||ids.length>=150)return;   // own custom questions are private: never shared
+  ids.push(id)});
+ if(!ids.length)return;
+ ids.forEach(id=>{READY.seen[id]=1});READY.busy=true;
+ api('/api/answer/ready-list',{ids}).then(j=>{let n=0;(j.ids||[]).forEach(id=>{if(!READY.ids[id]){READY.ids[id]=true;n++}});READY.busy=false;if(n)draw()})
+  .catch(()=>{ids.forEach(id=>{delete READY.seen[id]});READY.busy=false;READY.wait=Date.now()+20000});   // offline / not logged in yet: try again a little later
+}
 // Translations are kept per answer: a translation is valid only for the answer version (CACHE[id].at) it was made from.
 const TKEY='orbit_tr_v1';
 let TRC={};
@@ -624,7 +640,7 @@ function tblHTML(q){
 }
 function qHTML(q){
  const a=ANS[q.id]||{},txt=srcText(q.id),has=!!a.text,open=has&&!!OPEN[q.id],qm=!!ui(q.id).qm;
- return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic qdots ${has?'':'nochev'}" data-act="qm" data-id="${q.id}" aria-haspopup="menu" aria-expanded="${!!qm}" title="Aur options" aria-label="Question options">${I.more}</button>${qm?`<div class="qmenu" role="menu"><button class="qmi" role="menuitem" data-act="pin" data-id="${q.id}">${I.pin}<span>${isPinned(q.id)?'Pin hatao':'Pin karo'}</span></button><button class="qmi" role="menuitem" data-act="qtr" data-id="${q.id}">${I.tr}<span>${ui(q.id).qt?'Translation chhupao':'Translate question'}</span></button><button class="qmi" role="menuitem" data-act="qcp" data-id="${q.id}">${ui(q.id).qcp==='ok'?I.ok:I.cp}<span>${ui(q.id).qcp==='ok'?'Copy ho gaya':ui(q.id).qcp==='err'?'Copy nahi hua':'Copy question'}</span></button>${window.ACHECK?ACHECK.menuItem(q.id):''}${qvMenuVideos(q.id)}${qvMenuItem(q.id)}<button class="qmi" role="menuitem" data-act="qrep" data-id="${q.id}">${I.flag}<span>${esc(L4({hing:'Galti report karo',en:'Report a mistake',as:'ভুল জনাওক',bn:'ভুল জানাও'}))}</span></button></div>`:''}<div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}${isPinned(q.id)?`<span class="pmark" title="Pinned" role="img" aria-label="Pinned">${I.pin}</span>`:''}</div>${q.text?`<p dir="auto">${esc(q.text)}</p>`:''}
+ return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic qdots ${has?'':'nochev'}" data-act="qm" data-id="${q.id}" aria-haspopup="menu" aria-expanded="${!!qm}" title="Aur options" aria-label="Question options">${I.more}</button>${qm?`<div class="qmenu" role="menu">${READY.ids[q.id]&&!has&&!a.loading?`<button class="qmi" role="menuitem" data-act="qready" data-id="${q.id}">${I.ready}<span>Ready answer</span></button>`:''}<button class="qmi" role="menuitem" data-act="pin" data-id="${q.id}">${I.pin}<span>${isPinned(q.id)?'Pin hatao':'Pin karo'}</span></button><button class="qmi" role="menuitem" data-act="qtr" data-id="${q.id}">${I.tr}<span>${ui(q.id).qt?'Translation chhupao':'Translate question'}</span></button><button class="qmi" role="menuitem" data-act="qcp" data-id="${q.id}">${ui(q.id).qcp==='ok'?I.ok:I.cp}<span>${ui(q.id).qcp==='ok'?'Copy ho gaya':ui(q.id).qcp==='err'?'Copy nahi hua':'Copy question'}</span></button>${window.ACHECK?ACHECK.menuItem(q.id):''}${qvMenuVideos(q.id)}${qvMenuItem(q.id)}<button class="qmi" role="menuitem" data-act="qrep" data-id="${q.id}">${I.flag}<span>${esc(L4({hing:'Galti report karo',en:'Report a mistake',as:'ভুল জনাওক',bn:'ভুল জানাও'}))}</span></button></div>`:''}<div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}${isPinned(q.id)?`<span class="pmark" title="Pinned" role="img" aria-label="Pinned">${I.pin}</span>`:''}</div>${q.text?`<p dir="auto">${esc(q.text)}</p>`:''}
  ${tblHTML(q)}
  ${(q.parts||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}
  ${(q.options||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}</div>${has?`<span class="chev ${open?'open':''}">${I.chev}</span>`:''}</div>
@@ -987,6 +1003,7 @@ function draw(){
  if(VIEW==='bolo'){if(window.ABC)ABC.mount($('#app'));if(window.ABCLV)ABCLV.mount($('#app'));if(window.NUMG)NUMG.mount($('#app'));if(window.NUMLV)NUMLV.mount($('#app'));if(window.NUMCT)NUMCT.mount($('#app'))}   // ABC Games, ABC Levels, 123 Games and 123 Levels now live inside the Bolo page (they mount only when their topic is open)
  if(window.AVATAR)AVATAR.set(anySay());
  if(window.STUDY)STUDY.sync();
+ readyScan();
  if(window.Analytics)window.Analytics.screen(screenInfo());
  window.scrollTo(0,y);
 }
@@ -1102,13 +1119,14 @@ if(!navigator.onLine)throw new Error(L4(M_NEEDNET));
  return j}
 const errMsg=e=>!navigator.onLine?L4(M_NEEDNET):(e.name==='TimeoutError'||e.name==='AbortError')?'Server ne jawab nahi diya. Thodi der baad dobara try karo.':(e.name==='TypeError')?'Server tak pahunch nahi paya. Internet check karke dobara try karo.':e.message;
 
-async function ask(id,fresh){
+// ready=true: "Ready answer" in the 3-dot menu. Shows the answer somebody already generated (server route does no AI call, so no AI limit is used).
+async function ask(id,fresh,ready){
  const prev=ANS[id]&&ANS[id].text;
  ANS[id]={loading:true,text:fresh?prev:undefined};
  if(fresh){const u=ui(id);u.tr=null;u.ts=null;u.menu=false;u.vis=false;u.msg='';u.more=false;u.sty=false;u.mk=null;delete VIS[id];for(const t in TR)if(t.startsWith(id+'|'))delete TR[t];for(const t in MR)if(t.startsWith(id+'|'))delete MR[t];for(const t in UI)if(t.startsWith(id+'|'))delete UI[t];for(const t in VIS)if(t.startsWith(id+'|'))delete VIS[t]}
  draw();
- try{const j=await api('/api/answer',{id,fresh:!!fresh});ANS[id]={text:j.answer};CACHE[id]={text:j.answer,at:Date.now()};cachePersist();delete TRC[id];trPersist();delete MRC[id];mrPersist();OPEN[id]=true}
- catch(e){ANS[id]={err:errMsg(e),text:prev}}
+ try{const j=await api(ready?'/api/answer/ready':'/api/answer',ready?{id}:{id,fresh:!!fresh});ANS[id]={text:j.answer};CACHE[id]={text:j.answer,at:Date.now()};cachePersist();delete TRC[id];trPersist();delete MRC[id];mrPersist();OPEN[id]=true}
+ catch(e){if(ready&&e.code==='no_ready')READY.ids[id]=false;ANS[id]={err:errMsg(e),text:prev}}
  draw();
  if(OPEN[id]&&ANS[id]&&ANS[id].text)ensureImg(id);
 }
@@ -1320,6 +1338,7 @@ document.addEventListener('click',e=>{
  else if(act==='qm'){const u=ui(id),was=u.qm;for(const k in UI)UI[k].qm=false;u.qm=!was;draw()}
  else if(act==='qtr'){const u=ui(id);if(u.qt){u.qt=null;u.qm=false;draw()}else qTr(id,dLang(id))}
  else if(act==='qcp')qCopy(id);
+ else if(act==='qready'){ui(id).qm=false;ask(id,false,true)}
  else if(act==='qrep'){ui(id).qm=false;draw();if(window.REPORT)REPORT.open(reportCtx(id))}
  else if(act==='qtrset')qTr(id,b.dataset.to);
  else if(act==='setl'){ST.tlang=b.dataset.v;LS.cid='';stSave();draw()}

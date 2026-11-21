@@ -201,6 +201,11 @@ service cloud.firestore {
     match /dailyUsage/{id} {
       allow read, write: if false;
     }
+    // Ready answer: readyAnswers/<question id> = { qid, text, sig, at }. The server saves the AI answer of a textbook question the first time it is made,
+    // and every student can then open it from the 3-dot menu without calling the AI. Only the server (Admin SDK, which ignores rules) reads and writes it.
+    match /readyAnswers/{id} {
+      allow read, write: if false;
+    }
     // Chapter topics (Task 31): the server (admin route) writes them once per chapter; every signed-in student can read them.
     match /chapterTopics/{id} {
       allow read: if request.auth != null;

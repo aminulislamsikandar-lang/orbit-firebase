@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const QUIZ = require('./questions');
 const RECALL = require('./recall-core');
 const CHECK = require('./check-core');   // Apna answer check karo: prompts + parser
+const READYC = require('./ready-core');   // Ready answer: AI answers of textbook questions kept in Firestore readyAnswers/<id>
 const LEVELS = require('./levels-core');   // class bands + Kahani / Example prompts
 const QZ = require('./quiz-core');         // AI quiz from chapter notes (admin only)
 const CUSTOM = require('./custom-core');
@@ -518,6 +519,10 @@ function buildPrompt(q, course, ch) {
 
 // ---- caches + rate limit -------------------------------------------------
 const CACHE = new Map();   // "id|en", "id|hi", "id|tr|hi", "id|vis"
+// Ready answer: the "id|en" answer also lives in Firestore (readyAnswers/<id>), so it survives a Render restart and every student can open it at once.
+// qsig = fingerprint of the question text: when a question is edited, its old answer is not shown any more. Textbook questions only (never a student's own custom question).
+const READY = READYC.createStore({ db: FSDB, log: m => console.warn(m) });
+const qsig = q => hash(JSON.stringify([q.text || '', q.parts || [], q.options || [], q.table || null]));
 // AI requests per minute: counted per logged-in student (rateKey), not per IP. Without "trust proxy" every student looks like the same IP
 // behind Render's proxy, and a school WiFi is one IP anyway.
 const aiLimiter = createLimiter(20, 60000);
@@ -955,11 +960,33 @@ app.post('/api/answer', async (req, res) => {
   const key = id + '|en';
   if (fresh) for (const k of [...CACHE.keys()]) if (k.startsWith(id + '|')) CACHE.delete(k); // old translations/diagram are stale too
   if (!fresh && CACHE.has(key)) return res.json({ answer: CACHE.get(key), cached: true });
+  if (!fresh && !req.customHit) {   // after a restart the memory is empty, but somebody may already have asked: no AI call needed
+    const ready = await READY.get(id, qsig(q));
+    if (ready) { CACHE.set(key, ready); return res.json({ answer: ready, cached: true }); }
+  }
   if (!(await guardAI(req, res))) return;
   const r = await geminiFor(req, P.answer, buildPrompt(q, course, ch));
   if (!r.text) return res.status(502).json({ error: failMsgFor(req, r.status) });
   CACHE.set(key, r.text);
+  if (!req.customHit) READY.save(id, r.text, qsig(q));   // not awaited: the student gets the answer first
   res.json({ answer: r.text });
+});
+
+// ---- Ready answer: show an answer somebody already generated. No AI call, so no AI limit is used. ----
+// ready-list: which of these question ids have a ready answer (the app asks once per screen and shows the menu item only for those).
+app.post('/api/answer/ready-list', async (req, res) => {
+  const ids = Array.isArray((req.body || {}).ids) ? req.body.ids.slice(0, READYC.MAX_IDS) : [];
+  const items = [];
+  for (const id of ids) { const h = typeof id === 'string' ? BY_ID.get(id) : null; if (h) items.push({ id, sig: qsig(h.q) }); }
+  res.json({ ids: await READY.list(items) });
+});
+app.post('/api/answer/ready', async (req, res) => {
+  const id = (req.body || {}).id, hit = typeof id === 'string' ? BY_ID.get(id) : null;
+  if (!hit) return res.status(404).json({ code: 'no_ready', error: 'Is question ka ready answer nahi hai.' });
+  const text = await READY.get(id, qsig(hit.q));
+  if (!text) return res.status(404).json({ code: 'no_ready', error: 'Is question ka ready answer abhi nahi hai. AI Answer dabao.' });
+  CACHE.set(id + '|en', text);
+  res.json({ answer: text, cached: true });
 });
 
 // ---- translate (Hindi / Assamese) ----------------------------------------

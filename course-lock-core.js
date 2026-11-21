@@ -2,7 +2,7 @@
 // These are the pure decisions, so they can be tested without a server. server.js reads the saved course and calls them on every AI request.
 
 // AI routes that carry a question id or a course id. Free-text routes (Get Video, Bolo, Read, Talk) have no course in them.
-const GATED = new Set(['/answer', '/answer/check', '/translate', '/qtranslate', '/lesson', '/rules', '/more', '/visual', '/image', '/video', '/recall/evaluate', '/topics/generate']);
+const GATED = new Set(['/answer', '/answer/ready', '/answer/check', '/translate', '/qtranslate', '/lesson', '/rules', '/more', '/visual', '/image', '/video', '/recall/evaluate', '/topics/generate']);
 
 // Every course the request points at. Both `course` and `id` are checked, so nobody can pass an allowed course next to another course's question id.
 function courseIdsOf(body, { byId, isCourse }) {
