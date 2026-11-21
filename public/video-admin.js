@@ -46,7 +46,7 @@
 
   function mount(box, store) {
     box.textContent = "";
-    var editing = null, uploadOn = false, maxMb = 300;
+    var editing = null, editRec = null, uploadOn = false, maxMb = 300;   // editRec = the saved record being edited, so Save keeps its qid (a question video must stay on its question)
     var inpStyle = "width:100%;padding:9px;margin-top:3px;box-sizing:border-box";
     var msg = h("div", { style: "white-space:pre-wrap;font-size:13px;margin:8px 0;min-height:20px" });
     function say(t, ok) { msg.textContent = t; msg.style.color = ok ? "#168653" : "#d74747"; }
@@ -91,7 +91,7 @@
     var list = h("div", { style: "display:flex;flex-direction:column;gap:6px;margin-top:10px" });
     var voBox = h("div", {});                                 // AI voiceover panel (public/voiceover-admin.js) opens here
 
-    function clear() { editing = null; chapter.value = ""; title.value = ""; key.value = ""; free.checked = true; file.value = ""; upHint(""); say("", true); }
+    function clear() { editing = null; editRec = null; chapter.value = ""; title.value = ""; key.value = ""; free.checked = true; file.value = ""; upHint(""); say("", true); }
     newBtn.onclick = clear;
 
     saveBtn.onclick = function () {
@@ -102,6 +102,7 @@
       var id = editing || ("v-" + slug(t) + "-" + Date.now().toString(36));
       if (!ID_RE.test(id)) return say("Video id galat ban gayi. Naam badal ke try karo.");
       var v = { id: id, course: course.value, chapter: ch, title: t, key: k, free: !!free.checked };
+      if (editRec && editRec.id === id && typeof editRec.qid === "string" && editRec.qid) v.qid = editRec.qid;   // editing Free/Paid of a question video must not turn it into a chapter video
       saveBtn.disabled = true;
       store.set(v).then(function () { say("Saved: " + t + ". Students ko 1-2 minute mein dikhega.", true); clear(); refresh(); },
         function (e) { say((e && e.code === "permission-denied") ? "Save nahi hua: ye Google account admin nahi hai, ya Firestore rules deploy nahi hue." : "Save fail: " + (e && e.message ? e.message : e)); })
@@ -115,7 +116,7 @@
         h("div", { text: cn + " · Chapter " + v.chapter + " · " + (v.free ? "Free" : "Paid") + " · " + v.key, style: "font-size:12px;opacity:.75;word-break:break-all" })
       ]);
       var ed = h("button", { type: "button", text: "Edit", style: "padding:7px 10px;border-radius:8px;border:0;background:rgba(128,128,128,.18);color:inherit;cursor:pointer" });
-      ed.onclick = function () { editing = v.id; course.value = v.course; chapter.value = v.chapter; title.value = v.title; key.value = v.key; free.checked = !!v.free; say("Edit mode: " + v.title, true); box.scrollIntoView && box.scrollIntoView(); };
+      ed.onclick = function () { editing = v.id; editRec = v; course.value = v.course; chapter.value = v.chapter; title.value = v.title; key.value = v.key; free.checked = !!v.free; say("Edit mode: " + v.title, true); box.scrollIntoView && box.scrollIntoView(); };
       var dl = h("button", { type: "button", text: "Delete", style: "padding:7px 10px;border-radius:8px;border:0;background:rgba(215,71,71,.2);color:inherit;cursor:pointer" });
       dl.onclick = function () {
         if (!confirm("Is video ko list se hatana hai?\n" + v.title + "\n(Backblaze mein file rahegi, wahan se alag delete karni hogi.)")) return;
