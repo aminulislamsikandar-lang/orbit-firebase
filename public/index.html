@@ -374,6 +374,7 @@ function kidRoleHTML(){
  return `<h1 style="font-size:26px;margin-top:16px">Kid mode</h1><p class="mut">Kid mode mein sirf Bolo page khulta hai. Is phone par kaun hai?</p>
   <div style="display:grid;gap:10px;margin-top:14px"><button class="btn" data-act="kidrole" data-v="kid" ${CSBUSY?'disabled':''}>Main bachcha hoon</button><button class="btn" data-act="kidrole" data-v="parent" ${CSBUSY?'disabled':''}>I am parent</button></div>`
   +(CSERR?`<p class="err">${esc(CSERR)}</p>`:'')
+  +`<p class="mut" style="margin-top:24px"><button class="chip" data-act="csparent">I am mentor</button></p>`
   +`<p class="mut" style="margin-top:24px">${locked?'Kid mode nahi chahiye? <button class="chip" data-act="csback">Kid mode band karo</button>':'<button class="chip" data-act="kidback">← Wapas</button>'}</p></div>`;
 }
 function kidCodeHTML(){
@@ -392,7 +393,7 @@ function courseGateHTML(){
  const chips=(list,cur,act,lab)=>`<div class="chips" role="group">${list.map(v=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${cur===v}">${lab(v)}</button>`).join('')}</div>`;
  const err=CSERR?`<p class="err">${esc(CSERR)}</p>`:'';
  const backBtn=`<button class="back" data-act="cstep" data-v="">${I.back}<span>Back</span></button>`;
- const parent=`<p class="mut" style="margin-top:24px">Parent ho? <button class="chip" data-act="csparent">Padhai ka time (parent ke liye)</button></p></div>`;
+ const parent='</div>';   // the "I am mentor" door (Padhai ka time for parents) now lives on the Kid mode screen (kidRoleHTML)
  if(CS.own)return head+backBtn+`<h1 style="font-size:26px;margin-top:8px">Custom</h1><p class="mut">Tum apna school, college ya university khud jodoge (Add course). Class 1 se College aur Master's tak chalega.</p><button class="btn" data-act="cssave" ${CSBUSY?'disabled':''}>${CSBUSY?SPN+'Save ho raha hai…':'Pakka karo'}</button>`+err+parent;
  if(!CSTEP)return head+`<h1 style="font-size:26px;margin-top:16px">Apna course chuno</h1><p class="mut">Ye course tab tak lock rahega jab tak tum use hata nahi dete (Course badlo).</p>`
   +`<div class="gtg"><button class="gt" data-act="cstep" data-v="school"><span class="gtt">School</span></button><button class="gt" data-act="csown"><span class="gtt">Custom</span></button><button class="gt" data-act="cstep" data-v="board"><span class="gtt">Board</span></button><button class="gt" data-act="kidmode"><span class="gtt">Kid</span></button></div>`+err+parent;
@@ -1326,7 +1327,7 @@ document.addEventListener('click',e=>{
  else if(act==='csorg'){CS={org:b.dataset.v,cls:0,med:''};CSERR='';draw()}
  else if(act==='cscls'){CS.cls=+b.dataset.v;CS.med='';CSERR='';draw()}
  else if(act==='csmed'){CS.med=b.dataset.v;CSERR='';draw()}
- else if(act==='csparent'){PEEK=true;go('study')}
+ else if(act==='csparent'){PEEK=true;KID_STEP='';go('study')}
  else if(act==='csown'){CS={own:true};CSTEP='';CSERR='';draw()}
  else if(act==='cstep'){CSTEP=b.dataset.v||'';CS={org:'',cls:0,med:''};CSERR='';draw();window.scrollTo(0,0)}
  else if(act==='kidmode'){KID_STEP='role';CSERR='';draw()}

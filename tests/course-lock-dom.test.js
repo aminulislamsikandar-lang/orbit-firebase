@@ -142,7 +142,9 @@ async function boot({ stored, cache, getFails, hash = '', uid = 'u1' }) {
 
   // 7. A parent (father's phone) can open "Padhai ka time" without choosing a course; every other view still needs one.
   s = await boot({});
-  t('the course screen has a door for parents', /Padhai ka time \(parent ke liye\)/.test(s.app()));
+  t('the course screen no longer shows the parent door', !/data-act="csparent"/.test(s.app()));
+  s.click('[data-act=kidmode]'); await tick(40);
+  t('the Kid mode screen has a door for parents', /I am mentor/.test(s.app()));
   s.click('[data-act=csparent]'); await tick(40);
   t('parent door opens the Padhai ka time view, not the course picker', s.w.eval('VIEW') === 'study' && !/Apna course chuno/.test(s.app()));
   s.w.eval("go('home')"); await tick(40);
