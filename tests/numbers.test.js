@@ -50,7 +50,7 @@ ok(JSON.stringify(A._makeQ(7, fixed())) === JSON.stringify(A._makeQ(7, fixed()))
 // ---- how it is wired into the app ----
 ok(/<script src="\/numcore\.js"><\/script>\s*<script src="\/numgames\.js"><\/script>\s*<script src="\/numlevels\.js"><\/script>/.test(idx) && idx.indexOf('/numcore.js') > idx.indexOf('/abclevels.js'), 'index.html loads numcore.js first, then the two topics, after the ABC scripts');
 ok(idx.includes('NUMG.mount($(\'#app\'))') && idx.includes('NUMLV.mount($(\'#app\'))') && idx.includes('ABCLV.mount($(\'#app\'))') && idx.includes('ABC.mount($(\'#app\'))'), 'both new topics are mounted, the ABC mounts are still there');
-ok(/\['abclv', 'ABC Levels', '#16a34a'\], \['numg', '123 Games', '#f59e0b'\], \['numlv', '123 Levels', '#16a34a'\]\]/.test(bolo), 'Bolo has the two new topics after the ABC ones (same colours as the ABC chips)');
+ok(/\['abclv', 'ABC Levels', '#16a34a'\], \['numg', '123 Games', '#f59e0b'\], \['numlv', '123 Levels', '#16a34a'\](, \['numct', '123 Ginti', '#f59e0b'\])?\]/.test(bolo), 'Bolo has the two new topics after the ABC ones (same colours as the ABC chips)');
 ok(/g\.NUMG\.viewHTML\(\)/.test(bolo) && /g\.NUMLV\.viewHTML\(\)/.test(bolo) && /if \(g\.NUMG\) g\.NUMG\.leave\(\); if \(g\.NUMLV\) g\.NUMLV\.leave\(\);/.test(bolo), 'Bolo draws them and stops them when the child leaves');
 ok(['/numcore.js', '/numgames.js', '/numlevels.js'].every(f => sw.includes("'" + f + "'")) && +(/orbit-shell-v(\d+)/.exec(sw) || [])[1] >= 57, 'cached for offline, service worker version bumped');
 const code = [core, lvSrc, gmSrc].map(x => x.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')).join('\n');

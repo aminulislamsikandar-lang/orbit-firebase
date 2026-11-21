@@ -35,7 +35,7 @@ function boot(opts) {
 
 (async () => {
   let b = boot();
-  t('screen shows the big letter A and the topic chips on top', b.d.querySelector('.bl-big').textContent === 'A' && b.d.querySelectorAll('.bl-chips [data-bl=mode]').length === 10);   // 8 old topics + 123 Games + 123 Levels
+  t('screen shows the big letter A and the topic chips on top', b.d.querySelector('.bl-big').textContent === 'A' && b.d.querySelectorAll('.bl-chips [data-bl=mode]').length === 11);   // 8 old topics + 123 Games + 123 Levels
   t('mic button is enabled', !b.d.querySelector('[data-bl=mic]').disabled);
   t('there is no Sunao button at all', !b.d.querySelector('[data-bl=hear]') && !/Sunao/.test(b.txt()));
   t('only the mic and a small skip arrow can be pressed on the card (topic chips are on top)', [...b.d.querySelectorAll('.bl-stage button')].map(x => x.dataset.bl).join() === 'mic,next');
