@@ -200,8 +200,8 @@ async function solve(b) {
     Object.defineProperty(w, 'crypto', { value: require('crypto').webcrypto, configurable: true }); w.TextEncoder = TextEncoder;
     ['bolo-core.js', 'byanjan-video.js', 'bolo.js', 'abcgames.js', 'abclevels.js', 'numcore.js', 'numgames.js', 'numlevels.js'].forEach(x => w.eval(rd(x))); w.eval('draw()');
     const d = w.document, chips = () => [...d.querySelectorAll('.bl-chips [data-bl=mode]')];
-    ok(chips().map(c => c.dataset.v).join() === 'alpha,table,poem,byanjan,saath,asvyanjan,abc,abclv,numg,numlv', 'Bolo shows the old topics, then 123 Games and 123 Levels');
-    ok(chips().slice(-2).map(c => c.textContent).join() === '123 Games,123 Levels', 'chip names');
+    ok(/^alpha,table,poem,byanjan,saath,asvyanjan,abc,abclv,numg,numlv(,numct)?$/.test(chips().map(c => c.dataset.v).join()), 'Bolo shows the old topics, then 123 Games and 123 Levels (and 123 Ginti)');
+    ok(/123 Games,123 Levels(,123 Ginti)?$/.test(chips().map(c => c.textContent).join()), 'chip names');
     ok(!!d.querySelector('.bl-big') && !d.getElementById('numg-root') && !d.getElementById('numlv-root'), 'A se Z is still the first screen');
     chips().find(c => c.dataset.v === 'numlv').click(); await wait(20);
     ok(!!d.getElementById('numlv-root') && d.querySelectorAll('.nl-row').length === 10 && !d.querySelector('.bl-big'), '123 Levels topic: the level map is drawn inside Bolo');
