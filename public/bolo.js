@@ -60,7 +60,7 @@
   const hasPin = () => !!load().set.pin;
   const canEdit = () => !hasPin() || st.unlocked;
   function firstOpen() { const m = marks(), n = list().length; for (let i = 0; i < n; i++) if (m[i] !== 'd') return i; return 0; }
-  const stopAbc = () => { if (g.ABC) g.ABC.leave(); if (g.ABCLV) g.ABCLV.leave(); if (g.NUMG) g.NUMG.leave(); if (g.NUMLV) g.NUMLV.leave(); if (g.NUMCT) g.NUMCT.leave(); };   // the ABC topics keep their own speech and timers: stop them when the child changes topic or leaves
+  const stopAbc = () => { if (g.ABC) g.ABC.leave(); if (g.ABCLV) g.ABCLV.leave(); if (g.NUMG) g.NUMG.leave(); if (g.NUMLV) g.NUMLV.leave(); if (g.NUMCT) g.NUMCT.leave(); if (g.SUNO) g.SUNO.leave(); };   // the ABC topics keep their own speech and timers: stop them when the child changes topic or leaves
   function reset(mode) { if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); stopListen(); stopSay(); clearAdv(); if (mode) { st.mode = mode; stopAbc(); } st.fb = null; st.err = ''; st.enter = true; st.i = firstOpen(); }
 
   // ---- voice out ----
@@ -426,7 +426,7 @@
     g.document.head.appendChild(s); return '';
   }
 
-  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['saath', 'সাথে বলো', '#e0613a'], ['asvyanjan', 'ক – কল', '#00969f'], ['abc', 'ABC Games', '#f59e0b'], ['abclv', 'ABC Levels', '#16a34a'], ['numg', '123 Games', '#f59e0b'], ['numlv', '123 Levels', '#16a34a'], ['numct', '123 Ginti', '#f59e0b']];
+  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['saath', 'সাথে বলো', '#e0613a'], ['asvyanjan', 'ক – কল', '#00969f'], ['abc', 'ABC Games', '#f59e0b'], ['abclv', 'ABC Levels', '#16a34a'], ['numg', '123 Games', '#f59e0b'], ['numlv', '123 Levels', '#16a34a'], ['numct', '123 Ginti', '#f59e0b'], ['suno', 'Suno Game', '#f59e0b']];
   const chipRow = (label, arr) => `<div class="chips bl-chips" role="group" aria-label="${label}">${arr.map(m => `<button class="chip" style="--c:${m[3]}" data-bl="${m[0]}" data-v="${m[1]}" aria-pressed="${m[4]}">${m[2]}</button>`).join('')}</div>`;
   const modeChips = () => chipRow('Kya bolna hai', MODES.map(m => ['mode', m[0], m[1], m[2], st.mode === m[0]]));
   function subPick() {   // the second row of chips (table number, or which poem) - still only chips at the top
@@ -466,6 +466,7 @@
     if (st.mode === 'abclv') return g.ABCLV ? g.ABCLV.viewHTML() : '';
     if (st.mode === 'numg') return g.NUMG ? g.NUMG.viewHTML() : '';   // 123 Games and 123 Levels: the same way as the ABC topics
     if (st.mode === 'numlv') return g.NUMLV ? g.NUMLV.viewHTML() : '';
+    if (st.mode === 'suno') return g.SUNO ? g.SUNO.viewHTML() : '';   // Suno Game: listening games with the teacher's recorded byanjan
     if (st.mode === 'numct') return g.NUMCT ? g.NUMCT.viewHTML() : '';   // 123 Ginti: fruit counting, easy to hard
     if (st.mode === 'saath') return saathCard();
     const by = st.mode === 'byanjan', asv = st.mode === 'asvyanjan';
