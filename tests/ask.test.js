@@ -112,6 +112,23 @@ const B64 = 'A'.repeat(400);
   t('anime: daily limit -> 429 limit_reached kind anime', o.code === 429 && o.body.kind === 'anime');
   o = await rig().run('/api/anime', { text: 'x' });
   t('anime: a too short topic is 400', o.code === 400);
+  // accuracy guard: a swapped term is retried with the exact mistake told to the AI; an intro scene is retried once
+  const vid = (...texts) => JSON.stringify({ title: 'v', scenes: texts.map((v, i) => ({ dur: 3, bg: '#0f1d15', items: [{ t: 'text', v, x: 50, y: 20, s: 5, c: '#ecf7ee' }] })) });
+  const wrongVid = vid('Rectangle: opposite sides equal', 'Area = l x b', 'Rectangle summary');
+  const rightVid = vid('Square: all sides equal', 'Perimeter = 4 x side', 'Square summary');
+  r = rig({ gem: n => ({ text: n === 1 ? wrongVid : rightVid }) }); o = await r.run('/api/anime', { text: 'perimeter of a square' });
+  t('anime guard: a rectangle video for a square topic is retried and the retry is used', o.code === 200 && r.calls.length === 2 && /Square: all sides equal/.test(JSON.stringify(o.body.video)) && r.taken.anime === 1);
+  t('anime guard: the retry prompt names the exact mistake', /square/.test(r.calls[1].prompt) && /rectangle/.test(r.calls[1].prompt) && /mistake/.test(r.calls[1].prompt));
+  r = rig({ gem: () => ({ text: wrongVid }) }); o = await r.run('/api/anime', { text: 'perimeter of a square' });
+  t('anime guard: if both tries are wrong nothing wrong is shown, and the use is given back', o.code === 502 && !o.body.video && r.calls.length === 2 && r.refunded.anime === 1);
+  const introVid = vid('Chapter 3: Shapes', 'Class 7 Maths', 'Square: all sides equal');
+  r = rig({ gem: n => ({ text: n === 1 ? introVid : rightVid }) }); o = await r.run('/api/anime', { text: 'perimeter of a square' });
+  t('anime guard: an intro first scene is retried once and the fixed video is used', o.code === 200 && r.calls.length === 2 && !/Chapter 3/.test(JSON.stringify(o.body.video)));
+  r = rig({ gem: () => ({ text: introVid }) }); o = await r.run('/api/anime', { text: 'perimeter of a square' });
+  t('anime guard: an intro that never goes away is accepted on the last try (soft problem only)', o.code === 200 && r.calls.length === 2);
+  r = rig({ gem: () => ({ text: rightVid }) }); o = await r.run('/api/anime', { text: 'perimeter of a square' });
+  t('anime guard: a correct first video costs only one AI call', o.code === 200 && r.calls.length === 1);
+  t('anime guard: the system prompt sent to the AI carries both rule blocks', /ACCURACY RULES/.test(r.calls[0].system) && /NO INTRODUCTION/.test(r.calls[0].system));
 
   // ---- wiring with the rest of the server
   t('both routes are behind the course lock (kid mode and other courses are refused)', LOCK.GATED.has('/ask') && LOCK.GATED.has('/anime'));

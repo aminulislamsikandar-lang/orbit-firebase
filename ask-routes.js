@@ -69,11 +69,27 @@ function mount(app, d) {
       if (hit) return res.json({ video: hit, left: await quotas.anime.left(g.uid) });
       if (!g.uk && !(await quotas.anime.take(g.uid))) return limitReply(res, 'anime');
       const back = () => { if (!g.uk) Promise.resolve(quotas.anime.refund(g.uid)).catch(() => {}); };
-      const r = await geminiFor(req, A.ANIME_SYSTEM, A.buildAnimePrompt({ text, ctx }),
-        { json: true, temperature: 0.5, maxTokens: 6000, models: videoModels, fallback: [], reqMs: 50000, budgetMs: 58000 });
-      if (!r.text) { back(); return res.status(502).json({ error: failMsgFor(req, r.status) }); }
-      const out = A.parseAnime(r.text);
-      if (!out) { back(); return res.status(502).json({ error: 'Video ban nahi paayi. Dobara try karo.' }); }
+      // Up to 2 tries: the finished video is compared with the topic by a program (video-guard-core.js). A swapped look-alike term
+      // (square -> rectangle) is never accepted; an intro scene or missing key words get one retry with the exact problem told to the AI.
+      const t0 = now(), basePrompt = A.buildAnimePrompt({ text, ctx });
+      let prompt = basePrompt, out = null, lastStatus = 0, bad = false;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const left = 88000 - (now() - t0);
+        if (left < 15000) break;
+        const r = await geminiFor(req, A.ANIME_SYSTEM, prompt,
+          { json: true, temperature: attempt === 1 ? 0.4 : 0.2, maxTokens: 6000, models: videoModels, fallback: [], reqMs: 50000, budgetMs: Math.min(left, 58000) });
+        if (!r.text) { lastStatus = r.status; break; }
+        const o = A.parseAnime(r.text);
+        if (!o) { prompt = basePrompt + '\n\nYour last reply was not usable. Reply with the JSON object only, 4 to 6 scenes.'; continue; }
+        if (o.refuse) { out = o; break; }
+        const c = A.checkVideo(o.video, text);
+        if (c.hard.length) { bad = true; prompt = basePrompt + '\n\nYour previous video had this mistake. Fix it and reply with the full corrected JSON only:\n- ' + c.hard.concat(c.soft).join('\n- '); continue; }
+        bad = false; out = o;
+        if (!c.soft.length || attempt === 2) break;   // last try is always accepted when it has no hard mistake
+        prompt = basePrompt + '\n\nYour previous video had these problems. Fix them and reply with the full corrected JSON only:\n- ' + c.soft.join('\n- ');
+      }
+      if (!out && lastStatus) { back(); return res.status(502).json({ error: failMsgFor(req, lastStatus) }); }
+      if (!out) { back(); return res.status(502).json({ error: bad ? 'Video bilkul sahi nahi ban paayi (shape ya term galat aa raha tha). Dobara try karo.' : 'Video ban nahi paayi. Dobara try karo.' }); }
       if (out.refuse) return res.json({ refuse: true, message: REFUSE.anime });
       if (!g.uk) cput(key, out.video);
       res.json({ video: out.video, left: g.uk ? null : await quotas.anime.left(g.uid) });

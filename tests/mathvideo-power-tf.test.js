@@ -112,7 +112,8 @@ const src = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
 const a = src.indexOf("const MV = require('./public/mathvideo-admin.js');"), b = src.indexOf("app.post('/api/mathvideo/generate'");
 t('found the Get Video block in server.js', a > 0 && b > a);
 const S = new vm.Script('(function(require){' + src.slice(a, b) + '\nreturn {mvSystem,mvBase,mvKind,mvNorm,mvQuality,mvPrecheck,MV_SYSTEM,MV_EXAMPLE,MV_EXAMPLE_POW,MV_TF_SHORT,MV_STYLE,MV_STYLE_LINE};})');
-const sv = S.runInThisContext()(() => MV);
+const VGMOD = require(path.join(ROOT, 'video-guard-core.js'));
+const sv = S.runInThisContext()(p => (/video-guard/.test(p) ? VGMOD : MV));
 const exJSON = JSON.stringify(sv.MV_EXAMPLE), powJSON = JSON.stringify(sv.MV_EXAMPLE_POW);
 t('MV_EXAMPLE (old) still valid', eq(MV.validate(sv.MV_EXAMPLE), { errors: [], warnings: [] }));
 t('MV_EXAMPLE_POW valid (0 errors, 0 warnings)', eq(MV.validate(sv.MV_EXAMPLE_POW, { question: '(-1)^103 + (-1)^104' }), { errors: [], warnings: [] }));
@@ -278,7 +279,7 @@ async function hiddenIdTests() {
   t('server bank: part (ii) with the main question line is accepted', (() => { const x = mathsQs.find(({ q }) => (q.parts || []).length > 1); return !x || !!bank.mvKnown(x.q.text + '\n' + x.q.parts[1], 'Mathematics'); })());
   t('server: maths route checks the bank before the cache, the AI and the daily quota', (h => h.indexOf('mvKnown(typed') > 0 && h.indexOf('mvKnown(typed') < h.indexOf('MV_CACHE.has') && h.indexOf('mvKnown(typed') < h.indexOf('MV_USE.get'))(cut("app.post('/api/mathvideo/generate'", "app.post('/api/sciencevideo/generate'")));
   t('server: science route checks the bank before the cache, the AI and the daily quota', (h => h.indexOf("mvKnown(typed, 'Science')") > 0 && h.indexOf("mvKnown(typed, 'Science')") < h.indexOf('MV_CACHE.has') && h.indexOf("mvKnown(typed, 'Science')") < h.indexOf('MV_USE.get'))(cut("app.post('/api/sciencevideo/generate'", 'const PORT')));
-  const sciCode = new vm.Script('(function(){' + cut('const SCI_EXAMPLE', 'app.post(\'/api/sciencevideo/generate\'') + '\nreturn {SCI_EXAMPLE,SCI_SYSTEM,sciQuality};})').runInThisContext()();
+  const sciCode = new vm.Script('(function(VG){' + cut('const SCI_EXAMPLE', 'app.post(\'/api/sciencevideo/generate\'') + '\nreturn {SCI_EXAMPLE,SCI_SYSTEM,sciQuality};})').runInThisContext()(VGMOD);
   const sv = MV.validate(sciCode.SCI_EXAMPLE);
   t('science example plan passes the validator with no errors', sv.errors.length === 0, sv.errors.join(' | '));
   t('science example plan: no digits / Devanagari warnings, and the science notice is shown', sv.warnings.filter(w => /digits|Devanagari/.test(w)).length === 0 && sv.warnings.some(w => /Science video/.test(w)));

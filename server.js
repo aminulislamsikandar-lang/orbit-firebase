@@ -1587,6 +1587,7 @@ app.post('/api/mathvideo/translate', async (req, res) => {
 // arithmetic check. If it fails, the errors are sent back to the AI and it tries again (within a time budget).
 // Students see their own result at once; it is saved as "pending" and only becomes public after the admin approves.
 const MV = require('./public/mathvideo-admin.js');
+const VG = require('./video-guard-core');   // accuracy rules + program check (swapped look-alike term, intro scene) for Get Video and Anime
 const MV_ADMINS = (process.env.MV_ADMIN_EMAILS || 'aminulislamsikandar@gmail.com,arjinabegum1750@gmail.com,hafizulalom19112001@gmail.com').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
 const MV_DAILY = Math.max(1, parseInt(process.env.MV_DAILY || '5', 10) || 5);   // AI videos per student per day (admin: unlimited)
 const MV_CACHE = new Map();    // normalized question -> plan (or {unsupported}), so the same question never calls the AI twice
@@ -1713,7 +1714,11 @@ PEN / ARROW CUES ("cues", at most 8 per step; each cue has exactly one key; they
 - {"hop": {"from": -8, "to": -3}}: a curved arrow jumps between two numbers (both inside min..max).
 - {"dot": {"v": 2, "label": "2", "color": "green"}}: a new dot appears (label at most 10 characters).
 - Every step should have 1 to 4 cues. Keep the number of cues about equal to the number of spoken sentences or parts, in the order they are spoken: first point to where we start, then hop, then dot. A hop is usually followed by a dot at the place we land.
-- No HTML, no links, no emoji. Keep every explanation correct and simple. Never invent facts.`;
+- No HTML, no links, no emoji. Keep every explanation correct and simple. Never invent facts.
+
+${VG.ACCURACY_RULES}
+
+${VG.NO_INTRO_RULES}`;
 
 // "English words" level chosen by the student in Get Video (0 none, 1 few, 2 normal, 3 many). It changes how the AI WRITES say.hi / cap.hi / cap.hg.
 const MV_STYLE_LINE = MV_SYSTEM.split('\n').find(l => l.startsWith('- Spoken style (say.hi)'));
@@ -1838,7 +1843,9 @@ app.post('/api/mathvideo/generate', async (req, res) => {
   }
 
   const t0 = Date.now(), TOTAL = 82000;
-  let prompt = 'Question:\n"""\n' + raw + '\n"""', lastErrors = [], lastStatus = 0, best = null;
+  const mvHit = mvKnown(typed, 'Mathematics');   // class / chapter of the app question: only to help the AI understand the level
+  const mvCtx = mvHit ? 'Context (for your understanding only, never write it in the video): ' + [mvHit.course && mvHit.course.class ? 'Class ' + mvHit.course.class : '', mvHit.ch && (mvHit.ch.title || mvHit.ch.name) ? 'Chapter: ' + (mvHit.ch.title || mvHit.ch.name) : ''].filter(Boolean).join(', ') + '\n\n' : '';
+  let prompt = mvCtx + 'Question:\n"""\n' + raw + '\n"""', lastErrors = [], lastStatus = 0, best = null;
   const mvDone = async (plan, how) => {
     const tr = await mvLangs(plan, Math.min(MV_TR_MS, MV_HARD - (Date.now() - t0)), { question: raw }, userKeyOf(req));   // Assamese + Bengali text (best effort)
     const out = { plan };
@@ -1862,13 +1869,15 @@ app.post('/api/mathvideo/generate', async (req, res) => {
     mvFix(plan);
     plan.id = 'ask-' + crypto.createHash('sha1').update(norm).digest('hex').slice(0, 20);
     const v = MV.validate(plan, { question: raw });   // True/False plans are checked against the statement in the question
-    // soft problems: spoken-Hindi issues and too-short / motionless plans. Retry if there is time; the last try is always accepted.
-    const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : mvQuality(plan, raw));
+    const gd = VG.check(plan, raw, { skipCoverage: true });   // swapped look-alike term = hard mistake, intro scene = soft
+    if (gd.hard.length) v.errors = v.errors.concat(gd.hard);
+    // soft problems: spoken-Hindi issues, too-short / motionless plans, an intro scene. Retry if there is time; the last try is always accepted.
+    const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : mvQuality(plan, raw).concat(gd.soft));
     if (!v.errors.length) best = plan;                                    // newest valid plan = fallback if a later try fails
     if (!v.errors.length && !(soft.length && attempt < 3)) return await mvDone(plan, 'try ' + attempt);
     lastErrors = v.errors.length ? v.errors : soft;
     console.error('MathVideo invalid (try ' + attempt + '):', lastErrors.slice(0, 4).join(' | '));
-    prompt = 'Question:\n"""\n' + raw + '\n"""\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
+    prompt = mvCtx + 'Question:\n"""\n' + raw + '\n"""\n\nYour previous plan had these problems. Fix them and reply with the full corrected JSON only:\n- ' + lastErrors.slice(0, 8).join('\n- ');
   }
   if (best) return await mvDone(best, 'fallback');                              // a valid (if plainer) plan beats an error
   if (lastStatus) return res.status(502).json({ error: failMsgFor(req, lastStatus) });
@@ -1925,7 +1934,11 @@ HOW MUCH DETAIL
 PEN CUES ("cues", at most 8 per step)
 - Only this cue: {"point": {"line": 0, "word": "text that appears in that line"}}: the pen underlines that word. Without "word" the whole line is underlined.
 - Every step should have 1 to 3 cues, in the order the words are spoken.
-- No HTML, no links, no emoji. Keep every explanation correct and simple.`;
+- No HTML, no links, no emoji. Keep every explanation correct and simple.
+
+${VG.ACCURACY_RULES}
+
+${VG.NO_INTRO_RULES}`;
 function sciQuality(plan) {
   const out = [], steps = plan.steps || [];
   if (steps.length < 5) out.push('Too short. Make the video more detailed: 5 to 8 steps, one idea per step (you gave ' + steps.length + ').');
@@ -1953,7 +1966,7 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
   }
 
   const t0 = Date.now(), TOTAL = 82000;
-  const head = 'Chapter: ' + (hit.ch.title || hit.ch.name || '') + (hit.ch.context ? '\nTextbook notes for this chapter (explain only from these): ' + String(hit.ch.context).slice(0, 6000) : '') +
+  const head = '(Chapter and notes are for your understanding only. Never write the chapter name or class in the video.)\nChapter: ' + (hit.ch.title || hit.ch.name || '') + (hit.ch.context ? '\nTextbook notes for this chapter (explain only from these): ' + String(hit.ch.context).slice(0, 6000) : '') +
     (hit.q.context ? '\nNotes for this question: ' + String(hit.q.context).slice(0, 2000) : '') + '\n\nQuestion:\n"""\n' + typed + '\n"""';
   let prompt = head, lastErrors = [], lastStatus = 0, best = null;
   const done = async (plan, how) => {
@@ -1980,7 +1993,9 @@ app.post('/api/sciencevideo/generate', async (req, res) => {
     mvFix(plan);
     plan.id = 'ask-' + crypto.createHash('sha1').update(norm).digest('hex').slice(0, 20);
     const v = MV.validate(plan, { question: typed });
-    const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : sciQuality(plan));
+    const gd = VG.check(plan, typed);   // swapped look-alike term = hard mistake; intro scene / missing key words = soft
+    if (gd.hard.length) v.errors = v.errors.concat(gd.hard);
+    const soft = v.warnings.filter(w => /digits|Devanagari/.test(w)).concat(v.errors.length ? [] : sciQuality(plan).concat(gd.soft));
     if (!v.errors.length) best = plan;
     if (!v.errors.length && !(soft.length && attempt < 3)) return await done(plan, 'try ' + attempt);
     lastErrors = v.errors.length ? v.errors : soft;
