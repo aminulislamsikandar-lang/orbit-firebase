@@ -8,7 +8,7 @@
 'use strict';
 
 const COLLECTION = 'dailyUsage';
-const KINDS = ['recall', 'ai', 'photos', 'bolo'];   // Recall free check, custom-course AI calls, custom-course photo reads, Bolo Assamese voice checks
+const KINDS = ['recall', 'ai', 'photos', 'bolo', 'ask', 'anime'];   // Recall free check, custom-course AI calls, custom-course photo reads, Bolo Assamese voice checks, prompt-box questions, prompt-box Anime videos
 const DAY_MS = 86400000;
 
 const istDay = (now = Date.now) => new Date(now() + 19800000).toISOString().slice(0, 10);

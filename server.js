@@ -23,6 +23,7 @@ const jsonNotes = express.json({ limit: '64kb' });              // a custom ques
 const NOTES_PATHS = new Set(['/api/read/passage', '/api/answer', '/api/translate', '/api/qtranslate', '/api/more', '/api/visual', '/api/image']);
 const VOICE_AUDIO_PATHS = new Set(['/api/read/evaluate', '/api/talk/turn', '/api/bolo/check']);   // Phase 5: a short recording + the chapter notes
 const jsonImage = express.json({ limit: '4mb' });              // one textbook photo (shrunk by the app to about 0.4 MB) for Add custom course
+app.use('/api/ask', jsonImage);   // prompt box: a question can carry up to 2 photos / PDFs. The body is read here first; the generic parser below then skips it (body already parsed).
 app.use((req, res, next) => ((req.path === '/api/custom/extract' || req.path === '/api/answer/check') ? jsonImage : NOTES_PATHS.has(req.path) ? jsonNotes : req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : req.path === '/api/bolo/rec/upload' ? jsonRec : req.path === '/api/recall/evaluate' ? jsonAudio : VOICE_AUDIO_PATHS.has(req.path) ? jsonAudio : jsonSmall)(req, res, next));
 
 // The browser reports Content-Security-Policy violations here (the policy is set in firebase.json, in Report-Only mode first). No login, tiny body.
@@ -2057,5 +2058,12 @@ const payRoute = h => async (req, res) => {
 };
 app.post('/api/pay/order', payRoute(PAY.order));
 app.post('/api/pay/verify', payRoute(PAY.verify));
+
+// ---- Prompt box at the bottom of the app: /api/ask (study question, optional photo/PDF) and /api/anime (short explainer video) ----
+// ask-core.js, ask-routes.js, public/promptbox.js. Course-locked (GATED). Free daily limits (Render env ASK_FREE_DAILY default 15, ANIME_FREE_DAILY default 3); a parent's Gemini key = no limit.
+const ASK_FREE_DAILY = Math.max(1, parseInt(process.env.ASK_FREE_DAILY || '15', 10) || 15), ANIME_FREE_DAILY = Math.max(1, parseInt(process.env.ANIME_FREE_DAILY || '3', 10) || 3);
+const ASK_QUOTA = LIMITS.createStoredQuota({ db: FSDB, kind: 'ask', max: ASK_FREE_DAILY }), ANIME_QUOTA = LIMITS.createStoredQuota({ db: FSDB, kind: 'anime', max: ANIME_FREE_DAILY });
+setInterval(() => { ASK_QUOTA.prune(); ANIME_QUOTA.prune(); }, 3600000).unref();
+require('./ask-routes').mount(app, { QUIZ, geminiFor, failMsgFor, userKeyOf, limited, rateKey, quotas: { ask: ASK_QUOTA, anime: ANIME_QUOTA }, max: { ask: ASK_FREE_DAILY, anime: ANIME_FREE_DAILY }, isAdmin: isAdminReq, lockOf, hasDb: !!FSDB, haveKeys: () => KEYS.length > 0, videoModels: VIDEO_MODELS });
 
 app.listen(PORT, () => console.log('Orbit AI tutor running on port ' + PORT));
