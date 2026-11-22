@@ -1,4 +1,4 @@
-// Public chapters: Class 7 Assamese-medium Maths (Halimon Nessa Academy) Chapter 2 videos are open to every logged-in student: no admin, no subscription, no course-lock hiding.
+// Public chapters: Class 7 Assamese-medium Maths (Halimon Nessa Academy) Chapter 2 videos are listed for every logged-in student and not hidden by the course lock. Free or Paid is each video's own tick.
 const fs = require('fs'), path = require('path');
 const R = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 const P = require('../public/publicchapters.js'), CAT = require('../public/catalog.js');
@@ -19,7 +19,7 @@ const ids = CAT.idsFor({ org: 'halimon', cls: 7, med: 'Assamese' }, [{ id: 'c7-e
 t('a Halimon Class 7 Assamese student is locked to the Assamese Maths course (the case being fixed)', ids.join() === 'c7-maths-as');
 
 const srv = R('server.js'), idx = R('public/index.html');
-t('server: a public chapter needs no subscription, even when REQUIRE_SUBSCRIPTION=true', /PUBCH\.isPublicVideo\(v\)\) return true/.test(srv) && /require\('\.\/public\/publicchapters\.js'\)/.test(srv));
+t('server: a public chapter no longer skips payment: only the video\'s own Free tick (or a subscription) opens it', !/PUBCH/.test(srv) && /process\.env\.REQUIRE_SUBSCRIPTION !== 'true' \|\| v\.free\) return true;/.test(srv));
 t('server: videos added from the admin panel carry their course and chapter into that check', /course: f\.course && f\.course\.stringValue, chapter: f\.chapter && Number\(f\.chapter\.integerValue\)/.test(srv));
 t('app: loaded before the app script; keeps public-chapter videos past the course lock; lists them on the chapter page', idx.indexOf('/publicchapters.js') > 0 && idx.indexOf('/publicchapters.js') < idx.indexOf('function mergeV') && /PC\.isPublicVideo\(v\)\)\)/.test(idx) && /PUBLIC_CHAPTERS\.belongs\(v,c\.id,ch\.no\)/.test(idx));
 t('service worker caches it and the shell version moved up', /'\/publicchapters\.js'/.test(R('public/sw.js')) && Number((/orbit-shell-v(\d+)/.exec(R('public/sw.js')) || [])[1]) >= 54);

@@ -1,5 +1,6 @@
-// public/publicchapters.js - chapters whose recorded videos are open to EVERY logged-in student (not only the admin):
-// no subscription, no "free" flag to remember, and no course-lock hiding. The server (server.js hasAccess) and the app (index.html mergeV / videosHTML) both read this one list.
+// public/publicchapters.js - chapters whose recorded videos are LISTED for every logged-in student (not only the admin) and are not hidden by the course lock.
+// Free or Paid is NOT decided here: it is the video's own "Free video" tick in the admin panel (server.js hasAccess), so a ticked video is free and an unticked one needs a payment.
+// The app (index.html mergeV / videosHTML) reads this list.
 // To open another chapter, add one line here and deploy (hosting + Render).
 //   course      the course id the chapter belongs to (questions.js / catalog.js)
 //   chapter     chapter number

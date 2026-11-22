@@ -1355,7 +1355,6 @@ app.post('/api/image', async (req, res) => {
 const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const VIDEOS = require('./videos');
-const PUBCH = require('./public/publicchapters.js');   // chapters whose videos every logged-in student may watch (no subscription needed)
 const VBY = new Map(VIDEOS.map(v => [v.id, v]));
 const B2HOST = (process.env.B2_ENDPOINT || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const B2 = B2HOST && process.env.B2_KEY_ID && process.env.B2_APP_KEY && process.env.B2_BUCKET
@@ -1368,7 +1367,7 @@ const B2 = B2HOST && process.env.B2_KEY_ID && process.env.B2_APP_KEY && process.
   : null;
 
 async function hasAccess(req, v) {
-  if (process.env.REQUIRE_SUBSCRIPTION !== 'true' || v.free || PUBCH.isPublicVideo(v)) return true;
+  if (process.env.REQUIRE_SUBSCRIPTION !== 'true' || v.free) return true;   // Free or Paid is each video's own tick in the admin panel (a public chapter only decides where the video is listed)
   try {
     // Read the student's own subscription doc with THEIR login token, so Firestore rules decide (no service account needed).
     const r = await fetch(`https://firestore.googleapis.com/v1/projects/${process.env.FIREBASE_PROJECT_ID}/databases/(default)/documents/subscriptions/${req.user.uid}`,
