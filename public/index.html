@@ -551,6 +551,13 @@ const DTYPES=[['auto','Auto'],['flow','Flow diagram'],['labelled','Labelled diag
 const THEMES=[['auto','Auto'],['light','Light'],['dark','Dark']];
 const SOON={pyq:['PYQ','pyq'],pass:['Pass mark','pass'],topper:['Topper','topper'],faculty:['Faculty','fac'],dev:['Developer','dev']};
 const TITLES={home:'Home',fav:'Favourite',pins:'Pinned',settings:'Settings'};
+// Menu items that hold several pages: the sidebar shows one item, each page shows these tabs at the top (every page is still reachable).
+const SGROUPS={saved:[['fav','Favourite'],['pins','Pinned']],videos:[['getvideo','Get Video'],['pubvideo','Public Videos']],lab:[['vlab','Virtual Lab'],['models3d','3D Models']],voice:[['bolo','Bolo'],['read','Padhne ki jaanch'],['talk','Baat-cheet']],exam:[['pyq','PYQ'],['pass','Pass mark']],prog:[['class','My Class'],['report','Weekly Report'],['study','Padhai ka time']]};
+function groupTabs(){
+ const g=Object.values(SGROUPS).find(a=>a.some(x=>x[0]===VIEW));
+ if(!g)return '';
+ return `<div class="chips gtabs" role="group" aria-label="Is section ke pages" style="margin:8px 0 0">${g.map(([v,l])=>`<button class="chip" data-act="nav" data-v="${v}" aria-pressed="${VIEW===v}">${l}${v==='fav'?' ('+nSaved()+')':v==='pins'?' ('+nPinned()+')':''}</button>`).join('')}</div>`;
+}
 const isSaved=id=>!!SAVED[id];
 const nSaved=()=>Object.keys(SAVED).length;
 const dateFmt=t=>new Date(t).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
@@ -767,7 +774,10 @@ function settingsHTML(){
  <h2 class="sec">Recall AI: bolne ka tareeka</h2>${chips([['ai','AI ko recording bhejo'],['text','Text mein badlo']],ST.rvoice==='text'?'text':'ai','setrv')}
  <p class="mut" style="margin-top:8px">AI ko recording bhejo: aapki awaaz AI (Gemini) ko jati hai, Hindi, English, Assamese aur Bengali mein achha chalta hai. Text mein badlo: browser bole hue ko box mein text likhta hai, aap use theek karke bhejte ho, sirf text AI ko jata hai (Chrome ya Edge).</p>
  <h2 class="sec">"Suno" button: awaaz</h2>${chips([['auto','Phone ki awaaz, na ho to AI'],['ai','Hamesha AI awaaz'],['browser','Sirf phone ki awaaz']],ST.tts==='ai'||ST.tts==='browser'?ST.tts:'auto','settts')}
- <p class="mut" style="margin-top:8px">AI awaaz sirf tab chalti hai jab parent ki Gemini key lagi ho (Advanced AI Features), uska kharcha parent ki key se hota hai. Assamese ke liye aksar phone mein awaaz nahi hoti, isliye wahan AI awaaz kaam aati hai.</p>`;
+ <p class="mut" style="margin-top:8px">AI awaaz sirf tab chalti hai jab parent ki Gemini key lagi ho (Advanced AI Features), uska kharcha parent ki key se hota hai. Assamese ke liye aksar phone mein awaaz nahi hoti, isliye wahan AI awaaz kaam aati hai.</p>
+ <h2 class="sec">Parent</h2><div class="chips"><button class="chip" data-act="nav" data-v="ai">Advanced AI Features</button></div>
+ <p class="mut" style="margin-top:8px">Parent ki Gemini key aur AI ke advanced features.</p>
+ <h2 class="sec">Orbit ke baare me</h2><div class="chips"><button class="chip" data-act="nav" data-v="topper">Topper</button><button class="chip" data-act="nav" data-v="faculty">Faculty</button><button class="chip" data-act="nav" data-v="dev">Developer</button></div>`;
 }
 // ---- Account page (sidebar "Account"): who is logged in + Log out ----
 function loginHTML(){
@@ -997,6 +1007,8 @@ function draw(){
  else body=soonHTML();
  document.body.classList.toggle('nofoot',!(needCourse&&!KID_STEP&&!CSTEP&&!CS.own&&!(COURSE&&COURSE.kid&&!KIDROLE)));   // footer links: only the two starting pages (login page, first "Apna course chuno" page). Home, subjects, chapters and questions never show it
  if(VIEW!=='home'&&!needCourse&&!KIDM&&body.indexOf('class="back"')<0)body=`<button class="back" data-act="nav" data-v="home">${I.back}<span>Home</span></button>`+body;
+ const gtabs=(!needCourse&&!KIDM)?groupTabs():'';
+ if(gtabs){const bm=body.match(/^<button class="back"[^>]*>.*?<\/button>/);body=bm?bm[0]+gtabs+body.slice(bm[0].length):gtabs+body}
  $('#app').innerHTML=`<div class="top"${needCourse?' style="display:none"':''}>${KIDM?'':`<button class="ic" data-act="menu" aria-label="Menu kholo" aria-expanded="false">${I.menu}</button>`}<div class="logo">${LOGO}Orbit Tutorial</div></div>${body}`;
  drawSide();
  if(VIEW==='vlab'&&window.VLAB)VLAB.mount($('#app'));
@@ -1013,18 +1025,12 @@ const SGKEY='orbit_side_groups';
 function sideState(){try{return JSON.parse(localStorage.getItem(SGKEY))||{}}catch(e){return{}}}
 function toggleGroup(k){const st=sideState(),was=document.querySelector('.sgrp[data-g="'+k+'"]');st[k]=!(was&&was.getAttribute('aria-expanded')==='true');try{localStorage.setItem(SGKEY,JSON.stringify(st))}catch(e){}drawSide()}
 function drawSide(){
- const sst=sideState();
- // A menu group is open if it holds the page you are on, otherwise as you last left it (default: open, except 'Aur').
- const grp=(key,label,views,inner,defOpen)=>{const open=views.includes(VIEW)||(sst[key]!==undefined?!!sst[key]:defOpen);return `<button class="sgrp" data-act="sgrp" data-g="${key}" aria-expanded="${open}">${label}</button><div class="sitems"${open?'':' hidden'}>${inner}</div>`};
- const item=(v,ico,label,badge)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
+ // One item per section. Pages that share a section (Favourite + Pinned, the two Videos pages, ...) show tabs at the top of the page; see SGROUPS.
+ const item=(v,ico,label,badge,alts)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v||(alts&&alts.includes(VIEW))?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${COURSE&&!COURSE.own?'':item('custom','plus','My Courses')}${item('fav','heart','Favourite',nSaved())}${item('pins','pin','Pinned',nPinned())}
- ${grp('learn','Seekho',['getvideo','pubvideo','vlab','models3d'],item('getvideo','vid','Get Video')+item('pubvideo','vid','Public Videos')+item('vlab','lab','Virtual Lab')+item('models3d','cube','3D Models'),true)}
- ${grp('practice','Practice',['recall','bolo','read','talk','ai'],item('recall','recall','Recall AI')+item('bolo','mic','Bolo')+item('read','mic','Padhne ki jaanch')+item('talk','mic','Baat-cheet')+item('ai','ai','Advanced AI Features'),true)}
- ${grp('me','Meri progress',['class','report','study'],item('class','class','My Class')+item('report','report','Weekly Report')+item('study','recall','Padhai ka time'),true)}
- ${grp('more','Aur',['pyq','pass','topper','faculty','dev'],item('pyq','pyq','PYQ')+item('pass','pass','Pass mark')+item('topper','topper','Topper')+item('faculty','fac','Faculty')+item('dev','dev','Developer'),false)}
+ ${item('home','home','Home')}${COURSE&&!COURSE.own?'':item('custom','plus','My Courses')}${item('fav','heart','Saved',nSaved()+nPinned(),['pins'])}${item('getvideo','vid','Videos',null,['pubvideo'])}${item('vlab','lab','Lab aur 3D',null,['models3d'])}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo aur voice',null,['read','talk'])}${item('pyq','pyq','Exam',null,['pass'])}${item('class','class','Meri progress',null,['report','study'])}
  <div class="sgap"></div><div class="sline"></div>
- ${item('settings','set','Settings')}${item('login','login',USER?'Account':'Log in')}`;
+ ${item('settings','set','Settings',null,['ai','topper','faculty','dev'])}${item('login','login',USER?'Account':'Log in')}`;
 }
 function openSide(on,noFocus){
  const sd=$('#side'),sc=$('#scrim');

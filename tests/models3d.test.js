@@ -23,7 +23,7 @@ const src = fs.readFileSync(path.join(ROOT, 'public', 'models3d.js'), 'utf8');
 ok(!/\.(innerHTML|outerHTML)\s*\+?=/.test(src), 'no innerHTML sinks');
 ok(!/https?:\/\//.test(src), 'no external URLs');
 const idx = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-for (const k of ['/models3d.js', "VIEW==='models3d'", 'M3D.mount', "item('models3d'", 'M3D.leave']) ok(idx.includes(k), k);
+for (const k of ['/models3d.js', "VIEW==='models3d'", 'M3D.mount', "['models3d','3D Models']", 'M3D.leave']) ok(idx.includes(k), k);
 ok(fs.readFileSync(path.join(ROOT, 'public', 'sw.js'), 'utf8').includes('/models3d.js'), 'cached for offline');
 ok(src.length < 30000, 'stays small (' + src.length + ' bytes)');
 console.log(n + ' passed, 0 failed');

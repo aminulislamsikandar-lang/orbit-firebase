@@ -105,7 +105,7 @@ const tick = () => new Promise(r => setTimeout(r, 0));
   PK.act('lang', { dataset: { v: 'as' } }); t('language chips mark the selected language', /data-v="as" aria-pressed="true"/.test(PK.viewHTML()) && /data-v="hi" aria-pressed="false"/.test(PK.viewHTML()));
 
   // ---------- wiring in index.html / service worker / config ----------
-  t('sidebar has "Advanced AI Features" opening view ai', /item\('ai','ai','Advanced AI Features'\)/.test(html) && /VIEW==='ai'\)body=window\.PARENT_KEY\?PARENT_KEY\.viewHTML\(\)/.test(html));
+  t('sidebar has "Advanced AI Features" opening view ai', /data-v="ai">Advanced AI Features/.test(html) && /VIEW==='ai'\)body=window\.PARENT_KEY\?PARENT_KEY\.viewHTML\(\)/.test(html));
   t('login / logout tells the module who is logged in, before anything else in onCloudUser', /window\.onCloudUser=u=>\{USER=u;AUTH_READY=true;if\(window\.PARENT_KEY\)window\.PARENT_KEY\.setUser\(u\?u\.uid:''\)/.test(html));
   t('WhatsApp link (?parent-setup=1) opens the page, and shows the guide even before login', /const PARENT_LINK=/.test(html) && /if\(PARENT_LINK\)VIEW='ai'/.test(html) && /!USER\)\{openSide\(false,true\);\$\('#app'\)\.innerHTML=PARENT_LINK&&window\.PARENT_KEY\?/.test(html));
   t('AI calls still send the key header from the module', /\.\.\.\(window\.PARENT_KEY\?PARENT_KEY\.headers\(\):\{\}\)/.test(html));

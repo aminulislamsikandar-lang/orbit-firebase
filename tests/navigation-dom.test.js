@@ -36,32 +36,44 @@ async function boot() {
   const side = () => s.side();
   const items = () => [...side().querySelectorAll('.sitem')].map(b => b.dataset.v);
 
-  // 1. Nothing was removed from the menu.
-  const need = ['home', 'fav', 'pins', 'getvideo', 'pubvideo', 'vlab', 'models3d', 'recall', 'bolo', 'read', 'talk', 'ai', 'class', 'report', 'study', 'pyq', 'pass', 'topper', 'faculty', 'dev', 'settings', 'login'];
-  t('every menu item is still in the menu', need.every(v => items().includes(v)), 'missing: ' + need.filter(v => !items().includes(v)).join(','));
+  // 1. One sidebar item per section, no group headers.
+  const top = ['home', 'fav', 'getvideo', 'vlab', 'recall', 'bolo', 'pyq', 'class', 'settings', 'login'];
+  t('sidebar has one item per section', top.every(v => items().includes(v)), 'missing: ' + top.filter(v => !items().includes(v)).join(','));
+  t('the old group headers are gone', !side().querySelector('.sgrp'));
   t('ABC Games moved out of the menu (it is a topic on the Bolo page now)', !items().includes('abc'));
   t('menu has no duplicate items', new Set(items()).size === items().length);
+  t('menu is short', items().length <= 11, 'items=' + items().length);
+  t('Home stays at the top, outside any group', !!side().querySelector('.sitem[data-v=home]') && side().querySelector('.sitem[data-v=home]').parentElement === side());
 
-  // 2. Grouped, with the rarely used group closed.
-  const grp = k => side().querySelector('.sgrp[data-g=' + k + ']');
-  const body = k => grp(k).nextElementSibling;
-  t('four menu groups exist', ['learn', 'practice', 'me', 'more'].every(k => grp(k)));
-  t('Seekho, Practice and Meri progress start open', ['learn', 'practice', 'me'].every(k => grp(k).getAttribute('aria-expanded') === 'true' && !body(k).hidden));
-  t('"Aur" (coming soon, Faculty, Developer) starts closed', grp('more').getAttribute('aria-expanded') === 'false' && body('more').hidden);
-  t('Home, Favourite and Pinned stay at the top, outside the groups', !!side().querySelector('.sitem[data-v=home]') && side().querySelector('.sitem[data-v=home]').parentElement === side());
+  // 2. Nothing was removed: every page of a section is still one tap away, as a tab on that section's page.
+  const sections = { fav: ['fav', 'pins'], getvideo: ['getvideo', 'pubvideo'], vlab: ['vlab', 'models3d'], bolo: ['bolo', 'read', 'talk'], pyq: ['pyq', 'pass'], class: ['class', 'report', 'study'] };
+  const tabs = () => [...s.app().querySelectorAll('.gtabs [data-v]')].map(b => b.dataset.v);
+  for (const [entry, views] of Object.entries(sections)) {
+    s.click('.sitem[data-v=' + entry + ']'); await tick();
+    t(entry + ' opens with tabs ' + views.join(', '), s.view() === entry && views.every(v => tabs().includes(v)), 'view=' + s.view() + ' tabs=' + tabs());
+    for (const v of views) {
+      s.click('.gtabs [data-v=' + v + ']'); await tick();
+      t('tab ' + v + ' opens its page', s.view() === v, 'view=' + s.view());
+      const cur = side().querySelector('[aria-current=page]');
+      t('menu marks the ' + entry + ' item while on ' + v, !!cur && cur.dataset.v === entry);
+    }
+  }
 
-  // 3. Collapse / open is remembered.
-  s.click('.sgrp[data-g=learn]');
-  t('tapping a group header closes it', grp('learn').getAttribute('aria-expanded') === 'false' && body('learn').hidden);
-  t('the choice is saved on the device', /"learn":false/.test(s.w.localStorage.getItem('orbit_side_groups') || ''));
-  s.click('.sgrp[data-g=learn]');
-  t('tapping again opens it', grp('learn').getAttribute('aria-expanded') === 'true' && !body('learn').hidden);
+  // 3. Advanced AI, Topper, Faculty and Developer moved into Settings.
+  s.click('.sitem[data-v=settings]'); await tick();
+  t('Settings opens', s.view() === 'settings');
+  for (const v of ['ai', 'topper', 'faculty', 'dev']) t('Settings links to ' + v, !!s.app().querySelector('[data-act=nav][data-v=' + v + ']'));
+  for (const v of ['ai', 'topper', 'dev']) {
+    s.click('.sitem[data-v=settings]'); await tick();
+    s.click('#app [data-act=nav][data-v=' + v + ']'); await tick();
+    t('Settings link opens ' + v, s.view() === v, 'view=' + s.view());
+  }
 
-  // 4. The group that holds the page you are on is always open.
-  s.click('.sitem[data-v=faculty]'); await tick();
-  t('opening Faculty works', s.view() === 'faculty');
-  t('its group ("Aur") is open while you are on that page', grp('more').getAttribute('aria-expanded') === 'true' && !body('more').hidden);
-  t('the current page is marked in the menu', side().querySelector('[aria-current=page]').dataset.v === 'faculty');
+  // 4. The menu marks Settings while you are on a page that lives under it.
+  s.click('.sitem[data-v=settings]'); await tick();
+  s.click('#app [data-act=nav][data-v=faculty]'); await tick();
+  t('opening Faculty from Settings works', s.view() === 'faculty');
+  t('the menu marks Settings while on Faculty', side().querySelector('[aria-current=page]').dataset.v === 'settings');
 
   // 5. Feature pages have a visible Home button; chapter pages keep their own Back.
   t('feature page shows a Home button', !!s.app().querySelector('button.back[data-act=nav][data-v=home]'));

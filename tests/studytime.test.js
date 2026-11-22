@@ -49,7 +49,7 @@ for (const x of [null, {}, { on: true, name: ' A  B ', time: '25:00', mins: 7, d
 
 // wiring
 const idx = rd('public/index.html');
-for (const k of ['/kidbank.js', "item('study','recall'", "VIEW==='study'", 'STUDY.viewHTML()', 'STUDY.setUser(u)', "STUDY.leave()", 'STUDY.sync()', '/studytime.js']) ok(idx.includes(k), 'index: ' + k);
+for (const k of ['/kidbank.js', "['study','Padhai ka time']", "VIEW==='study'", 'STUDY.viewHTML()', 'STUDY.setUser(u)', "STUDY.leave()", 'STUDY.sync()', '/studytime.js']) ok(idx.includes(k), 'index: ' + k);
 const swSrc = rd('public/sw.js');
 ok(swSrc.includes('/studytime.js') && swSrc.includes('/kidbank.js'), 'cached for offline');
 ok(swSrc.includes("addEventListener('push'") && swSrc.includes("addEventListener('notificationclick'"), 'service worker shows pushes and opens the app on tap');

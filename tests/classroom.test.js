@@ -18,7 +18,7 @@ t('cloud: classes API (create, join, leave, homework, done, removeClass)', /clas
 t('cloud: the class code uses an alphabet without I, O, 0, 1 and crypto randomness', /ABCDEFGHJKLMNPQRSTUVWXYZ23456789/.test(C) && /crypto\.getRandomValues/.test(C));
 t('cloud: deleting a class removes scores, done, homework and members first', /for \(const sub of \['scores', 'done', 'homework', 'members'\]\)/.test(C));
 const H = read('public/index.html');
-t('app: My Class view, sidebar item, icon, home card, setUser and script are wired', /VIEW==='class'\)body=window\.CLASSROOM/.test(H) && /item\('class','class','My Class'\)/.test(H) && /\n class:ic\(/.test(H) && /CLASSROOM\.homeHTML\(\)/.test(H) && /CLASSROOM\.setUser\(u\)/.test(H) && /src="\/classroom\.js"/.test(H));
+t('app: My Class view, sidebar item, icon, home card, setUser and script are wired', /VIEW==='class'\)body=window\.CLASSROOM/.test(H) && /item\('class','class','Meri progress'/.test(H) && /\['class','My Class'\]/.test(H) && /\n class:ic\(/.test(H) && /CLASSROOM\.homeHTML\(\)/.test(H) && /CLASSROOM\.setUser\(u\)/.test(H) && /src="\/classroom\.js"/.test(H));
 t('app: no emoji in the new screen', !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(read('public/classroom.js')));
 t('app: no "Premium" word in the new screen', !/premium/i.test(read('public/classroom.js')));
 

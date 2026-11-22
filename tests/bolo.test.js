@@ -50,7 +50,7 @@ t('dayKey and fmtTime', /^\d{4}-\d{2}-\d{2}$/.test(B.dayKey()) && B.fmtTime(65) 
 // wiring
 const H = read('public/index.html'), C = read('public/bolo.js'), SW = read('public/sw.js');
 t('index.html loads bolo-core.js before bolo.js', H.indexOf('/bolo-core.js') > 0 && H.indexOf('/bolo-core.js') < H.indexOf('/bolo.js'));
-t('sidebar has a Bolo item', /item\('bolo','mic','Bolo'\)/.test(H));
+t('sidebar has a Bolo item', /item\('bolo','mic','Bolo aur voice'/.test(H));
 t('the bolo view is routed', /VIEW==='bolo'\)body=window\.BOLO/.test(H));
 t('the mic icon exists', /\bmic:ic\(/.test(H));
 t('the mic is switched off when the student leaves the screen', (H.match(/BOLO\.leave\(\)/g) || []).length >= 3);

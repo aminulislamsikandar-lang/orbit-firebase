@@ -5,7 +5,7 @@ let pass = 0, fail = 0;
 const t = (name, ok, extra) => { if (ok) pass++; else { fail++; console.log('FAIL  ' + name + (extra ? '  ' + extra : '')); } };
 const src = read('public/weekly.js'), H = read('public/index.html'), RC = read('public/recall.js');
 
-t('wired: Weekly Report view, sidebar item, icon, setUser, script, chapter-open day mark', /VIEW==='report'\)body=window\.WEEKLY/.test(H) && /item\('report','report','Weekly Report'\)/.test(H) && /\n report:ic\(/.test(H) && /WEEKLY\.setUser\(u\)/.test(H) && /src="\/report\.js"/.test(H) && /n\.page==='chapter'&&window\.WEEKLY\)WEEKLY\.mark\(\)/.test(H));
+t('wired: Weekly Report view, sidebar item, icon, setUser, script, chapter-open day mark', /VIEW==='report'\)body=window\.WEEKLY/.test(H) && /\['report','Weekly Report'\]/.test(H) && /\n report:ic\(/.test(H) && /WEEKLY\.setUser\(u\)/.test(H) && /src="\/report\.js"/.test(H) && /n\.page==='chapter'&&window\.WEEKLY\)WEEKLY\.mark\(\)/.test(H));
 t('wired: a Recall check marks the day and sends the chapter score to the joined classes; RECALL exposes history()', /g\.WEEKLY\.mark\(\)/.test(RC) && /g\.CLASSROOM\.score\(p\[0\], \+p\[1\], j\.total\)/.test(RC) && /history: \(\) => read\(\)\.slice\(\)/.test(RC));
 t('privacy: the number stays on the device (localStorage only), never sent to a server', !/fetch\(|api\(|CLOUD/.test(src) && /localStorage/.test(src));
 t('privacy: nothing is sent by Orbit, only a wa.me link is opened', /wa\.me\//.test(src) && /g\.open\(url, '_blank', 'noopener'\)/.test(src));
