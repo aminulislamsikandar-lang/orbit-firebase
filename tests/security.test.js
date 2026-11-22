@@ -75,7 +75,7 @@ const t = (name, ok, extra) => { if (ok) pass++; else { fail++; console.log('FAI
   t('CSP: Firebase SDK, analytics and Clarity scripts are allowed from their own hosts only', ['www.gstatic.com', 'www.googletagmanager.com', 'www.clarity.ms'].every(h => dir('script-src').includes(h)));
   t('CSP: fonts, images, videos and frames match what the app really loads', dir('style-src').includes('fonts.googleapis.com') && dir('font-src').includes('fonts.gstatic.com') && dir('img-src').includes('upload.wikimedia.org') && dir('img-src').includes('images.pexels.com') && dir('media-src').includes('backblazeb2.com') && dir('frame-src').includes('youtube-nocookie.com'));
   // ratchet: a new third-party host in the client must be added to the policy (or listed here as navigation-only)
-  const NAV_ONLY = new Set(['aistudio.google.com', 'wa.me', 'www.youtube.com', 'orbittutorial.web.app']);
+  const NAV_ONLY = new Set(['aistudio.google.com', 'wa.me', 'www.youtube.com', 'orbittutorial.web.app', 'www.instagram.com']);
   const hosts = new Set(); for (const f of fs.readdirSync(path.join(ROOT, 'public')).filter(x => /\.(js|html)$/.test(x)).map(x => 'public/' + x)) for (const m of read(f).matchAll(/https:\/\/([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g)) hosts.add(m[1]);
   const covered = h => csp.split(/[\s;]+/).some(tok => { const x = tok.replace(/^https:\/\//, ''); return x === h || (x.startsWith('*.') && h.endsWith(x.slice(1))); });
   const missing = [...hosts].filter(h => !NAV_ONLY.has(h) && !covered(h));
