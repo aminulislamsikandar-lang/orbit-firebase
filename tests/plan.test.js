@@ -83,6 +83,27 @@ const P = require('../plan-core.js');
   ok(/async function hasAccess\(req, v\) \{\s*if \(process\.env\.REQUIRE_SUBSCRIPTION !== 'true' \|\| v\.free\) return true;/.test(srv), 'existing paid-video check (hasAccess) is unchanged');
   const C = require('../public/plan.js');
   ok(C._t.fmt(600) === '10:00' && C._t.fmt(59) === '00:59' && C._t.fmt(-3) === '00:00' && C._t.fmt(61) === '01:01', 'countdown format');
+
+  // the two pages (same words as the design pictures)
+  const txt = s => s.replace(/<[^>]+>/g, '|').replace(/\|+/g, '|');
+  const over = txt(C._t.overHTML());
+  ok(over.includes('Aaj ka free time khatam') && over.includes('Kal phir aao, ya Plus lo.') && over.includes('Plus lo') && over.includes('Jo answers device mein saved hai, wo offline dekh sakte ho.'), 'free time over page: title, line, Plus lo button, offline note');
+  ok(/<svg[^>]*>[\s\S]*<circle[\s\S]*<\/svg>/.test(C._t.overHTML()) && /data-plan="plans"/.test(C._t.overHTML()), 'free time over page: clock icon (line svg, no emoji) and the button opens the plans');
+  const st = { seconds: 600, chapters: 1, plus: false, pay: { enabled: true, rupees: 99, days: 365 }, canPay: true };
+  const pl = txt(C._t.plansHTML(st));
+  ['Orbit Plus', 'Free mein roz 10 minute. Plus mein koi limit nahi.', 'Rs 0', 'Roz 10 minute', 'Sirf Chapter 1', 'AI Answer, translation, diagram, Get Video', 'Aapka current plan',
+    'Rs 99', '/ 365 din', 'Unlimited study time', 'Saare chapters', 'Saare video lessons', 'Study-time alert (father ke phone par)', 'Plus lo', 'UPI, card, netbanking (Razorpay)']
+    .forEach(w => ok(pl.includes(w), 'plans page says: ' + w));
+  ok(/data-plan="buy"[^>]*>Plus lo/.test(C._t.plansHTML(st)) && !/data-plan="buy"[^>]* disabled/.test(C._t.plansHTML(st)), 'plans page: Plus lo button is on and starts the payment');
+  ok(/data-plan="buy"[^>]* disabled/.test(C._t.plansHTML({ ...st, pay: { enabled: false } })) && txt(C._t.plansHTML({ ...st, pay: { enabled: false } })).includes('Payment abhi shuru nahi hua hai.'), 'plans page: payment not started -> button off, clear note');
+  ok(!txt(C._t.plansHTML({ ...st, plus: true })).includes('Aapka current plan'), 'plans page: a Plus student is not told Free is the current plan');
+  ok(txt(C._t.plansHTML({ ...st, seconds: 900, chapters: 2 })).includes('Roz 15 minute') && txt(C._t.plansHTML({ ...st, seconds: 900, chapters: 2 })).includes('Pehle 2 chapters'), 'plans page follows FREE_SECONDS / FREE_CHAPTERS');
+  ok(!txt(C._t.plansHTML({ ...st, pay: { enabled: true, rupees: '<b>9', days: 1 } })).includes('<b>9') && C._t.plansHTML({ ...st, pay: { enabled: true, rupees: '<b>9', days: 1 } }).includes('&lt;b&gt;9'), 'plans page: every value is escaped');
+  // the app opens the pages as views, and the client code never assigns innerHTML
+  const plansrc = read('public/plan.js');
+  ok(/else if\(VIEW==='plan'\|\|VIEW==='planover'\)body=window\.PLAN\?PLAN\.viewHTML\(VIEW\):''/.test(html) && html.includes('window.orbitGo=v=>go(v)') && html.includes('window.orbitView=()=>VIEW'), 'index.html draws the two plan views and exports orbitGo / orbitView');
+  ok(!/\.(innerHTML|outerHTML)\s*\+?=/.test(plansrc) && !/insertAdjacentHTML|document\.write|eval\(/.test(plansrc), 'plan.js has no HTML sinks');
+  ok(/const SHELL = 'orbit-shell-v(7[2-9]|[89]\d|\d{3,})'/.test(sw), 'service worker cache version moved up (phones must get the new plan.js and index.html)');
   console.log(pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })();

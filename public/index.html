@@ -876,6 +876,7 @@ function qvHTML(q){
 const qvMenuVideos=id=>{const vs=lowData()?[]:qVids(id);return vs.map((v,i)=>`<button class="qmi" role="menuitem" data-act="qvopen" data-id="${esc(v.id)}">${I.vid}<span>${esc(String(v.title||'').trim().slice(0,60)||('Video'+(vs.length>1?` (${i+1})`:'')))}</span></button>`).join('')};
 const qvMenuItem=id=>window.QVideo&&window.QVideo.active()?`<button class="qmi" role="menuitem" data-act="qvadd" data-id="${id}">${I.vid}<span>Add video</span></button><button class="qmi" role="menuitem" data-act="ytadd" data-id="${id}">${I.vid}<span>${window.YTP&&window.YTP.has(id)?'Edit YouTube link':'YouTube link'}</span></button>`:'';
 window.orbitUser=()=>USER;
+window.orbitGo=v=>go(v);window.orbitView=()=>VIEW;   // the free-plan pages (plan.js) open and check an app view
 window.orbitCourses=()=>DATA?DATA.courses.filter(c=>!c.custom).map(c=>({id:c.id,title:cTitle(c),class:c.class,subject:c.subject,chapters:(c.chapters||[]).map(ch=>({no:ch.no,title:ch.title}))})):[];   // the student's own courses (Mock test / Daily challenge)
 window.orbitLang=()=>ST.tlang;
 window.orbitLow=()=>lowData();
@@ -1002,6 +1003,7 @@ function draw(){
  else if(VIEW==='report')body=window.WEEKLY?WEEKLY.viewHTML():'';
  else if(VIEW==='study')body=window.STUDY?STUDY.viewHTML():'';
  else if(VIEW==='mock'||VIEW==='daily')body=window.EXAM?EXAM.viewHTML(VIEW):'';
+ else if(VIEW==='plan'||VIEW==='planover')body=window.PLAN?PLAN.viewHTML(VIEW):'';
  else if(VIEW==='bolo')body=window.BOLO?BOLO.viewHTML():'';
  else if(VIEW==='read'||VIEW==='talk')body=window.VOICE?VOICE.viewHTML(VIEW):'';
  else if(VIEW==='custom')body=window.CUSTOM?CUSTOM.viewHTML():'';
