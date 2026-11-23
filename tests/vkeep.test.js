@@ -26,6 +26,8 @@ t('service worker keeps vkeep.js offline', code('sw.js').includes("'/vkeep.js'")
 let JSDOM = null; try { ({ JSDOM } = require('jsdom')); } catch (e) { /* skipped */ }
 if (!JSDOM) { console.log('SKIP  jsdom not installed (npm i -D jsdom) - DOM checks not run'); finish(); }
 else (async () => {
+  const bus = [];                                   // fake BroadcastChannel: all fake windows share it (like tabs of one browser)
+  class FakeBC { constructor(n) { this.n = n; bus.push(this); } postMessage(d) { bus.forEach(c => { if (c !== this && c.n === this.n && c.onmessage) setTimeout(() => c.onmessage({ data: d }), 0); }); } }
   const mk = () => {
     const w = new JSDOM('<!doctype html><body><div id="app"></div></body>', { url: 'https://orbittutorial.web.app/', runScripts: 'outside-only', pretendToBeVisual: true }).window;
     const P = w.HTMLMediaElement.prototype;
@@ -33,6 +35,7 @@ else (async () => {
     Object.defineProperty(P, 'currentTime', { get() { return this._t || 0; }, set(v) { this._t = v; }, configurable: true });
     P.play = function () { this._p = false; this.dispatchEvent(new w.Event('play')); return Promise.resolve(); };
     P.pause = function () { if (this._p === false) { this._p = true; this.dispatchEvent(new w.Event('pause')); } };
+    w.BroadcastChannel = FakeBC;
     w.eval(code('vkeep.js'));
     return w;
   };
@@ -87,6 +90,16 @@ else (async () => {
     app.querySelector('video').play();
     t('a video from another chapter never restarts by itself', a.paused === true);
     t('VKeep.state lists the videos on the page', Array.isArray(w.VKeep.state()) && w.VKeep.state().length === 1); }
+
+  { const A = mk(), B = mk();                      // two Orbit tabs
+    A.document.getElementById('app').innerHTML = html('a', 'u1'); B.document.getElementById('app').innerHTML = html('a', 'u1'); await sleep(5);
+    const va = A.document.querySelector('video'), vb = B.document.querySelector('video');
+    va.play(); await sleep(10);
+    vb.play(); await sleep(10);
+    t('ACROSS TABS: starting a video in tab B pauses the video in tab A', va.paused === true && vb.paused === false);
+    va.play(); await sleep(10);
+    t('ACROSS TABS: and the other way round', vb.paused === true && va.paused === false);
+    t('VKeep.media lists what played in this tab', Array.isArray(A.VKeep.media()) && A.VKeep.media().length >= 1); }
 
   finish();
 })();

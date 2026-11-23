@@ -10,8 +10,11 @@
  *      (If the old one was paused by the browser while it was out of the page, it is started again.)
  *   2. ONE AT A TIME: when any video starts playing, every other video is paused, also ones that are no longer on the page.
  *   3. NO GHOSTS: a video that was removed from the page for good (closed, other chapter, new link) is paused at once.
+ *   4. ACROSS TABS: when a video starts in one Orbit tab or window (also the installed app), videos in the other Orbit tabs are paused.
+ *      (A forgotten second tab playing in the background was heard as "one boosted and one normal sound".)
  *
- * Load this BEFORE vboost.js. window.VKeep.state() lists every <video> (for debugging on a phone: paste it in the Console).
+ * Load this BEFORE vboost.js. For debugging paste in the Console:  VKeep.state()  (videos on the page)  and  VKeep.media()  (every audio/video
+ * that played in this tab, also ones that are no longer on the page).
  */
 (function (g) {
   "use strict";
@@ -76,12 +79,29 @@
     goneEls.forEach(function (el) { if (el) { el.__vkWas = false; safePause(el); active.delete(el); } });
   }
 
-  // One video at a time (also pauses videos that are no longer on the page).
+  // Every audio/video that ever played in this tab (for VKeep.media()); also covers elements that are not on the page, like new Audio().
+  var seen = new Set();
+  function note(el) { if (!el) return; seen.add(el); if (seen.size > 40) seen.forEach(function (o) { if (seen.size > 30 && o.paused && !o.isConnected) seen.delete(o); }); }
+  var MP = g.HTMLMediaElement && g.HTMLMediaElement.prototype;
+  if (MP && typeof MP.play === "function") { var origPlay = MP.play; MP.play = function () { note(this); return origPlay.apply(this, arguments); }; }
+
+  // Other Orbit tabs / windows of the same browser.
+  var tabId = Math.random().toString(36).slice(2), chan = null;
+  function pauseAllHere() { active.forEach(function (o) { o.__vkWas = false; safePause(o); }); active.clear(); }
+  try {
+    if (g.BroadcastChannel) {
+      chan = new g.BroadcastChannel("orbit-video");
+      chan.onmessage = function (e) { if (e && e.data && e.data.type === "play" && e.data.from !== tabId) pauseAllHere(); };
+    }
+  } catch (x) { chan = null; }
+
+  // One video at a time (also pauses videos that are no longer on the page, and videos in other Orbit tabs).
   doc.addEventListener("play", function (e) {
     var v = e.target;
     if (!v || v.tagName !== "VIDEO") return;
-    v.__vkWas = true; active.add(v);
+    v.__vkWas = true; active.add(v); note(v);
     active.forEach(function (o) { if (o !== v) { o.__vkWas = false; active.delete(o); safePause(o); } });
+    if (chan) { try { chan.postMessage({ type: "play", from: tabId }); } catch (x) { /* ignore */ } }
   }, true);
   ["pause", "ended"].forEach(function (n) {
     doc.addEventListener(n, function (e) {
@@ -94,6 +114,12 @@
 
   if (g.MutationObserver) new g.MutationObserver(onMutations).observe(doc.documentElement, { childList: true, subtree: true });
 
+  api.media = function () {
+    var out = []; seen.forEach(function (o) {
+      var u = ""; try { u = String(o.currentSrc || o.src || "").split("?")[0].slice(-40); } catch (x) { /* ignore */ }
+      out.push({ tag: o.tagName, onPage: o.isConnected, paused: o.paused, t: Math.round(o.currentTime * 10) / 10, muted: o.muted, vol: o.volume, id: o.getAttribute && o.getAttribute("data-vo"), src: u });
+    }); return out;
+  };
   api.state = function () {
     return [].map.call(doc.querySelectorAll("video"), function (v) {
       return { id: v.getAttribute("data-vo"), paused: v.paused, t: Math.round(v.currentTime * 10) / 10, ready: v.readyState, muted: v.muted, was: v.__vkWas === true };
