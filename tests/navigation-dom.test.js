@@ -46,7 +46,7 @@ async function boot() {
   t('Home stays at the top, outside any group', !!side().querySelector('.sitem[data-v=home]') && side().querySelector('.sitem[data-v=home]').parentElement === side());
 
   // 2. Nothing was removed: every page of a section is still one tap away, as a tab on that section's page.
-  const sections = { fav: ['fav', 'pins'], getvideo: ['getvideo', 'pubvideo'], vlab: ['vlab', 'models3d'], bolo: ['bolo', 'read', 'talk'], pyq: ['pyq', 'pass'], class: ['class', 'report', 'study'] };
+  const sections = { fav: ['fav', 'pins'], getvideo: ['getvideo', 'pubvideo'], vlab: ['vlab', 'models3d'], bolo: ['bolo', 'read', 'talk'], pyq: ['pyq', 'pass', 'mock', 'daily'], class: ['class', 'report', 'study'] };
   const tabs = () => [...s.app().querySelectorAll('.gtabs [data-v]')].map(b => b.dataset.v);
   for (const [entry, views] of Object.entries(sections)) {
     s.click('.sitem[data-v=' + entry + ']'); await tick();

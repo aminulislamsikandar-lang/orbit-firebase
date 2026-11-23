@@ -111,6 +111,36 @@ app.use('/api', async (req, res, next) => {
     next();
   } catch (e) { console.error('[course] check failed: ' + e.message); next(); }   // a Firestore hiccup must not lock every student out
 });
+// ---- Free plan (optional: Render env FREE_PLAN=on, default OFF; plan-core.js, public/plan.js) ----
+// A student without Plus gets FREE_SECONDS (default 600) of study time per IST day and only the first FREE_CHAPTERS (default 1) chapters.
+// Plus = subscriptions/<uid>.until (written by the Razorpay payment). With FREE_PLAN off nothing below changes any behaviour.
+const PLAN = require('./plan-core.js');
+const PLAN_CFG = PLAN.readConfig(process.env);
+const PLAN_USAGE = PLAN.createUsage({ db: FSDB, now: Date.now });
+const PLUS_CACHE = new Map();   // uid -> { t, v }: Plus is re-read every 15 seconds at most
+async function isPlusReq(req) {
+  const hit = PLUS_CACHE.get(req.user.uid);
+  if (hit && Date.now() - hit.t < 15000) return hit.v;
+  let v = false;
+  try {
+    const r = await fetch(`https://firestore.googleapis.com/v1/projects/${process.env.FIREBASE_PROJECT_ID}/databases/(default)/documents/subscriptions/${req.user.uid}`,
+      { headers: { Authorization: req.headers.authorization } });
+    if (r.ok) { const until = ((await r.json()).fields || {}).until; v = !!(until && until.timestampValue && new Date(until.timestampValue) > new Date()); }
+  } catch (e) { v = false; }
+  if (PLUS_CACHE.size > 5000) PLUS_CACHE.clear();
+  PLUS_CACHE.set(req.user.uid, { t: Date.now(), v });
+  return v;
+}
+const PLAN_GATED = new Set(['/answer', '/answer/ready', '/answer/check', '/translate', '/qtranslate', '/more', '/visual', '/image']);
+const PLAN_GATE = PLAN.makeGate({ cfg: PLAN_CFG, usage: PLAN_USAGE, isPlus: isPlusReq, isAdmin: req => isAdminReq(req), byId: id => BY_ID.get(id) });
+app.use('/api', async (req, res, next) => {
+  if (!PLAN_CFG.on || req.method !== 'POST' || !PLAN_GATED.has(req.path)) return next();
+  try {
+    const r = await PLAN_GATE(req);
+    if (!r.ok) return res.status(r.status).json({ code: r.code, kind: r.kind, error: r.error });
+    next();
+  } catch (e) { console.error('[plan] check failed: ' + e.message); next(); }   // a Firestore hiccup must not lock every student out
+});
 // The student left the "own courses" choice (lock deleted in Firestore): forget the cached lock at once so the next course works immediately.
 app.post('/api/course/reset', (req, res) => { COURSE_CACHE.delete(req.user.uid); res.json({ ok: true }); });
 app.use(express.static(path.join(__dirname, 'public')));
@@ -2073,6 +2103,25 @@ const payRoute = h => async (req, res) => {
 };
 app.post('/api/pay/order', payRoute(PAY.order));
 app.post('/api/pay/verify', payRoute(PAY.verify));
+
+// ---- Free plan status and the study-time heartbeat (public/plan.js). Both answer { on:false } while FREE_PLAN is off. ----
+async function planStatus(req, seconds) {
+  if (!PLAN_CFG.on) return { on: false };
+  const plus = isAdminReq(req) || await isPlusReq(req);
+  let used = 0;
+  if (!plus) used = seconds > 0 ? await PLAN_USAGE.add(req.user.uid, seconds) : await PLAN_USAGE.get(req.user.uid);
+  const pay = require('./pay-core').readConfig(process.env);
+  return { on: true, plus, seconds: PLAN_CFG.seconds, used: Math.min(used, PLAN_CFG.seconds), left: plus ? null : Math.max(0, PLAN_CFG.seconds - used), chapters: PLAN_CFG.chapters, day: PLAN.istDay(Date.now()),
+    pay: { enabled: !!(pay.enabled && FSDB), rupees: Math.round((pay.amountPaise || 0) / 100), days: pay.days } };
+}
+const PLANLIM = createLimiter(60, 60000);
+const planRoute = tick => async (req, res) => {
+  if (PLANLIM.hit(rateKey(req))) return res.status(429).json({ error: 'Thoda ruko, bahut zyada requests.' });
+  try { res.json(await planStatus(req, tick ? Number((req.body || {}).seconds) || 0 : 0)); }
+  catch (e) { console.error('[plan] ' + (e && e.message)); res.status(500).json({ error: 'Kuch gadbad hui. Dobara try karo.' }); }
+};
+app.post('/api/plan', planRoute(false));
+app.post('/api/plan/tick', planRoute(true));
 
 // ---- Prompt box at the bottom of the app: /api/ask (study question, optional photo/PDF) and /api/anime (short explainer video) ----
 // ask-core.js, ask-routes.js, public/promptbox.js. Course-locked (GATED). Free daily limits (Render env ASK_FREE_DAILY default 15, ANIME_FREE_DAILY default 3); a parent's Gemini key = no limit.

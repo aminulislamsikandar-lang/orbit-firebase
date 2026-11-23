@@ -552,7 +552,7 @@ const THEMES=[['auto','Auto'],['light','Light'],['dark','Dark']];
 const SOON={pyq:['PYQ','pyq'],pass:['Pass mark','pass'],topper:['Topper','topper'],faculty:['Faculty','fac'],dev:['Developer','dev']};
 const TITLES={home:'Home',fav:'Favourite',pins:'Pinned',settings:'Settings'};
 // Menu items that hold several pages: the sidebar shows one item, each page shows these tabs at the top (every page is still reachable).
-const SGROUPS={saved:[['fav','Favourite'],['pins','Pinned']],videos:[['getvideo','Get Video'],['pubvideo','Public Videos']],lab:[['vlab','Virtual Lab'],['models3d','3D Models']],voice:[['bolo','Bolo'],['read','Padhne ki jaanch'],['talk','Baat-cheet']],exam:[['pyq','PYQ'],['pass','Pass mark']],prog:[['class','My Class'],['report','Weekly Report'],['study','Padhai ka time']]};
+const SGROUPS={saved:[['fav','Favourite'],['pins','Pinned']],videos:[['getvideo','Get Video'],['pubvideo','Public Videos']],lab:[['vlab','Virtual Lab'],['models3d','3D Models']],voice:[['bolo','Bolo'],['read','Padhne ki jaanch'],['talk','Baat-cheet']],exam:[['pyq','PYQ'],['pass','Pass mark'],['mock','Mock test'],['daily','Daily challenge']],prog:[['class','My Class'],['report','Weekly Report'],['study','Padhai ka time']]};
 function groupTabs(){
  const g=Object.values(SGROUPS).find(a=>a.some(x=>x[0]===VIEW));
  if(!g)return '';
@@ -575,6 +575,7 @@ const clip=t=>{if(t.length<=2500)return t;const c=t.slice(0,2500),i=Math.max(c.l
 function shown(id){const u=ui(id);if(u.tr){const sy=effSty(u);if(sy!=='words'){const t=TR[trKey(id,u.tr,sy)];if(t&&t.text)return t.text}}return srcText(id)}
 // Translation (any style except 'words') is shown as its own block right under the original text; the original never gets replaced.
 function trBlock(id){const u=ui(id);if(!u.tr)return '';const sy=effSty(u);if(sy==='words')return '';const t=TR[trKey(id,u.tr,sy)];if(!(t&&t.text))return '';return `<div class="ans trans"><b>${esc((TRL[u.tr]||{}).n||'Translation')}</b><br>${fmt(t.text)}</div>`}
+const ytIcon=q=>window.YTP&&window.YTP.has(q.id)?`<button class="ic" data-act="ytv" data-id="${esc(q.id)}" title="Video lecture (app ke andar)" aria-label="Video lecture, app ke andar khulega">${I.vid}</button>`:`<a class="ic" href="${esc(ytLink(q))}" target="_blank" rel="noopener noreferrer" title="Video lecture (YouTube par khulega)" aria-label="Video lecture, YouTube par khulega">${I.vid}</a>`;   // admin-added YouTube link (public/ytplayer.js) opens in the app; otherwise the old YouTube search
 function ytLink(q){const c=(IDX[q.id]||{}).course;const s=`${c?cLabel(c):'Class 10 Science'} ${chOf(q.id).title} ${q.video||q.text}`.slice(0,110);return 'https://www.youtube.com/results?search_query='+encodeURIComponent(s)}
 
 function xBlock(q,k){
@@ -584,7 +585,7 @@ function xBlock(q,k){
   <button class="ic" data-act="cp" data-id="${xk}" title="Copy" aria-label="Copy karo">${x.copied?I.ok:I.cp}</button>
   <button class="ic ${t&&t.loading?'spin':''}" data-act="tr" data-id="${xk}" title="Translate" aria-label="Translate" aria-pressed="${!!(x.menu||x.tr)}">${I.tr}</button>
   <button class="ic ${v.loading?'spin':''}" data-act="vis" data-id="${xk}" title="Diagram" aria-label="Diagram dikhao" aria-pressed="${!!x.vis}">${I.vis}</button>
-  <a class="ic" href="${esc(ytLink(q))}" target="_blank" rel="noopener noreferrer" title="Video lecture (YouTube par khulega)" aria-label="Video lecture, YouTube par khulega">${I.vid}</a>
+  ${ytIcon(q)}
   <button class="ic" data-act="say" data-id="${xk}" title="${x.say?'Rok do':'Sunao'}" aria-label="${x.say?'Rok do':'Sunao'}" aria-pressed="${!!x.say}">${x.say?I.stop:I.say}</button>
   <button class="ic ${(MR[xk]||{}).loading?'spin':''}" data-act="xre" data-id="${id}" data-k="${k}" title="Dobara banao" aria-label="Dobara banao">${I.re}</button>
  </div>
@@ -620,7 +621,7 @@ function toolbar(q){
   <button class="ic" data-act="cp" data-id="${id}" title="Copy" aria-label="Answer copy karo">${u.copied?I.ok:I.cp}</button>
   <button class="ic ${tr&&tr.loading?'spin':''}" data-act="tr" data-id="${id}" title="Translate" aria-label="Translate" aria-pressed="${!!(u.menu||u.tr)}">${I.tr}</button>
   <button class="ic ${v.loading?'spin':''}" data-act="vis" data-id="${id}" title="Diagram" aria-label="Diagram dikhao" aria-pressed="${!!u.vis}">${I.vis}</button>
-  <a class="ic" href="${esc(ytLink(q))}" target="_blank" rel="noopener noreferrer" title="Video lecture (YouTube par khulega)" aria-label="Video lecture, YouTube par khulega">${I.vid}</a>
+  ${ytIcon(q)}
   <button class="ic" data-act="say" data-id="${id}" title="${u.say?'Rok do':'Sunao'}" aria-label="${u.say?'Rok do':'Answer sunao'}" aria-pressed="${!!u.say}">${u.say?I.stop:I.say}</button>
   <button class="ic ${a.loading?'spin':''}" data-act="re" data-id="${id}" ${sv?'disabled':''} title="${sv?'Naya answer banane ke liye pehle heart hata do':'Dobara banao (naya answer)'}" aria-label="${sv?'Dobara banao, saved answer ki wajah se band':'Dobara banao'}">${I.re}</button>
   <button class="ic" data-act="more" data-id="${id}" title="Aur options" aria-label="Aur options" aria-pressed="${!!u.more}">${I.more}</button>
@@ -873,8 +874,9 @@ function qvHTML(q){
   return `${row}${hd}${s.url?`<video controls playsinline preload="metadata" data-vo="${esc(v.id)}" src="${esc(s.url)}" onerror="vidFail('${esc(v.id)}')"></video>`:''}${s.err?`<p class="err">${esc(s.err)}</p>`:''}${s.sub?payBtnHTML():''}`}).join('')}</div>`;
 }
 const qvMenuVideos=id=>{const vs=lowData()?[]:qVids(id);return vs.map((v,i)=>`<button class="qmi" role="menuitem" data-act="qvopen" data-id="${esc(v.id)}">${I.vid}<span>${esc(String(v.title||'').trim().slice(0,60)||('Video'+(vs.length>1?` (${i+1})`:'')))}</span></button>`).join('')};
-const qvMenuItem=id=>window.QVideo&&window.QVideo.active()?`<button class="qmi" role="menuitem" data-act="qvadd" data-id="${id}">${I.vid}<span>Add video</span></button>`:'';
+const qvMenuItem=id=>window.QVideo&&window.QVideo.active()?`<button class="qmi" role="menuitem" data-act="qvadd" data-id="${id}">${I.vid}<span>Add video</span></button><button class="qmi" role="menuitem" data-act="ytadd" data-id="${id}">${I.vid}<span>${window.YTP&&window.YTP.has(id)?'Edit YouTube link':'YouTube link'}</span></button>`:'';
 window.orbitUser=()=>USER;
+window.orbitCourses=()=>DATA?DATA.courses.filter(c=>!c.custom).map(c=>({id:c.id,title:cTitle(c),class:c.class,subject:c.subject,chapters:(c.chapters||[]).map(ch=>({no:ch.no,title:ch.title}))})):[];   // the student's own courses (Mock test / Daily challenge)
 window.orbitLang=()=>ST.tlang;
 window.orbitLow=()=>lowData();
 window.orbitRedraw=()=>{if(DATA)draw()};
@@ -999,6 +1001,7 @@ function draw(){
  else if(VIEW==='class')body=window.CLASSROOM?CLASSROOM.viewHTML():'';
  else if(VIEW==='report')body=window.WEEKLY?WEEKLY.viewHTML():'';
  else if(VIEW==='study')body=window.STUDY?STUDY.viewHTML():'';
+ else if(VIEW==='mock'||VIEW==='daily')body=window.EXAM?EXAM.viewHTML(VIEW):'';
  else if(VIEW==='bolo')body=window.BOLO?BOLO.viewHTML():'';
  else if(VIEW==='read'||VIEW==='talk')body=window.VOICE?VOICE.viewHTML(VIEW):'';
  else if(VIEW==='custom')body=window.CUSTOM?CUSTOM.viewHTML():'';
@@ -1028,7 +1031,7 @@ function drawSide(){
  // One item per section. Pages that share a section (Favourite + Pinned, the two Videos pages, ...) show tabs at the top of the page; see SGROUPS.
  const item=(v,ico,label,badge,alts)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v||(alts&&alts.includes(VIEW))?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${COURSE&&!COURSE.own?'':item('custom','plus','My Courses')}${item('fav','heart','Saved',nSaved()+nPinned(),['pins'])}${item('getvideo','vid','Videos',null,['pubvideo'])}${item('vlab','lab','Lab aur 3D',null,['models3d'])}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo aur voice',null,['read','talk'])}${item('pyq','pyq','Exam',null,['pass'])}${item('class','class','Meri progress',null,['report','study'])}
+ ${item('home','home','Home')}${COURSE&&!COURSE.own?'':item('custom','plus','My Courses')}${item('fav','heart','Saved',nSaved()+nPinned(),['pins'])}${item('getvideo','vid','Videos',null,['pubvideo'])}${item('vlab','lab','Lab aur 3D',null,['models3d'])}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo aur voice',null,['read','talk'])}${item('pyq','pyq','Exam',null,['pass','mock','daily'])}${item('class','class','Meri progress',null,['report','study'])}
  <div class="sgap"></div><div class="sline"></div>
  ${item('settings','set','Settings',null,['ai','topper','faculty','dev'])}${item('login','login',USER?'Account':'Log in')}`;
 }
@@ -1397,6 +1400,8 @@ document.addEventListener('click',e=>{
  else if(act==='qvopen'){const v=VIDEOS.find(x=>x.id===id);if(v&&v.qid)ui(v.qid).qm=false;openVideo(id)}
  else if(act==='qvadd'){ui(id).qm=false;draw();if(window.QVideo)window.QVideo.open(id)}
  else if(act==='qvdel'){if(window.QVideo)window.QVideo.remove(id)}
+ else if(act==='ytv'){if(window.YTP)window.YTP.open(id)}
+ else if(act==='ytadd'){ui(id).qm=false;draw();if(window.YTP)window.YTP.edit(id)}
  else if(act==='login'){LOGINERR='';window.CLOUD.login().catch(e=>{const c=e&&e.code;LOGINERR=c==='auth/popup-closed-by-user'?'':c==='auth/operation-not-allowed'?'Firebase Console me Authentication → Google enable karna baaki hai.':c==='auth/unauthorized-domain'?'Ye website Firebase ke Authorized domains me nahi hai.':'Login nahi ho paya. Dobara try karo.';draw()})}
  else if(act==='logout'){if(!window.CLOUD)return;if(!confirm('Log out karna hai?'))return;window.CLOUD.logout().then(()=>{VIEW='home';openSide(false,true);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}).catch(()=>{alert('Log out nahi ho paya. Dobara try karo.')})}
  else if(act==='freelang'){FREE_LANG=b.dataset.v==='as'?'as':'en';draw()}
@@ -1464,11 +1469,13 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/narration-admin.js"></script>
 <script src="/video-admin.js"></script>
 <script src="/qvideo.js"></script>
+<script src="/ytplayer.js"></script>
 <script src="/analytics.js"></script>
 <script src="/parent-key.js"></script>
 <script src="/recall.js"></script>
 <script src="/answer-check.js"></script>
 <script src="/quiz.js"></script>
+<script src="/exam.js"></script>
 <script src="/aireview.js"></script>
 <script src="/classroom.js"></script>
 <script src="/weekly.js"></script>
@@ -1499,6 +1506,7 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/studytime.js"></script>
 <script src="/promptbox.js"></script>
 <script src="/pay.js"></script>
+<script src="/plan.js"></script>
 <script type="module">import('/cloud.js').catch(e=>window.onCloudFail&&window.onCloudFail(e))</script>
 </body>
 </html>

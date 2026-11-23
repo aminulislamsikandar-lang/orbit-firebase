@@ -67,6 +67,16 @@ service cloud.firestore {
         && request.resource.data.free is bool;
       allow delete: if isAdmin();
     }
+    // Optional YouTube link for one question (doc id = question id, e.g. c1-p6-1). Signed-in students read; only the admin writes.
+    // yt is the 11 character YouTube video id; the app plays it in an embed (youtube-nocookie.com).
+    match /ytLinks/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if isAdmin()
+        && id.matches('[A-Za-z0-9_.-]{1,80}')
+        && request.resource.data.keys().hasOnly(['yt', 'at'])
+        && request.resource.data.yt is string && request.resource.data.yt.matches('[A-Za-z0-9_-]{11}');
+      allow delete: if isAdmin();
+    }
     // The content of a "plan" (JSON video) or "html" (self-contained animation) video added from a question's 3-dot menu. Id = the videos/{id} record.
     // Signed-in students read it when they press play; only the admin writes. HTML is shown in a sandboxed iframe (no access to the app or the login).
     match /videoCode/{id} {

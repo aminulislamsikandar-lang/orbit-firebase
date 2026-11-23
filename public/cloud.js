@@ -32,6 +32,16 @@ async function loadVideos() {
   } catch (e) { console.warn('videos load failed', e); }
 }
 
+// Optional YouTube links the admin attached to questions (collection ytLinks, doc id = question id): { questionId: videoId }.
+async function loadYtLinks() {
+  try {
+    const s = await getDocs(collection(db, 'ytLinks'));
+    const m = {}; s.forEach(d => { const v = d.data(); if (v && typeof v.yt === 'string') m[d.id] = v.yt; });
+    window.__ytLinks = m;
+    if (window.onCloudYt) window.onCloudYt(m);
+  } catch (e) { console.warn('yt links load failed', e); }
+}
+
 async function loadPeople() {
   try {
     const s = await getDocs(collection(db, 'people'));
@@ -237,6 +247,10 @@ window.CLOUD = {
       const s = await getDocs(query(collection(db, 'quizzes'), where('course', '==', course), where('ch', '==', ch), where('status', '==', 'approved')));
       const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a;
     },
+    async approvedForCourse(course) {   // Mock test / Daily challenge: every approved quiz of one course (a query must say status == 'approved', firestore.rules)
+      const s = await getDocs(query(collection(db, 'quizzes'), where('course', '==', course), where('status', '==', 'approved')));
+      const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a;
+    },
     async forChapter(course, ch) {   // admin: every status
       const s = await getDocs(query(collection(db, 'quizzes'), where('course', '==', course), where('ch', '==', ch)));
       const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a;
@@ -282,6 +296,12 @@ window.CLOUD.course = {
   }
 };
 
+// Admin: attach / remove a YouTube video on one question (firestore.rules: only the admin account can write ytLinks).
+window.CLOUD.ytLinks = {
+  set(qid, yt) { return setDoc(doc(db, 'ytLinks', qid), { yt, at: serverTimestamp() }); },
+  del(qid) { return deleteDoc(doc(db, 'ytLinks', qid)); }
+};
+
 // Kid mode: a parent connects to a child's phone with an 8-character code (firestore.rules: kidLinks). The child's phone shares a small summary, the parent sets the limit and the mic switch.
 window.CLOUD.kids = {
   async create(name) {
@@ -324,5 +344,5 @@ window.CLOUD.kids = {
 
 onAuthStateChanged(auth, async user => {
   if (window.onCloudUser) window.onCloudUser(user ? { uid: user.uid, name: user.displayName, email: user.email, photo: user.photoURL } : null);
-  if (user) { loadPeople(); loadVideos(); try { await load(user); } catch (e) { console.warn('cloud load failed', e); } }
+  if (user) { loadPeople(); loadVideos(); loadYtLinks(); try { await load(user); } catch (e) { console.warn('cloud load failed', e); } }
 });
