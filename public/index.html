@@ -54,6 +54,7 @@ h2.sec{margin:26px 0 8px;font-size:20px}
 .qn{font-weight:700;margin-bottom:4px}
 .q p{margin:4px 0}
 .q .pt{margin:3px 0 3px 12px}
+.fig{margin:6px 0 10px 12px}.fig img{display:block;width:100%;max-width:340px;height:auto;background:#fff;border:1px solid var(--ln);border-radius:10px}
 .tw{overflow-x:auto;margin:8px 0}
 .qt{border-collapse:collapse;font-size:14px;min-width:100%}
 .qt th,.qt td{border:1px solid var(--ln);padding:5px 8px;text-align:left;vertical-align:top}
@@ -653,6 +654,7 @@ function toolbar(q){
  ${u.vis&&v.err?`<div class="err" role="alert">${esc(v.err)}</div>`:''}
  ${u.msg?`<div class="mut" style="margin-top:8px" role="status">${esc(u.msg)}</div>`:''}`}
 
+function figHTML(s){return s?`<div class="fig"><img alt="Figure" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(s)}"></div>`:''}
 function tblHTML(q){
  const t=q.table;if(!t||!t.head)return '';
  return `<div class="tw"><table class="qt"><thead><tr>${t.head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${(t.rows||[]).map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
@@ -660,8 +662,8 @@ function tblHTML(q){
 function qHTML(q){
  const a=ANS[q.id]||{},txt=srcText(q.id),has=!!a.text,open=has&&!!OPEN[q.id],qm=!!ui(q.id).qm;
  return `<div class="card q ${has?'can':''}" data-qid="${q.id}"><button class="ic qdots ${has?'':'nochev'}" data-act="qm" data-id="${q.id}" aria-haspopup="menu" aria-expanded="${!!qm}" title="Aur options" aria-label="Question options">${I.more}</button>${qm?`<div class="qmenu" role="menu">${READY.ids[q.id]&&!has&&!a.loading?`<button class="qmi" role="menuitem" data-act="qready" data-id="${q.id}">${I.ready}<span>Ready answer</span></button>`:''}<button class="qmi" role="menuitem" data-act="pin" data-id="${q.id}">${I.pin}<span>${isPinned(q.id)?'Pin hatao':'Pin karo'}</span></button><button class="qmi" role="menuitem" data-act="qtr" data-id="${q.id}">${I.tr}<span>${ui(q.id).qt?'Translation chhupao':'Translate question'}</span></button><button class="qmi" role="menuitem" data-act="qcp" data-id="${q.id}">${ui(q.id).qcp==='ok'?I.ok:I.cp}<span>${ui(q.id).qcp==='ok'?'Copy ho gaya':ui(q.id).qcp==='err'?'Copy nahi hua':'Copy question'}</span></button>${window.ACHECK?ACHECK.menuItem(q.id):''}${qvMenuVideos(q.id)}${qvMenuItem(q.id)}<button class="qmi" role="menuitem" data-act="qrep" data-id="${q.id}">${I.flag}<span>${esc(L4({hing:'Galti report karo',en:'Report a mistake',as:'ভুল জনাওক',bn:'ভুল জানাও'}))}</span></button></div>`:''}<div class="qb" ${has?`role="button" tabindex="0" aria-expanded="${open}" aria-label="${esc(q.label||('Q'+q.no+'.'))} Answer ${open?'chhupao':'dikhao'}"`:''}><div class="qbody"><div class="qn">${esc(q.label||('Q'+q.no+'.'))}${isPinned(q.id)?`<span class="pmark" title="Pinned" role="img" aria-label="Pinned">${I.pin}</span>`:''}</div>${q.text?`<p dir="auto">${esc(q.text)}</p>`:''}
- ${tblHTML(q)}
- ${(q.parts||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}
+ ${tblHTML(q)}${figHTML(q.fig)}
+ ${(q.parts||[]).map((p,i)=>`<p class="pt" dir="auto">${esc(p)}</p>${figHTML(q.figs&&q.figs[i])}`).join('')}
  ${(q.options||[]).map(p=>`<p class="pt" dir="auto">${esc(p)}</p>`).join('')}</div>${has?`<span class="chev ${open?'open':''}">${I.chev}</span>`:''}</div>
  ${qtrHTML(q)}
  ${qvHTML(q)}

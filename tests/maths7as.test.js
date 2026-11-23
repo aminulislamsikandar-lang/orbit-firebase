@@ -51,5 +51,13 @@ t('app: Class 7 Mathematics in Assamese opens this course, in English it opens t
 const srv = read('server.js');
 t('server: Assamese-medium Maths gets the Assamese answer language line', /course\.medium === 'Assamese' && \['Mathematics', 'Social Science', 'Science'\]\.includes\(course\.subject\)/.test(srv));
 
+// figures redrawn from the book (maths7as-figs.js): plain SVG, one per item where the question has items
+const FIGS = require(path.join(ROOT, 'maths7as-figs.js'));
+const figIds = ['m7ac4-a8', 'm7ac4-a9', 'm7ac4-a10', 'm7ac4-b1', 'm7ac4-b2', 'm7ac4-b3', 'm7ac4-b4', 'm7ac4-b5', 'm7ac4-b6', 'm7ac4-b7', 'm7ac4-b8', 'm7ac4-b10', 'm7ac5-a1', 'm7ac5-a8', 'm7ac5-a9', 'm7ac5-b1', 'm7ac5-c7', 'm7ac5-c8'];
+t('18 questions of Chapters 4 and 5 carry their book figure', same(Object.keys(FIGS).sort(), figIds.slice().sort()) && figIds.every(id => { const q = qs.find(x => x.id === id); return q && (q.fig || q.figs); }));
+t('questions with items have one figure per item; the others have one figure', figIds.every(id => { const q = qs.find(x => x.id === id); return q.figs ? (q.figs.length === (q.parts || []).length && !q.fig) : (typeof q.fig === 'string' && !(q.parts || []).length || typeof q.fig === 'string'); }));
+t('every figure is a plain self-contained SVG (no script, link, image or event handler)', Object.values(FIGS).flat().every(x => /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" /.test(x) && x.endsWith('</svg>') && !/<script|<image|<a[ >]|href|on[a-z]+\s*=|<foreignObject|javascript:/i.test(x) && x.length < 6000));
+t('the page shows figures under the question and under each item, and the cache name was bumped', (() => { const h = read('public/index.html'); return /figHTML\(q\.fig\)/.test(h) && /figHTML\(q\.figs&&q\.figs\[i\]\)/.test(h); })());
+
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
