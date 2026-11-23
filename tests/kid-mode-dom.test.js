@@ -68,6 +68,16 @@ async function boot(db, uid, { role } = {}) {
   t('course screen has a Kid mode button', !!kid.d.querySelector('[data-act=kidmode]'));
   kid.click('[data-act=kidmode]');
   t('Kid mode asks who is on this phone', /Main bachcha hoon/.test(kid.app()) && /I am parent/.test(kid.app()) && !/Apna course chuno/.test(kid.app()));
+  const roleBtns = kid.d.querySelectorAll('.btn[data-act=kidrole]');
+  t('role screen: three big buttons (kid, parent, mentor) and no small mentor pill', roleBtns.length === 3 && /I am mentor/.test(kid.app()) && !kid.d.querySelector('[data-act=csparent]') && !kid.d.querySelector('.chip[data-act=kidrole]'));
+  kid.click('[data-act=kidrole][data-v=parent]');
+  t('"I am parent" shows "Parent of" with Kid and Not Kid', /Parent of/.test(kid.app()) && kid.d.querySelectorAll('[data-act=kidof]').length === 2 && /Not Kid/.test(kid.app()));
+  kid.click('[data-act=kidback]');
+  t('Wapas from "Parent of" goes back to the role screen', /Main bachcha hoon/.test(kid.app()));
+  kid.click('[data-act=kidrole][data-v=mentor]');
+  t('"I am mentor" shows "Mentor of" with Kid and Not Kid', /Mentor of/.test(kid.app()) && kid.d.querySelectorAll('[data-act=kidof]').length === 2);
+  kid.click('[data-act=kidback]');
+  t('Wapas from "Mentor of" goes back to the role screen', /Main bachcha hoon/.test(kid.app()));
   kid.click('[data-act=kidback]');
   t('Wapas returns to the course screen', /Apna course chuno/.test(kid.app()));
   kid.click('[data-act=kidmode]'); kid.click('[data-act=kidrole][data-v=kid]'); await tick(100);
@@ -89,7 +99,7 @@ async function boot(db, uid, { role } = {}) {
 
   // 4. The parent's phone: Kid mode > I am parent > paste the code.
   let par = await boot(db, 'par1');
-  par.click('[data-act=kidmode]'); par.click('[data-act=kidrole][data-v=parent]');
+  par.click('[data-act=kidmode]'); par.click('[data-act=kidrole][data-v=parent]'); par.click('[data-act=kidof][data-v=kid]');
   t('"I am parent" asks for the code', !!par.d.getElementById('kidCode'));
   par.d.getElementById('kidCode').value = 'ZZZZ-ZZZZ'; par.click('[data-act=kidjoin]'); await tick(100);
   t('a wrong code is refused with a message and nothing is locked', /code nahi mila/.test(par.app()) && !db.course.par1);

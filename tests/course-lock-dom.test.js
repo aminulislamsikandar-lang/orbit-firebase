@@ -145,7 +145,8 @@ async function boot({ stored, cache, getFails, hash = '', uid = 'u1' }) {
   t('the course screen no longer shows the parent door', !/data-act="csparent"/.test(s.app()));
   s.click('[data-act=kidmode]'); await tick(40);
   t('the Kid mode screen has a door for parents', /I am mentor/.test(s.app()));
-  s.click('[data-act=csparent]'); await tick(40);
+  s.click('[data-act=kidrole][data-v=parent]'); await tick(40);
+  s.click('[data-act=kidof][data-v=notkid]'); await tick(40);
   t('parent door opens the Padhai ka time view, not the course picker', s.w.eval('VIEW') === 'study' && !/Apna course chuno/.test(s.app()));
   s.w.eval("go('home')"); await tick(40);
   t('any other view is the course picker again', /Apna course chuno/.test(s.app()));

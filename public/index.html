@@ -378,10 +378,19 @@ async function releaseCourse(){
 function kidRoleHTML(){
  const locked=!!(COURSE&&COURSE.kid);
  return `<h1 style="font-size:26px;margin-top:16px">Kid mode</h1><p class="mut">Kid mode mein sirf Bolo page khulta hai. Is phone par kaun hai?</p>
-  <div style="display:grid;gap:10px;margin-top:14px"><button class="btn" data-act="kidrole" data-v="kid" ${CSBUSY?'disabled':''}>Main bachcha hoon</button><button class="btn" data-act="kidrole" data-v="parent" ${CSBUSY?'disabled':''}>I am parent</button></div>`
+  <div style="display:grid;gap:10px;margin-top:14px"><button class="btn" data-act="kidrole" data-v="kid" ${CSBUSY?'disabled':''}>Main bachcha hoon</button><button class="btn" data-act="kidrole" data-v="parent" ${CSBUSY?'disabled':''}>I am parent</button><button class="btn" data-act="kidrole" data-v="mentor" ${CSBUSY?'disabled':''}>I am mentor</button></div>`
   +(CSERR?`<p class="err">${esc(CSERR)}</p>`:'')
-  +`<p class="mut" style="margin-top:24px"><button class="chip" data-act="csparent">I am mentor</button></p>`
   +`<p class="mut" style="margin-top:24px">${locked?'Kid mode nahi chahiye? <button class="chip" data-act="csback">Kid mode band karo</button>':'<button class="chip" data-act="kidback">← Wapas</button>'}</p></div>`;
+}
+function kidOfHTML(step){   // "I am parent" / "I am mentor" first asks: of a Kid (Kid mode child) or Not Kid (a normal student)
+ const who=step==='mentorof'?'Mentor':'Parent';
+ return `<h1 style="font-size:26px;margin-top:16px">${who} of</h1>
+  <div style="display:grid;gap:10px;margin-top:14px"><button class="btn" data-act="kidof" data-v="kid" ${CSBUSY?'disabled':''}>Kid</button><button class="btn" data-act="kidof" data-v="notkid" ${CSBUSY?'disabled':''}>Not Kid</button></div>`
+  +`<p class="mut" style="margin-top:24px"><button class="chip" data-act="kidback">← Wapas</button></p></div>`;
+}
+function kidMentorSoonHTML(){
+ return `<h1 style="font-size:26px;margin-top:16px">Mentor of Kid</h1><p class="mut">Mentor dashboard abhi ban raha hai. Jab tayyar hoga, yahan bachche ka code daalkar uska progress dekh sakoge.</p>`
+  +`<p class="mut" style="margin-top:24px"><button class="chip" data-act="kidback">← Wapas</button></p></div>`;
 }
 function kidCodeHTML(){
  return `<h1 style="font-size:26px;margin-top:16px">I am parent</h1><p class="mut">Bachche ke phone par Bolo kholo, "Parent ke liye" mein "Code banao" dabao, aur wo code yahan paste karo.</p>
@@ -394,6 +403,8 @@ function courseGateHTML(){
  const head=`<div style="max-width:420px;margin:0 auto;padding:18px 16px"><div class="logo" style="font-size:26px">${LOGO}Orbit Tutorial</div>`;
  if(COURSE_STATE==='wait'||(COURSE_STATE==='none'&&!RAWD))return head+`<div style="margin-top:24px">${window.WARP?WARP.block('Tumhara course load ho raha hai…',36):'<p class="mut">Tumhara course load ho raha hai…</p>'}</div></div>`;
  if(COURSE_STATE==='err')return head+`<p class="err" style="margin-top:24px">Course load nahi hua. Internet check karke dobara try karo.</p><button class="btn" data-act="csretry">Dobara try karo</button></div>`;
+ if(KID_STEP==='parentof'||KID_STEP==='mentorof')return head+kidOfHTML(KID_STEP);
+ if(KID_STEP==='mentorsoon')return head+kidMentorSoonHTML();
  if(KID_STEP==='code')return head+kidCodeHTML();
  if(KID_STEP==='role'||(COURSE&&COURSE.kid&&!KIDROLE))return head+kidRoleHTML();
  const chips=(list,cur,act,lab)=>`<div class="chips" role="group">${list.map(v=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${cur===v}">${lab(v)}</button>`).join('')}</div>`;
@@ -1369,8 +1380,12 @@ document.addEventListener('click',e=>{
  else if(act==='csown'){CS={own:true};CSTEP='';CSERR='';draw()}
  else if(act==='cstep'){CSTEP=b.dataset.v||'';CS={org:'',cls:0,med:''};CSERR='';draw();window.scrollTo(0,0)}
  else if(act==='kidmode'){KID_STEP='role';CSERR='';draw()}
- else if(act==='kidrole'){if(b.dataset.v==='parent'){KID_STEP='code';CSERR='';draw()}else saveKid('kid')}
- else if(act==='kidback'){KID_STEP=KID_STEP==='code'?'role':'';CSERR='';draw()}
+ else if(act==='kidrole'){const v=b.dataset.v;if(v==='parent'){KID_STEP='parentof';CSERR='';draw()}else if(v==='mentor'){KID_STEP='mentorof';CSERR='';draw()}else saveKid('kid')}
+ else if(act==='kidof'){const kid=b.dataset.v==='kid',men=KID_STEP==='mentorof';CSERR='';
+  if(!men&&kid){KID_STEP='code';draw()}                    // Parent of Kid: paste the child's code (as before)
+  else if(men&&kid){KID_STEP='mentorsoon';draw()}          // Mentor of Kid: dashboard comes in the next step
+  else{PEEK=true;KID_STEP='';go('study')}}                 // Not Kid: the existing Padhai ka time door (until Not Kid is decided)
+ else if(act==='kidback'){KID_STEP=KID_STEP==='code'?'parentof':KID_STEP==='mentorsoon'?'mentorof':(KID_STEP==='parentof'||KID_STEP==='mentorof')?'role':'';CSERR='';draw()}
  else if(act==='kidjoin')kidJoin();
  else if(act==='cssave')saveCourse();
  else if(act==='csback')releaseCourse();
