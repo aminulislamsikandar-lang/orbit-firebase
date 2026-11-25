@@ -8,7 +8,7 @@
 //   BUSY.begin(label) -> end()      manual start/stop for anything else
 //   BUSY.track(promise, label)      shows the loader until the promise settles
 //   BUSY.wrapCloud()                wraps every promise-returning window.CLOUD method (called once from index.html)
-//   BUSY.endBoot()                  the first-start "Orbit khul raha hai" entry ends when login state is known
+//   BUSY.endBoot()                  the first-start "Orbit khul raha hai" entry ends when login state is known (this also removes the start screen, #splash in index.html)
 (function (g) {
   'use strict';
   const doc = g.document;
@@ -135,7 +135,7 @@
 
   // the first start: from page load until Firebase says who is logged in
   let bootEnd = begin('boot');
-  const endBoot = () => { if (bootEnd) { bootEnd(); bootEnd = null; } };
+  const endBoot = () => { if (bootEnd) { bootEnd(); bootEnd = null; } if (g.ORBIT_SPLASH) g.ORBIT_SPLASH.done(); };   // the start screen (index.html #splash) goes away once login state is known
   if (g.addEventListener) { g.addEventListener('online', render); g.addEventListener('offline', render); }
 
   g.BUSY = { begin, track, wrapCloud, endBoot, _message: message, _count: () => E.size, _labels: LABELS.length };

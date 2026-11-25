@@ -183,6 +183,49 @@ body.kidmode{--bg:#fff3c4;--card:#fff;--tx:#2b1a4a;--mut:#7a5a9a;--ln:#ffcf5c;--
 </style>
 </head>
 <body>
+<!-- Orbit start screen: the logo with a satellite going round, shown from the very first paint until the app knows who is logged in (busy.js calls ORBIT_SPLASH.done()). A 12 s safety timer always removes it. -->
+<div id="splash" role="status" aria-live="polite" aria-label="Orbit khul raha hai">
+<svg id="sp-lg" viewBox="0 0 48 48" width="132" height="132" aria-hidden="true" style="overflow:visible"><g transform="rotate(-25 24 24)"><ellipse cx="24" cy="24" rx="20" ry="9" fill="none" stroke="currentColor" stroke-width="2.5"/></g><circle cx="24" cy="24" r="8" fill="currentColor"/><g transform="rotate(-25 24 24)"><circle id="sp-sat" cx="42.1" cy="15.5" r="3.5" fill="currentColor"/></g></svg>
+<p>Orbit khul raha hai<span class="sp-d">.</span><span class="sp-d">.</span><span class="sp-d">.</span></p>
+</div>
+<style>
+#splash{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);color:var(--tx);transition:opacity .3s ease}
+#splash.sp-hide{opacity:0;pointer-events:none}
+#splash p{margin:0;font-size:16px}
+.sp-d{animation:spd 1.2s infinite;opacity:.2}.sp-d:nth-child(2){animation-delay:.2s}.sp-d:nth-child(3){animation-delay:.4s}
+@keyframes spd{0%,100%{opacity:.2}40%{opacity:1}}
+@media(prefers-reduced-motion:reduce){.sp-d{animation:none;opacity:.7}#splash{transition:none}}
+</style>
+<script>
+(function(){
+ var el=document.getElementById('splash'),sat=document.getElementById('sp-sat'),tails=[].slice.call(document.querySelectorAll('.sp-t'));
+ if(!el||!sat)return;
+ // same theme choice as the app (Settings > Theme: light / dark / auto), applied now so the start screen is not shown in the wrong colours first
+ try{var th=JSON.parse(localStorage.getItem('orbit_settings_v1')||'{}').theme;if(th==='light'||th==='dark')document.documentElement.dataset.theme=th}catch(e){}
+ var t0=Date.now(),MIN=900,DUR=1.5,raf=0,ended=false,still=false;
+ try{still=window.matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
+ function put(c,th){c.setAttribute('cx',(24+20*Math.cos(th)).toFixed(2));c.setAttribute('cy',(24+9*Math.sin(th)).toFixed(2))}
+ function frame(){
+  var th=-0.35+((Date.now()-t0)/1000/DUR)*Math.PI*2;
+  put(sat,th);for(var i=0;i<tails.length;i++)put(tails[i],th-(+tails[i].getAttribute('data-k'))*0.2);
+  if(!still&&!ended)raf=requestAnimationFrame(frame);
+ }
+ frame();
+ function finish(){
+  if(ended)return;ended=true;
+  if(raf)cancelAnimationFrame(raf);
+  el.classList.add('sp-hide');
+  setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el)},350);
+ }
+ var asked=false;
+ window.ORBIT_SPLASH={done:function(){
+  if(asked)return;asked=true;
+  var wait=Math.max(0,MIN-(Date.now()-t0));
+  setTimeout(function(){requestAnimationFrame(function(){requestAnimationFrame(finish)})},wait);
+ }};
+ setTimeout(function(){window.ORBIT_SPLASH.done()},12000);
+})();
+</script>
 <div id="scrim" class="scrim"></div>
 <aside id="side" class="side" aria-label="Menu" aria-hidden="true" inert></aside>
 <div id="inst" class="inst" hidden></div>
