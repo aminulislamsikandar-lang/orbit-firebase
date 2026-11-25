@@ -5,7 +5,7 @@
 // Pictures: public/swar/swar-NN.webp (transparent, NN = position of the vowel). Nothing else is needed: no network call, no library, no HTML strings.
 (function (g) {
   'use strict';
-  const V = 1, DUR = 27.68;
+  const V = 2, DUR = 27.68;
   // [vowel, word of the picture, colour of the tile, start s, end s]
   const LET = [
     ['\u0985', '\u0985\u09AE\u09BF\u09A4\u09BE', '#1f7a4a', 1.50, 1.99], ['\u0986', '\u0986\u09AE', '#8a4a9c', 3.82, 4.39], ['\u0987', '\u0987\u099F\u09BE', '#7b3a2c', 6.71, 7.42],
