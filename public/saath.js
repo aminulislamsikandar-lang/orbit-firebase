@@ -1,13 +1,14 @@
 // public/saath.js - Bolo "সাথে বলো" (Saath me bolo): the teacher's recording says the 41 Assamese letters one after another, the child speaks along.
 // The mic stays on from before the first letter to after the last (calibration, then the whole recording). Nothing is recognised: only the sound LEVEL
 // is measured. A letter whose window had no sound is a red alert. The whole recording and the per-letter report go to the parent's phone
-// (BOLOREC.send -> /api/bolo/rec/upload) and are deleted after 2 hours. Needs the parent's tick and a Kid-mode code (checked by bolo.js).
+// (BOLOREC.send -> /api/bolo/rec/upload) and are deleted after 2 hours. Needs the mic switch on; the recording is sent only with a Kid-mode code and the parent's tick, otherwise it is practice only (checked by bolo.js).
 // bolo.js calls SAATH.html({ ready, why }) for the card, SAATH.start({ code, api, redraw }) and SAATH.stop().
 (function (g) {
   'use strict';
   const K = g.SAATH_CORE, BC = g.BOLOREC_CORE;
   if (!K || !BC) return;
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const shown = ch => /^[\u0981-\u0983]$/.test(ch) ? '\u00a0' + ch : ch;   // ং ঃ ঁ are marks: alone the font draws a dotted circle, so a no-break space is their base (same as bolo.js)
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const $ = id => g.document.getElementById(id);
   const N = K.LETTERS.length;
@@ -41,10 +42,10 @@
   function html(o) {
     style(); o = o || {};
     const busy = S.phase === 'calib' || S.phase === 'run' || S.phase === 'send';
-    const big = S.cur >= 0 ? K.LETTERS[S.cur] : K.LETTERS[0];
-    const grid = K.rows().map(r => r.map(k => k < 0 ? '<div class="sa-c e"></div>' : `<div class="sa-c${S.cells[k] === 1 ? ' ok' : S.cells[k] === 2 ? ' no' : ''}${S.cur === k && S.phase === 'run' ? ' now' : ''}" data-i="${k}" lang="as">${esc(K.LETTERS[k])}</div>`).join('')).join('');
+    const big = shown(S.cur >= 0 ? K.LETTERS[S.cur] : K.LETTERS[0]);
+    const grid = K.rows().map(r => r.map(k => k < 0 ? '<div class="sa-c e"></div>' : `<div class="sa-c${S.cells[k] === 1 ? ' ok' : S.cells[k] === 2 ? ' no' : ''}${S.cur === k && S.phase === 'run' ? ' now' : ''}" data-i="${k}" lang="as">${esc(shown(K.LETTERS[k]))}</div>`).join('')).join('');
     const bad = S.letters.filter(x => !x.s).map(x => x.l);
-    const sum = S.phase === 'done' ? `<p class="sa-sum" role="status"><b>${S.letters.length - bad.length} / ${N}</b> letters par awaaz aayi.<br>${bad.length ? `<span style="color:#d64545">Awaaz nahi aayi: <span lang="as">${esc(bad.join(' '))}</span></span>` : 'Har letter par bachha bola.'}${S.sent ? '<br><span class="mut">Recording parent ko bhej di gayi (2 ghante tak sunai ja sakti hai).</span>' : ''}</p>` : '';
+    const sum = S.phase === 'done' ? `<p class="sa-sum" role="status"><b>${S.letters.length - bad.length} / ${N}</b> letters par awaaz aayi.<br>${bad.length ? `<span style="color:#d64545">Awaaz nahi aayi: <span lang="as">${esc(bad.map(shown).join(' '))}</span></span>` : 'Har letter par bachha bola.'}${S.sent ? '<br><span class="mut">Recording parent ko bhej di gayi (2 ghante tak sunai ja sakti hai).</span>' : o.practice ? '<br><span class="mut">Practice: recording kisi ko nahi bheji gayi.</span>' : ''}</p>` : '';
     const err = S.err ? `<p class="err" role="alert" style="margin:8px 0 0">${esc(S.err)}</p>` : '';
     const btn = busy ? (S.phase === 'send' ? '' : '<div class="bl-two" style="margin-top:10px"><button class="btn bl-sec" data-bl="autostop">Rok do</button></div>')
       : o.ready ? `<div class="bl-two" style="margin-top:10px"><button class="btn" data-bl="auto">${S.phase === 'done' ? 'Phir se' : 'Saath me bolo (shuru)'}</button></div>`
@@ -61,7 +62,7 @@
   function paint() {
     const c = $('saCnt'); if (c) c.textContent = S.letters.length + ' / ' + N;
     const p = $('saPr'); if (p) p.style.width = Math.round(S.letters.length / N * 100) + '%';
-    const b = $('saBig'); if (b && S.cur >= 0) b.textContent = K.LETTERS[S.cur];
+    const b = $('saBig'); if (b && S.cur >= 0) b.textContent = shown(K.LETTERS[S.cur]);
     const st = $('saSt'); if (st) st.textContent = statusText();
     const ms = $('saMs'); if (ms) ms.textContent = missText();
     g.document.querySelectorAll('#saGrid .sa-c[data-i]').forEach(el => {

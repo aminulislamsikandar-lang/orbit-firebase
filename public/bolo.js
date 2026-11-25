@@ -438,25 +438,26 @@
   const praiseHTML = () => st.praise ? `<div class="bl-praise" role="status"><div><b>Shabaash!</b><span>${esc(st.praise)}</span><span class="bl-em" aria-hidden="true">${FLY.slice(0, 5).join(' ')}</span></div>${FLY.concat(FLY).map((e, i) => `<span class="bl-fly" aria-hidden="true" style="left:${6 + i * 8}%;animation-delay:${(i % 4) * 0.12}s">${e}</span>`).join('')}</div>` : '';
 
   // ---- The "সাথে বলো" topic chip (Saath me bolo): letters play one after another, the mic stays on from the first to the last, a silent letter is a red alert (bolorec.js) ----
-  // Needs: the parent's tick (set.rec), the mic switch on, and a Kid-mode code (the recording goes to that parent). Nothing is recognised.
+  // Needs: the mic switch on. With a Kid-mode code the parent's tick (set.rec) is also needed and the recording goes to that parent; without a code it is practice only and nothing is sent. Nothing is recognised.
+  const linked = () => !!(g.KIDLINK && g.KIDLINK.kidCode && g.KIDLINK.kidCode());   // a Kid-mode code is joined: only then can a recording go to a parent's phone
   const recWhy = () => {   // why Start is not available yet ('' = ready); shown to the child so the button is never just missing
     if (!(g.BOLOREC && g.BOLOREC.can())) return 'Is browser me recording nahi chalegi. Chrome ya Safari ka naya version use karo.';
     const s = load().set;
     if (!s.mic) return 'Parent ne mic band kiya hai. Parent section se allow karo.';
-    if (s.rec !== true) return 'Recording parent ki ijazat se chalti hai. Neeche "Parent ke liye" kholo aur "Saath me bolo" ka tick lagao.';
-    if (!(g.KIDLINK && g.KIDLINK.kidCode && g.KIDLINK.kidCode())) return 'Recording parent ke phone par jaati hai. Kid mode me bachhe ka code parent ke phone se jodo (Parent ke liye).';
+    // Not joined to a parent: Start still works as plain practice (nothing is sent anywhere). Joined: the parent's tick is still needed before the recording goes to the parent's phone.
+    if (linked() && s.rec !== true) return 'Recording parent ki ijazat se chalti hai. Neeche "Parent ke liye" kholo aur "Saath me bolo" ka tick lagao.';
     return '';
   };
   const recOK = () => !recWhy() && !over();
   // The screen, the recording and the red alerts live in public/saath.js (letters and timings in saath-core.js); this file only checks that Start is allowed.
   function saathCard() {
     if (!g.SAATH) return '<div class="card"><p class="mut" style="margin:0">Ye hissa abhi load nahi hua. Page dobara kholo.</p></div>';
-    return g.SAATH.html({ ready: recOK(), why: over() ? '' : recWhy(), sens: load().set.vol });
+    return g.SAATH.html({ ready: recOK(), why: over() ? '' : recWhy(), sens: load().set.vol, practice: !linked() });
   }
   function saathStart() {
     if (!g.SAATH || g.SAATH.running() || !recOK()) return;
     reset(); stopSay();
-    g.SAATH.start({ sens: load().set.vol, code: g.KIDLINK.kidCode(), api: g.api, redraw: () => { if (onScreen()) redraw(); } });
+    g.SAATH.start({ sens: load().set.vol, code: linked() ? g.KIDLINK.kidCode() : '', api: g.api, redraw: () => { if (onScreen()) redraw(); } });
   }
 
   function card() {
