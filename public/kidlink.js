@@ -12,7 +12,7 @@
   const goodCode = c => /^[A-HJ-NP-Z2-9]{8}$/.test(c);
   const fmt = c => String(c || '').slice(0, 4) + '-' + String(c || '').slice(4);
   const REV = 'orbit.kl.rev.', PUSH_MS = 20000, TICK_MS = 30000, PRES_MS = 45000, ONLINE_MS = 150000;   // the child's phone says "I am here" about once a minute; no word for 2.5 minutes = Offline
-  const S = { uid: '', last: 0, pend: 0, kid: { loaded: false, busy: false, err: '', msg: '', link: null, parents: 0 }, par: { loaded: false, busy: false, err: '', msg: '', kids: [] }, men: { loaded: false, busy: false, err: '', msg: '', kids: [], filter: 'all' }, presAt: 0, presOn: null, accAt: 0, accOn: false, listen: [], polls: 0, repKey: '', repAt: 0, repSend: 0 };
+  const S = { uid: '', last: 0, pend: 0, kid: { loaded: false, busy: false, err: '', msg: '', link: null, parents: 0, pend: [] }, par: { loaded: false, busy: false, err: '', msg: '', kids: [] }, men: { loaded: false, busy: false, err: '', msg: '', kids: [], filter: 'all' }, presAt: 0, presOn: null, accAt: 0, accOn: false, listen: [], polls: 0, repKey: '', repAt: 0, repSend: 0 };
   const cloud = () => (g.CLOUD && g.CLOUD.kids) || null;
   const draw = () => { if (typeof g.draw === 'function') g.draw(); };
   const role = () => (typeof KIDROLE !== 'undefined' && typeof COURSE !== 'undefined' && COURSE && COURSE.kid) ? KIDROLE : '';
@@ -30,7 +30,7 @@
     K.busy = true; K.err = '';
     try { K.link = await C.own(); K.parents = K.link ? (await C.parents(K.link.code)).length : 0; } catch (e) { K.err = fail(e); }
     K.loaded = true; K.busy = false; draw();
-    if (K.link) { pull(); touch(true); }
+    if (K.link) { pull(); touch(true); listenPoll(); }
   }
   async function kidMake(renew) {
     const C = cloud(), K = S.kid; if (!C || K.busy) return;
@@ -125,7 +125,7 @@
       : K.link ? `<p class="mut" style="margin:6px 0 4px">Parent ke phone par Orbit kholo, Kid mode chuno, \"I am parent\" dabao aur ye code daalo:</p>
         <div style="font-size:28px;font-weight:700;letter-spacing:4px;margin:6px 0" id="klCodeShow" aria-label="Code">${esc(fmt(K.link.code))}</div>
         <div class="chips"><button class="chip" data-kl="copy">Code copy karo</button><button class="chip" data-kl="new" ${dis}>Naya code</button><button class="chip" data-kl="off" ${dis}>Judna band karo</button></div>
-        <p class="mut" style="margin:8px 0 0">Jude hue parent: ${K.parents}</p>`
+        <p class="mut" style="margin:8px 0 0">Jude hue parent: ${K.parents}</p>${kidMentorsHTML(edit)}`
       : `<p class="mut" style="margin:6px 0 8px">Parent ke phone se bachche ka din dekhne aur limit badalne ke liye code banao.</p><button class="btn bl-sec" data-kl="mk" ${dis}>Code banao</button>`;
     return `<div class="bl-kid" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--ln)"><b>Parent ke phone se jodo</b>${body}
       ${K.msg ? `<p class="mut" role="status" style="margin:8px 0 0">${esc(K.msg)}</p>` : ''}${K.err ? `<p class="err">${esc(K.err)}</p>` : ''}
@@ -330,10 +330,31 @@
   // While a parent's listening window is open, the child's screen says so, and the child can stop it with one tap.
   async function listenPoll() {
     const C = cloud(); if (role() !== 'kid' || !C || !S.uid || !S.kid.link) return;
-    let now = [];
-    try { now = (await C.mentors(S.kid.link.code)).filter(m => m.status === 'approved' && +m.listenUntil > Date.now()).map(m => ({ uid: m.uid, name: m.name })); } catch (e) { return; }
+    let all = [];
+    try { all = await C.mentors(S.kid.link.code); } catch (e) { return; }
+    const now = all.filter(m => m.status === 'approved' && +m.listenUntil > Date.now()).map(m => ({ uid: m.uid, name: m.name }));
+    const pend = all.filter(m => m.status === 'pending').map(m => ({ uid: m.uid, name: m.name }));
     const same = now.length === S.listen.length && now.every((m, i) => m.uid === S.listen[i].uid);
-    S.listen = now; if (!same) draw();
+    const samePend = pend.length === S.kid.pend.length && pend.every((m, i) => m.uid === S.kid.pend[i].uid);
+    S.listen = now; S.kid.pend = pend; if (!same || !samePend) draw();
+  }
+  // Mentor requests on the child's phone ("Parent ke liye"). A parent joining is optional: the parent can approve or refuse right here.
+  // The buttons work only while the parent PIN is open (edit), so a child can not approve when a PIN is set; a confirm question comes first.
+  async function kidMentor(uid, ok) {
+    const C = cloud(), K = S.kid; if (role() !== 'kid' || !C || !K.link || K.busy) return;
+    if (ok && !g.confirm('Kya aap bachche ke parent ho? Ye mentor bachche ka din aur Online/Offline dekh sakega.')) return;
+    if (!ok && !g.confirm('Is mentor ki request hata dein?')) return;
+    K.busy = true; K.err = ''; K.msg = ''; draw();
+    try { if (ok) { await C.mentorApprove(K.link.code, uid); K.msg = 'Mentor ko manzoori mil gayi.'; } else { await C.mentorDrop(K.link.code, uid); K.msg = 'Request hata di.'; } } catch (e) { K.err = fail(e); }
+    K.busy = false; await listenPoll(); draw();
+  }
+  function kidMentorsHTML(edit) {
+    const K = S.kid; if (!K.link) return '';
+    const list = K.pend || [];
+    const rows = list.map(m => `<div style="margin-top:8px"><b>${esc(m.name)}</b> <span class="mut">mentor banna chahta hai</span>${edit
+      ? `<div class="chips" style="margin-top:6px"><button class="chip" data-kl="kmyes" data-u="${esc(m.uid)}" ${K.busy ? 'disabled' : ''}>Manzoor karo</button><button class="chip" data-kl="kmno" data-u="${esc(m.uid)}" ${K.busy ? 'disabled' : ''}>Mana karo</button></div>`
+      : '<p class="mut" style="margin:4px 0 0;font-size:12.5px">Manzoori ke liye parent ka PIN chahiye.</p>'}</div>`).join('');
+    return `<div style="margin-top:12px"><b>Mentor ki request</b>${list.length ? rows : '<p class="mut" style="margin:4px 0 0;font-size:12.5px">Abhi koi request nahi.</p>'}</div>`;
   }
   function kidBannerHTML() {
     klStyle();
@@ -523,6 +544,8 @@
     else if (a === 'lgo') parListen(b.dataset.v, b.dataset.u, true);
     else if (a === 'lstop') parListen(b.dataset.v, b.dataset.u, false);
     else if (a === 'kstop') kidStop();
+    else if (a === 'kmyes') kidMentor(b.dataset.u, true);
+    else if (a === 'kmno') kidMentor(b.dataset.u, false);
     else if (a === 'myes') parMentor(b.dataset.v, b.dataset.u, true);
     else if (a === 'mno') parMentor(b.dataset.v, b.dataset.u, false);
     else if (a === 'madd') menAdd();
@@ -557,7 +580,7 @@
   g.KIDLINK = {
     normCode, goodCode, fmt, joinCode, mentorAsk, waNum, reportText, kidBannerHTML, kidPanelHTML, parentHTML, mentorHTML, touch,
     kidCode: () => (S.kid.link && S.kid.link.code) || '',
-    setUser(u) { const id = u && u.uid ? u.uid : ''; if (id === S.uid) return; S.uid = id; S.kid = { loaded: false, busy: false, err: '', msg: '', link: null, parents: 0 }; S.par = { loaded: false, busy: false, err: '', msg: '', kids: [] }; S.men = { loaded: false, busy: false, err: '', msg: '', kids: [], filter: 'all' }; S.presAt = 0; S.presOn = null; S.accAt = 0; S.accOn = false; S.listen = []; S.repKey = ''; S.repAt = 0; S.repSend = 0; },
-    _state: S, _pull: pull, _push: push, _tick: tick, _beat: beat, _listenPoll: listenPoll, _repPush: repPush, _flagsOf: flagsOf
+    setUser(u) { const id = u && u.uid ? u.uid : ''; if (id === S.uid) return; S.uid = id; S.kid = { loaded: false, busy: false, err: '', msg: '', link: null, parents: 0, pend: [] }; S.par = { loaded: false, busy: false, err: '', msg: '', kids: [] }; S.men = { loaded: false, busy: false, err: '', msg: '', kids: [], filter: 'all' }; S.presAt = 0; S.presOn = null; S.accAt = 0; S.accOn = false; S.listen = []; S.repKey = ''; S.repAt = 0; S.repSend = 0; },
+    _state: S, _pull: pull, _push: push, _tick: tick, _beat: beat, _listenPoll: listenPoll, _kidMentor: kidMentor, _repPush: repPush, _flagsOf: flagsOf
   };
 })(window);

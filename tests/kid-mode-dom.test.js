@@ -40,8 +40,8 @@ function cloudFor(db, uid) {
       mentorAsk: async (code, name) => { if (!db.links[code]) throw denied(); (db.mentors[code] = db.mentors[code] || {})[uid] = { uid, name, status: 'pending', at: Date.now() }; (db.mentees[uid] = db.mentees[uid] || []).push(code); },
       mentorMe: async code => (db.mentors[code] || {})[uid] || null,
       mentors: async code => { if (!(db.parents[code] || {})[uid] && !(db.links[code] && db.links[code].kidUid === uid)) throw denied(); return Object.values(db.mentors[code] || {}); },
-      mentorApprove: async (code, u) => { if (!(db.parents[code] || {})[uid]) throw denied(); db.mentors[code][u].status = 'approved'; },
-      mentorDrop: async (code, u) => { if (u !== uid && !(db.parents[code] || {})[uid]) throw denied(); delete (db.mentors[code] || {})[u]; },
+      mentorApprove: async (code, u) => { if (!(db.parents[code] || {})[uid] && !(db.links[code] && db.links[code].kidUid === uid)) throw denied(); db.mentors[code][u].status = 'approved'; },   // firestore.rules: a parent, or the child's phone (the app asks for the PIN and an opt-in first)
+      mentorDrop: async (code, u) => { if (u !== uid && !(db.parents[code] || {})[uid] && !(db.links[code] && db.links[code].kidUid === uid)) throw denied(); delete (db.mentors[code] || {})[u]; },
       putWa: async (code, num) => { if (!(db.parents[code] || {})[uid] || !/^[0-9]{10,15}$/.test(num)) throw denied(); db.wa[code] = { num, at: Date.now() }; },
       getWa: async code => { const m = (db.mentors[code] || {})[uid]; if (!(db.parents[code] || {})[uid] && !(m && m.status === 'approved')) return null; return db.wa[code] || null; },
       delWa: async code => { if (!(db.parents[code] || {})[uid]) throw denied(); delete db.wa[code]; },
@@ -354,6 +354,28 @@ async function boot(db, uid, { role } = {}) {
   men2.click('[data-kl=mrefresh]'); await tick(150);
   t('that mentor no longer sees the child', !/Rahul/.test(men2.app()) && !(db.mentees.men2 || []).length);
   men2.w.close();
+  // 6d. The same request shows on the child's phone, in "Parent ke liye"; a parent can approve it there if he switched that on.
+  const men3 = await boot(db, 'men3');
+  men3.click('[data-act=kidmode]'); men3.click('[data-act=kidrole][data-v=mentor]'); men3.click('[data-act=kidof][data-v=kid]');
+  men3.d.getElementById('kidCode').value = code; men3.click('[data-act=mentorsend]'); await tick(200);
+  await kid.w.KIDLINK._listenPoll(); await tick(100);
+  kid.w.document.querySelector('#blPar').open = true; await tick(50);
+  t('child phone: the pending request shows in Parent ke liye', /Mentor ki request/.test(kid.app()) && /mentor banna chahta hai/.test(kid.app()));
+  t('child phone: Manzoor karo and Mana karo are there right away (no parent has to join)', !!kid.d.querySelector('[data-kl=kmyes][data-u=men3]') && !!kid.d.querySelector('[data-kl=kmno][data-u=men3]'));
+  par.click('[data-kl=refresh]'); await tick(150);
+  t('parent phone still shows the same request', !!par.d.querySelector('[data-kl=myes][data-u=men3]'));
+  kid.click('[data-kl=kmyes][data-u=men3]'); await tick(250);
+  t('child phone: the parent approves from here and the mentor is approved', db.mentors[kcode].men3.status === 'approved' && !kid.d.querySelector('[data-kl=kmyes]') && /manzoori mil gayi/.test(kid.app()));
+  men3.click('[data-kl=mrefresh]'); await tick(150);
+  t('that mentor now sees the child', /Online|Offline/.test(men3.app()));
+  const men4 = await boot(db, 'men4');
+  men4.click('[data-act=kidmode]'); men4.click('[data-act=kidrole][data-v=mentor]'); men4.click('[data-act=kidof][data-v=kid]');
+  men4.d.getElementById('kidCode').value = code; men4.click('[data-act=mentorsend]'); await tick(200);
+  await kid.w.KIDLINK._listenPoll(); await tick(100);
+  kid.click('[data-kl=kmno][data-u=men4]'); await tick(250);
+  t('child phone: Mana karo removes the request', !db.mentors[kcode].men4 && !kid.d.querySelector('[data-kl=kmno]'));
+  t('only the status can be approved by the child phone in firestore.rules (and only to approved)', /kidOwner\(code\)\s*&& request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasOnly\(\['status'\]\)\s*&& request\.resource\.data\.status == 'approved'/.test(fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8')));
+  men3.w.close(); men4.w.close(); delete db.mentors[kcode].men3;
   men.click('[data-kl=mleave]'); await tick(200);
   t('a mentor can leave a child', !db.mentors[kcode].men1 && !/Rahul/.test(men.app()));
   men.click('[data-act=csback]'); await tick(150);
