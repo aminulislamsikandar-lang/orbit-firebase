@@ -890,6 +890,7 @@ function syncSoon(){
  SYNCT=setTimeout(()=>window.CLOUD.push({saved:SAVED,pins:PINS,settings:ST}).catch(e=>console.warn('sync failed',e)),1500);
 }
 window.onCloudFail=e=>{if(window.BUSY)BUSY.endBoot();CLOUDFAIL=String((e&&e.message)||e||'unknown');console.error('cloud.js failed',e);if(navigator.onLine&&!USER)draw()};
+window.onCloudLoginError=e=>{const c=e&&e.code;LOGINERR=c==='auth/unauthorized-domain'?'Ye website Firebase ke Authorized domains me nahi hai.':c==='auth/web-storage-unsupported'?'Browser storage band hai. Chrome ki settings me cookies chalu karo ya normal tab me kholo.':'Login nahi ho paya. Dobara try karo.';if(!USER)draw()};
 window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.BUSY){BUSY.endBoot();BUSY.wrapCloud()}if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.KIDLINK)window.KIDLINK.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(window.STUDY)window.STUDY.setUser(u);if(u&&FREE){FREE=false;FREE_ID=null;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';PEEK=false;COURSE=null;COURSE_STATE='wait';if(RAWD)courseChanged();if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u);loadCourse(u)}if(DATA||!u)draw()};
 // First login on a device: merge this device's data with the cloud. After that the cloud copy wins.
 window.onCloudData=cd=>{
