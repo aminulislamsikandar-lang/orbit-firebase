@@ -549,7 +549,28 @@
     },
     leave() { stopAbc(); if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); stopListen(); stopSay(); clearAdv(); save(); },
     // Kid mode: what the parent's phone may see (no audio, no text), and the limit / mic switch the parent set there.
+    // Kid mode: a short label of what the child is doing right now (the topic only), for the mentor's "live activity".
+    activity() {
+      const OTHER = { abc: 'ABC Games', abclv: 'ABC Levels', numg: '123 Games', numlv: '123 Levels', suno: 'Suno Game', numct: '123 Ginti' };
+      if (st.mode === 'table') return 'Table ' + st.table;
+      const m = MODES.find(x => x[0] === st.mode); return String((m && m[1]) || OTHER[st.mode] || 'Bolo').slice(0, 40);
+    },
     summary() { const d = today(); return { day: C.dayKey(), sec: d.sec, ok: d.ok, redo: d.redo, total: totalDone() }; },
+    // Kid mode, for the mentor (read only): the last 7 days (seconds, right, repeat) and the items still to repeat, as labels only.
+    report() {
+      const s = load(), days = Object.keys(s.days).sort().slice(-7).map(k => ({ d: k, b: Math.round(+s.days[k].sec || 0), k: +s.days[k].ok || 0, r: +s.days[k].redo || 0 }));
+      const NAME = { alpha: 'A se Z', byanjan: 'ব্যঞ্জন', saath: 'সাথে বলো', asv: 'ক – কল' }, weak = [];
+      Object.keys(s.prog).forEach(k => {
+        let items = null, name = NAME[k];
+        if (k === 'alpha') items = C.items('alpha'); else if (k === 'byanjan') items = C.items('byanjan'); else if (k === 'saath') items = C.items('saath'); else if (k === 'asv') items = C.items('asvyanjan');
+        else if (/^t\d+$/.test(k)) { items = C.items('table', { table: +k.slice(1) }); name = 'Table ' + k.slice(1); }
+        else if (/^p-/.test(k)) { items = C.items('poem', { poem: k.slice(2) }); name = 'Poem'; }
+        if (!items) return;
+        const l = Object.keys(s.prog[k]).filter(i => s.prog[k][i] === 'r' && items[+i]).slice(0, 12).map(i => String(items[+i].big).replace(/[<>&"']/g, '').slice(0, 8));
+        if (l.length) weak.push({ t: name, l });
+      });
+      return { days, weak: weak.slice(0, 8) };
+    },
     applyRemote(set) { const s = load(); if (set && set.limit) s.set.limit = Math.min(MAXLIM, Math.max(5, Math.round(+set.limit / 5) * 5)); if (set && set.vol != null) s.set.vol = volOf(set.vol); if (set && typeof set.mic === 'boolean') { s.set.mic = set.mic; if (!set.mic) stopListen(); } if (set && typeof set.rec === 'boolean') s.set.rec = set.rec; save(); redraw(); },
     _reset() { stopListen(); clearAdv(); store = null; Object.assign(st, { mode: 'alpha', table: 2, poem: C.POEMS[0].id, i: 0, fb: null, err: '', unlocked: false, parOpen: false, pinMsg: '', fbInit: false, kidInit: false, aiOff: false, busy: false, enter: true }); }
   };

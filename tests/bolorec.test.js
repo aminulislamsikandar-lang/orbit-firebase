@@ -3,11 +3,11 @@
 const C = require('../public/bolorec-core.js'), R = require('../bolorec-routes.js');
 let pass = 0, fail = 0;
 const t = (name, ok, extra) => { if (ok) pass++; else { fail++; console.log('FAIL  ' + name + (extra ? '  ' + extra : '')); } };
-const CODE = 'ABCD2345', KID = 'kid-1', PARENT = 'par-1', OTHER = 'other-9';
+const CODE = 'ABCD2345', KID = 'kid-1', PARENT = 'par-1', OTHER = 'other-9', MEN = 'men-1', MEN2 = 'men-2';
 const fakeDb = () => {
-  const links = { [CODE]: { kidUid: KID } }, parents = { [CODE]: { [PARENT]: { uid: PARENT } } };
+  const links = { [CODE]: { kidUid: KID } }, parents = { [CODE]: { [PARENT]: { uid: PARENT } } }, mentors = {};
   const snap = v => ({ exists: v !== undefined, data: () => v });
-  return { collection: n => ({ doc: id => ({ get: async () => snap(n === 'kidLinks' ? links[id] : undefined), collection: () => ({ doc: u => ({ get: async () => snap((parents[id] || {})[u]) }) }) }) }) };
+  return { mentors, collection: n => ({ doc: id => ({ get: async () => snap(n === 'kidLinks' ? links[id] : undefined), collection: sub => ({ doc: u => ({ get: async () => snap(((sub === 'mentors' ? mentors : parents)[id] || {})[u]), update: async p => { Object.assign(mentors[id][u], p); } }) }) }) }) };
 };
 const memStore = () => { const m = new Map(); return { m, put: async (k, b) => { m.set(k, b); }, get: async k => m.get(k) || null, del: async k => { m.delete(k); }, list: async p => [...m.keys()].filter(k => k.startsWith(p)) }; };
 const AUDIO = Buffer.alloc(900, 7).toString('base64');
@@ -33,7 +33,7 @@ const REP = { total: 3, letters: [{ i: 0, l: 'ক', t: 1000, s: 1 }, { i: 1, l: 
 
   // ---- routes ----
   let clock = 1800000000000; const now = () => clock;
-  const store = memStore(), S = R.make({ db: fakeDb(), store, now });
+  const store = memStore(), DB = fakeDb(), S = R.make({ db: DB, store, now });
   let r = await S.upload({ uid: KID, body: { code: CODE, mime: 'audio/webm;codecs=opus', audio: AUDIO, report: REP } });
   t('child uploads own recording', r.status === 200 && C.okId(r.body.id) && r.body.expiresAt === clock + C.TTL_MS && store.m.size === 2);
   const id = r.body.id;
@@ -54,6 +54,29 @@ const REP = { total: 3, letters: [{ i: 0, l: 'ক', t: 1000, s: 1 }, { i: 1, l: 
   r = await S.get({ uid: PARENT, body: { code: CODE, id } });
   t('parent gets the audio back unchanged', r.status === 200 && r.body.audio === AUDIO && r.body.mime === 'audio/webm');
   t('get: stranger refused, bad id refused, unknown id not found', (await S.get({ uid: OTHER, body: { code: CODE, id } })).status === 403 && (await S.get({ uid: PARENT, body: { code: CODE, id: '../../x' } })).status === 400 && (await S.get({ uid: PARENT, body: { code: CODE, id: C.newId(clock) } })).status === 404);
+
+  // ---- a mentor listens only while the parent's window is open ----
+  const mreq = (uid, body) => ({ uid, body: { code: CODE, ...body } });
+  DB.mentors[CODE] = { [MEN]: { uid: MEN, status: 'pending', listenUntil: clock + 3600000 } };
+  t('mentor: a pending request cannot listen, even with a window', (await S.list(mreq(MEN, {}))).status === 403 && (await S.get(mreq(MEN, { id }))).status === 403);
+  DB.mentors[CODE][MEN] = { uid: MEN, status: 'approved' };
+  t('mentor: approved but no window = no recordings', (await S.list(mreq(MEN, {}))).status === 403 && (await S.get(mreq(MEN, { id }))).status === 403);
+  DB.mentors[CODE][MEN].listenUntil = clock + 3600000;
+  r = await S.list(mreq(MEN, {}));
+  t('mentor: with the parent\'s window open the list works', r.status === 200 && r.body.items.length === 1 && r.body.items[0].letters.length === 3);
+  r = await S.get(mreq(MEN, { id }));
+  t('mentor: gets the audio, and the parent\'s log counts it', r.status === 200 && r.body.audio === AUDIO && DB.mentors[CODE][MEN].listenCount === 1 && DB.mentors[CODE][MEN].lastListenAt === clock);
+  await S.get(mreq(MEN, { id }));
+  t('mentor: the log counts every recording heard', DB.mentors[CODE][MEN].listenCount === 2);
+  t('mentor: another mentor of nobody, the child and a stranger still get nothing', (await S.list(mreq(MEN2, {}))).status === 403 && (await S.list(mreq(KID, {}))).status === 403);
+  t('mentor: cannot upload', (await S.upload(mreq(MEN, { mime: 'audio/webm', audio: AUDIO, report: REP }))).status === 403);
+  DB.mentors[CODE][MEN].listenUntil = 0;
+  t('mentor: the parent (or child) closes the window = refused at once', (await S.list(mreq(MEN, {}))).status === 403 && (await S.get(mreq(MEN, { id }))).status === 403);
+  DB.mentors[CODE][MEN].listenUntil = clock + 1000; clock += 1000;
+  t('mentor: the window ends exactly at its time', (await S.get(mreq(MEN, { id }))).status === 403);
+  DB.mentors[CODE][MEN].listenUntil = 0;
+  t('parent still hears everything', (await S.get({ uid: PARENT, body: { code: CODE, id } })).status === 200);
+  clock -= 1000;
 
   clock += C.TTL_MS - 1000;
   t('1 hour 59 minutes later it is still there', (await S.get({ uid: PARENT, body: { code: CODE, id } })).status === 200);

@@ -17,7 +17,7 @@ const rules = rd('firestore.rules');
 t('rules: limit up to 600, still a multiple of 5', /limit <= 600 && request\.resource\.data\.limit % 5 == 0/.test(rules) && !/limit <= 30\b/.test(rules));
 t('rules: vol is allowed, optional, an int from 1 to 5', /hasOnly\(\['limit', 'mic', 'rec', 'vol', 'rev', 'at'\]\)/.test(rules) && /'vol' in request\.resource\.data\) \|\| \(request\.resource\.data\.vol is int && request\.resource\.data\.vol >= 1 && request\.resource\.data\.vol <= 5/.test(rules));
 const kl = rd('public/kidlink.js');
-t('parent phone: limit slider goes to 600, the new loudness slider is there, and it is saved with the other settings', /data-kl-lim[^>]*type="range" min="5" max="600" step="5"/.test(kl) && /data-kl-vol=/.test(kl) && /vol: patch\.vol != null \? patch\.vol : \(cur\.vol \|\| 3\)/.test(kl) && /vol: r\.vol/.test(kl));
+t('parent phone: the "Roz ki limit" slider is gone (online time is shown instead), the loudness slider is there, and it is saved with the other settings', !/type="range" min="5" max="600"/.test(kl) && /data-kl-vol=/.test(kl) && /vol: patch\.vol != null \? patch\.vol : \(cur\.vol \|\| 3\)/.test(kl) && /vol: r\.vol/.test(kl) && /limit: cur\.limit/.test(kl));
 t('nothing was removed from the parent card: mic switch, recording switch, recordings list and leave button are still there', /data-kl-mic=/.test(kl) && /data-kl-rec=/.test(kl) && /BOLOREC\.parentHTML/.test(kl) && /data-kl="leave"/.test(kl));
 
 let JSDOM = null; try { ({ JSDOM } = require('jsdom')); } catch (e) {}

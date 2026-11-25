@@ -320,8 +320,8 @@ window.CLOUD.kids = {
   async link(code) { try { const s = await getDoc(doc(db, 'kidLinks', code)); return s.exists() ? s.data() : null; } catch (e) { return null; } },
   async parents(code) { const s = await getDocs(collection(db, 'kidLinks', code, 'parents')); const a = []; s.forEach(d => a.push(d.data())); return a; },
   async remove(code) {   // the child's phone stops sharing: the link and everything under it go
-    for (const sub of ['parents']) { try { const s = await getDocs(collection(db, 'kidLinks', code, sub)); await Promise.all(s.docs.map(d => deleteDoc(d.ref))); } catch (e) {} }
-    for (const id of ['sum', 'set']) { try { await deleteDoc(doc(db, 'kidLinks', code, 'state', id)); } catch (e) {} }
+    for (const sub of ['parents', 'mentors', 'reviews']) { try { const s = await getDocs(collection(db, 'kidLinks', code, sub)); await Promise.all(s.docs.map(d => deleteDoc(d.ref))); } catch (e) {} }
+    for (const id of ['sum', 'set', 'pres', 'wa', 'rep']) { try { await deleteDoc(doc(db, 'kidLinks', code, 'state', id)); } catch (e) {} }
     await deleteDoc(doc(db, 'kidLinks', code));
   },
   async putSum(code, sum) { await setDoc(doc(db, 'kidLinks', code, 'state', 'sum'), sum); },
@@ -339,7 +339,33 @@ window.CLOUD.kids = {
     try { await deleteDoc(doc(db, 'kidLinks', code, 'parents', u.uid)); } catch (e) {}
     await deleteDoc(doc(db, 'users', u.uid, 'kids', code));
   },
-  async forget(code) { const u = auth.currentUser; if (u) await deleteDoc(doc(db, 'users', u.uid, 'kids', code)); }   // the child stopped sharing: drop only the shortcut
+  async forget(code) { const u = auth.currentUser; if (u) await deleteDoc(doc(db, 'users', u.uid, 'kids', code)); },   // the child stopped sharing: drop only the shortcut
+  // Online / Offline: written by the child's phone, read by the parent and by an approved mentor.
+  async putPres(code, pres) { await setDoc(doc(db, 'kidLinks', code, 'state', 'pres'), pres); },
+  async getPres(code) { const s = await getDoc(doc(db, 'kidLinks', code, 'state', 'pres')); return s.exists() ? s.data() : null; },
+  async putRep(code, rep) { await setDoc(doc(db, 'kidLinks', code, 'state', 'rep'), rep); },   // the last 7 days and the items to repeat, for the mentor
+  async getRep(code) { try { const s = await getDoc(doc(db, 'kidLinks', code, 'state', 'rep')); return s.exists() ? s.data() : null; } catch (e) { return null; } },
+  async putWa(code, num) { await setDoc(doc(db, 'kidLinks', code, 'state', 'wa'), { num, at: Date.now() }); },
+  async getWa(code) { try { const s = await getDoc(doc(db, 'kidLinks', code, 'state', 'wa')); return s.exists() ? s.data() : null; } catch (e) { return null; } },
+  async delWa(code) { await deleteDoc(doc(db, 'kidLinks', code, 'state', 'wa')); },
+  // Mentor: ask with the code (pending), a parent approves, the mentor then reads the child's Online / Offline and summary.
+  async mentorAsk(code, name) {
+    const u = auth.currentUser; if (!u) throw new Error('login');
+    await setDoc(doc(db, 'kidLinks', code, 'mentors', u.uid), { uid: u.uid, name: String(name || 'Mentor').slice(0, 40) || 'Mentor', status: 'pending', at: Date.now() });
+    await setDoc(doc(db, 'users', u.uid, 'mentees', code), { at: Date.now() });
+  },
+  async mentorMe(code) { const u = auth.currentUser; if (!u) return null; try { const s = await getDoc(doc(db, 'kidLinks', code, 'mentors', u.uid)); return s.exists() ? s.data() : null; } catch (e) { return null; } },
+  async mentors(code) { const s = await getDocs(collection(db, 'kidLinks', code, 'mentors')); const a = []; s.forEach(d => a.push(d.data())); return a; },
+  async mentorApprove(code, uid) { await updateDoc(doc(db, 'kidLinks', code, 'mentors', uid), { status: 'approved' }); },
+  async mentorListen(code, uid, until) { await updateDoc(doc(db, 'kidLinks', code, 'mentors', uid), { listenUntil: until }); },   // parent: open the window (at most 1 hour); parent or child: until = 0 closes it
+  async getReview(code, rid) { try { const s = await getDoc(doc(db, 'kidLinks', code, 'reviews', rid)); return s.exists() ? s.data() : null; } catch (e) { return null; } },
+  async putReview(code, rid, marks) { const u = auth.currentUser; if (!u) throw new Error('login'); await setDoc(doc(db, 'kidLinks', code, 'reviews', rid), { marks, by: u.uid, at: Date.now() }); },
+  async reviews(code) { try { const s = await getDocs(collection(db, 'kidLinks', code, 'reviews')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a; } catch (e) { return []; } },
+  async mentorDrop(code, uid) { await deleteDoc(doc(db, 'kidLinks', code, 'mentors', uid)); },   // parent says no / removes, or the mentor leaves
+  async myMentees() { const u = auth.currentUser; if (!u) return []; const s = await getDocs(collection(db, 'users', u.uid, 'mentees')); const a = []; s.forEach(d => a.push(d.id)); return a; },
+  async menteeData() { const u = auth.currentUser; if (!u) return []; const s = await getDocs(collection(db, 'users', u.uid, 'mentees')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a; },
+  async menteeSet(code, patch) { const u = auth.currentUser; if (!u) throw new Error('login'); await setDoc(doc(db, 'users', u.uid, 'mentees', code), patch, { merge: true }); },   // the mentor's own notes (daily target): private
+  async forgetMentee(code) { const u = auth.currentUser; if (u) await deleteDoc(doc(db, 'users', u.uid, 'mentees', code)); }
 };
 
 onAuthStateChanged(auth, async user => {

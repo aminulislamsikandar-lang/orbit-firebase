@@ -328,6 +328,10 @@ service cloud.firestore {
     // The child's phone writes only a small summary (today's minutes, counts); the parent writes only the limit and the mic switch. No names beyond the first name, no audio, no text.
     function kidOwner(code) { return request.auth != null && get(/databases/$(database)/documents/kidLinks/$(code)).data.kidUid == request.auth.uid; }
     function kidParent(code) { return request.auth != null && exists(/databases/$(database)/documents/kidLinks/$(code)/parents/$(request.auth.uid)); }
+    // A mentor asks with the code (status 'pending'); a parent of that child approves. Only an approved mentor sees the child's summary and Online/Offline.
+    // Listening: a parent gives one approved mentor a window of at most 1 hour (listenUntil, ms). The server checks the same field before it hands out a recording.
+    function mentorListens(code) { return request.auth != null && exists(/databases/$(database)/documents/kidLinks/$(code)/mentors/$(request.auth.uid)) && get(/databases/$(database)/documents/kidLinks/$(code)/mentors/$(request.auth.uid)).data.status == 'approved' && get(/databases/$(database)/documents/kidLinks/$(code)/mentors/$(request.auth.uid)).data.get('listenUntil', 0) > request.time.toMillis(); }
+    function mentorOk(code) { return request.auth != null && exists(/databases/$(database)/documents/kidLinks/$(code)/mentors/$(request.auth.uid)) && get(/databases/$(database)/documents/kidLinks/$(code)/mentors/$(request.auth.uid)).data.status == 'approved'; }
     match /kidLinks/{code} {
       allow get: if request.auth != null;
       allow list: if request.auth != null && resource.data.kidUid == request.auth.uid;
@@ -351,8 +355,29 @@ service cloud.firestore {
           && request.resource.data.joinedAt is number;
         allow delete: if request.auth != null && (request.auth.uid == uid || kidOwner(code));
       }
+      match /mentors/{uid} {
+        allow get: if request.auth != null && (request.auth.uid == uid || kidOwner(code) || kidParent(code));
+        allow list: if kidOwner(code) || kidParent(code);
+        allow create: if request.auth != null && request.auth.uid == uid
+          && exists(/databases/$(database)/documents/kidLinks/$(code))
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'status', 'at'])
+          && request.resource.data.uid == uid
+          && request.resource.data.name is string && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 40
+          && request.resource.data.status == 'pending'
+          && request.resource.data.at is number;
+        // Only a parent of this child can approve (the status), or open / close the listening window (listenUntil, never more than 1 hour ahead).
+        // The child's phone can only close the window (listenUntil = 0). The server writes lastListenAt and listenCount (the parent's log).
+        allow update: if (kidParent(code)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'listenUntil'])
+            && request.resource.data.status == 'approved'
+            && (!('listenUntil' in request.resource.data) || (request.resource.data.listenUntil is number && request.resource.data.listenUntil >= 0 && request.resource.data.listenUntil <= request.time.toMillis() + 3660000)))
+          || (kidOwner(code)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['listenUntil'])
+            && request.resource.data.listenUntil == 0);
+        allow delete: if request.auth != null && (request.auth.uid == uid || kidOwner(code) || kidParent(code));
+      }
       match /state/sum {
-        allow read: if kidOwner(code) || kidParent(code);
+        allow read: if kidOwner(code) || kidParent(code) || mentorOk(code);
         allow create, update: if kidOwner(code)
           && request.resource.data.keys().hasOnly(['day', 'sec', 'ok', 'redo', 'total', 'at'])
           && request.resource.data.day is string && request.resource.data.day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
@@ -362,6 +387,48 @@ service cloud.firestore {
           && request.resource.data.total is int && request.resource.data.total >= 0 && request.resource.data.total <= 99999
           && request.resource.data.at is number;
         allow delete: if kidOwner(code);
+      }
+      // What a listening mentor marked for one recording (id = the recording id): one character per letter, 1 = sahi, 0 = galat, - = not marked. No audio, no text.
+      match /reviews/{rid} {
+        allow read: if kidParent(code) || mentorOk(code);
+        allow create, update: if mentorListens(code)
+          && rid.matches('^[0-9]{13}-[a-z0-9]{6}$')
+          && request.resource.data.keys().hasOnly(['marks', 'by', 'at'])
+          && request.resource.data.marks is string && request.resource.data.marks.matches('^[01-]{1,60}$')
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.at is number;
+        allow delete: if kidParent(code) || kidOwner(code);
+      }
+      // Online / Offline: the child's phone writes it about once a minute while Orbit is open and on screen, and once more when it is hidden.
+      match /state/pres {
+        allow read: if kidOwner(code) || kidParent(code) || mentorOk(code);
+        allow create, update: if kidOwner(code)
+          && request.resource.data.keys().hasOnly(['on', 'at', 'day', 'sec', 'act'])
+          && request.resource.data.on is bool
+          && request.resource.data.at is number
+          && (!('day' in request.resource.data) || (request.resource.data.day is string && request.resource.data.day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')))
+          && (!('sec' in request.resource.data) || (request.resource.data.sec is int && request.resource.data.sec >= 0 && request.resource.data.sec <= 86400))
+          && (!('act' in request.resource.data) || (request.resource.data.act is string && request.resource.data.act.size() <= 40));
+        allow delete: if kidOwner(code);
+      }
+      // For the mentor's week chart and "dobara karne wale" list: written by the child's phone only, read by the child and by approved mentors.
+      match /state/rep {
+        allow read: if kidOwner(code) || mentorOk(code);
+        allow create, update: if kidOwner(code)
+          && request.resource.data.keys().hasOnly(['days', 'weak', 'at'])
+          && request.resource.data.days is list && request.resource.data.days.size() <= 7
+          && request.resource.data.weak is list && request.resource.data.weak.size() <= 8
+          && request.resource.data.at is number;
+        allow delete: if kidOwner(code);
+      }
+      // The parent's WhatsApp number: only a parent writes it; only parents and approved mentors read it. A mentor uses it to open a ready report message.
+      match /state/wa {
+        allow read: if kidParent(code) || mentorOk(code);
+        allow create, update: if kidParent(code)
+          && request.resource.data.keys().hasOnly(['num', 'at'])
+          && request.resource.data.num is string && request.resource.data.num.matches('^[0-9]{10,15}$')
+          && request.resource.data.at is number;
+        allow delete: if kidParent(code) || kidOwner(code);
       }
       match /state/set {
         allow read: if kidOwner(code) || kidParent(code);

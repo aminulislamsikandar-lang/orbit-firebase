@@ -299,7 +299,7 @@ const KIDROLEKEY=uid=>'orbit_kidrole_v1_'+uid;
 const kidOn=()=>!!(USER&&COURSE_STATE==='set'&&COURSE&&COURSE.kid===true&&KIDROLE);
 function kidRoleSync(){
  if(!(COURSE&&COURSE.kid===true)){KIDROLE='';return}
- if(!KIDROLE&&USER){try{const v=localStorage.getItem(KIDROLEKEY(USER.uid));KIDROLE=v==='kid'||v==='parent'?v:''}catch(e){}}
+ if(!KIDROLE&&USER){try{const v=localStorage.getItem(KIDROLEKEY(USER.uid));KIDROLE=v==='kid'||v==='parent'||v==='mentor'?v:''}catch(e){}}
 }
 function setKidRole(r){KIDROLE=r;try{if(USER)localStorage.setItem(KIDROLEKEY(USER.uid),r)}catch(e){}}
 function courseChanged(){kidRoleSync();if(RAWD)setData(RAWD);if(typeof mergeV==='function')mergeV()}
@@ -352,6 +352,16 @@ async function kidJoin(){
  if(res.err){CSERR=res.err;draw();return}
  KID_CODE='';await saveKid('parent');
 }
+async function mentorSend(){
+ if(CSBUSY||!USER)return;
+ const el=document.getElementById('kidCode');KID_CODE=el?el.value:'';
+ if(!window.KIDLINK){CSERR='Mentor ka feature load nahi hua. Page refresh karo.';draw();return}
+ CSBUSY=true;CSERR='';draw();
+ const res=await window.KIDLINK.mentorAsk(KID_CODE);
+ CSBUSY=false;
+ if(res.err){CSERR=res.err;draw();return}
+ KID_CODE='';await saveKid('mentor');
+}
 // First custom course (or first saved shared course) made: only now is the "own courses" choice saved as the lock.
 window.ensureOwnLock=async function(){
  if(!OWN_PENDING||!USER)return;
@@ -389,8 +399,11 @@ function kidOfHTML(step){   // "I am parent" / "I am mentor" first asks: of a Ki
   <div style="display:grid;gap:10px;margin-top:14px"><button class="btn" data-act="kidof" data-v="kid" ${CSBUSY?'disabled':''}>Kid</button><button class="btn" data-act="kidof" data-v="notkid" ${CSBUSY?'disabled':''}>Not Kid</button></div>`
   +`<p class="mut" style="margin-top:24px"><button class="chip" data-act="kidback">← Wapas</button></p></div>`;
 }
-function kidMentorSoonHTML(){
- return `<h1 style="font-size:26px;margin-top:16px">Mentor of Kid</h1><p class="mut">Mentor dashboard abhi ban raha hai. Jab tayyar hoga, yahan bachche ka code daalkar uska progress dekh sakoge.</p>`
+function kidMentorCodeHTML(){
+ return `<h1 style="font-size:26px;margin-top:16px">Mentor of Kid</h1><p class="mut">Bachche ke parent se 8 akshar ka code lo aur yahan daalo. Parent request manzoor karega tab bachcha tumhe dikhega.</p>
+  <input id="kidCode" value="${esc(KID_CODE)}" maxlength="9" autocomplete="off" autocapitalize="characters" placeholder="ABCD-EFGH" aria-label="Bachche ka code" style="width:100%;padding:12px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit;font-size:20px;letter-spacing:3px;margin-top:10px">
+  <button class="btn" data-act="mentorsend" ${CSBUSY?'disabled':''} style="margin-top:12px">${CSBUSY?SPN+'Request ja rahi hai…':'Request bhejo'}</button>`
+  +(CSERR?`<p class="err">${esc(CSERR)}</p>`:'')
   +`<p class="mut" style="margin-top:24px"><button class="chip" data-act="kidback">← Wapas</button></p></div>`;
 }
 function kidCodeHTML(){
@@ -405,7 +418,7 @@ function courseGateHTML(){
  if(COURSE_STATE==='wait'||(COURSE_STATE==='none'&&!RAWD))return head+`<div style="margin-top:24px">${window.WARP?WARP.block('Tumhara course load ho raha hai…',36):'<p class="mut">Tumhara course load ho raha hai…</p>'}</div></div>`;
  if(COURSE_STATE==='err')return head+`<p class="err" style="margin-top:24px">Course load nahi hua. Internet check karke dobara try karo.</p><button class="btn" data-act="csretry">Dobara try karo</button></div>`;
  if(KID_STEP==='parentof'||KID_STEP==='mentorof')return head+kidOfHTML(KID_STEP);
- if(KID_STEP==='mentorsoon')return head+kidMentorSoonHTML();
+ if(KID_STEP==='mentorcode')return head+kidMentorCodeHTML();
  if(KID_STEP==='code')return head+kidCodeHTML();
  if(KID_STEP==='role'||(COURSE&&COURSE.kid&&!KIDROLE))return head+kidRoleHTML();
  const chips=(list,cur,act,lab)=>`<div class="chips" role="group">${list.map(v=>`<button class="chip" data-act="${act}" data-v="${v}" aria-pressed="${cur===v}">${lab(v)}</button>`).join('')}</div>`;
@@ -994,11 +1007,11 @@ function draw(){
  if(!DATA)return;
  const d=DATA,y=window.scrollY;
  document.body.classList.toggle('kidmode',!!(USER&&(KID_STEP||(COURSE&&COURSE.kid===true))));   // Kid screens are the only colourful ones
- const KIDM=kidOn();if(KIDM)VIEW=KIDROLE==='parent'?'kidparent':'bolo';   // Kid mode: the child sees only Bolo, the parent only the parent screen
+ const KIDM=kidOn();if(KIDM)VIEW=KIDROLE==='parent'?'kidparent':KIDROLE==='mentor'?'kidmentor':'bolo';   // Kid mode: the child sees only Bolo, the parent only the parent screen
  const needCourse=!!USER&&(COURSE_STATE!=='set'||(COURSE&&COURSE.kid===true&&!KIDROLE))&&!(PEEK&&VIEW==='study');   // logged in but no course yet (or still loading it): only the course screen is shown
  let body;
  if(needCourse){openSide(false,true);body=courseGateHTML()}
- else if(KIDM){openSide(false,true);body=KIDROLE==='parent'?(window.KIDLINK?KIDLINK.parentHTML():''):(window.BOLO?(BOLO.kidStart&&BOLO.kidStart(),BOLO.viewHTML()):'')}
+ else if(KIDM){openSide(false,true);body=KIDROLE==='parent'?(window.KIDLINK?KIDLINK.parentHTML():''):KIDROLE==='mentor'?(window.KIDLINK?KIDLINK.mentorHTML():''):(window.BOLO?(BOLO.kidStart&&BOLO.kidStart(),(window.KIDLINK&&KIDLINK.kidBannerHTML?KIDLINK.kidBannerHTML():'')+BOLO.viewHTML()):'')}
  else if(VIEW==='home')body=navHTML();
  else if(VIEW==='fav'||VIEW==='pins'){
   const fn=VIEW==='fav'?q=>isSaved(q.id):q=>isPinned(q.id);
@@ -1385,10 +1398,11 @@ document.addEventListener('click',e=>{
  else if(act==='kidrole'){const v=b.dataset.v;if(v==='parent'){KID_STEP='parentof';CSERR='';draw()}else if(v==='mentor'){KID_STEP='mentorof';CSERR='';draw()}else saveKid('kid')}
  else if(act==='kidof'){const kid=b.dataset.v==='kid',men=KID_STEP==='mentorof';CSERR='';
   if(!men&&kid){KID_STEP='code';draw()}                    // Parent of Kid: paste the child's code (as before)
-  else if(men&&kid){KID_STEP='mentorsoon';draw()}          // Mentor of Kid: dashboard comes in the next step
+  else if(men&&kid){KID_STEP='mentorcode';draw()}          // Mentor of Kid: ask with the child's code, the parent approves
   else{PEEK=true;KID_STEP='';go('study')}}                 // Not Kid: the existing Padhai ka time door (until Not Kid is decided)
- else if(act==='kidback'){KID_STEP=KID_STEP==='code'?'parentof':KID_STEP==='mentorsoon'?'mentorof':(KID_STEP==='parentof'||KID_STEP==='mentorof')?'role':'';CSERR='';draw()}
+ else if(act==='kidback'){KID_STEP=KID_STEP==='code'?'parentof':KID_STEP==='mentorcode'?'mentorof':(KID_STEP==='parentof'||KID_STEP==='mentorof')?'role':'';CSERR='';draw()}
  else if(act==='kidjoin')kidJoin();
+ else if(act==='mentorsend')mentorSend();
  else if(act==='cssave')saveCourse();
  else if(act==='csback')releaseCourse();
  else if(act==='csretry'){COURSE_STATE='wait';draw();if(USER)loadCourse(USER)}

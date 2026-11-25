@@ -105,14 +105,78 @@
     });
     return h;
   }
+  // ---- mentor's phone ----
+  // While the parent's window is open (listenUntil), the approved mentor hears the recordings and marks each letter: 1 = sahi, 0 = galat. The server checks the window again on every request.
+  const M = { open: {}, list: {}, busy: {}, err: {}, play: null, marks: {}, msg: {} };   // marks['CODE:ID'] = array of '-' | '1' | '0'
+  const mk = (code, id) => code + ':' + id;
+  async function mLoad(code) {
+    if (M.busy[code]) return; M.busy[code] = true; M.err[code] = ''; draw();
+    try { M.list[code] = (await api('/api/bolo/rec/list', { code })).items || []; } catch (e) { M.err[code] = e.message || 'Load nahi hua.'; }
+    M.busy[code] = false; draw();
+  }
+  async function mPlay(code, id) {
+    const it = (M.list[code] || []).find(x => x.id === id); if (!it || M.busy[code]) return;
+    M.busy[code] = true; M.err[code] = ''; M.msg[code] = ''; draw();
+    try {
+      const r = await api('/api/bolo/rec/get', { code, id }), bin = g.atob(r.audio), u8 = new Uint8Array(bin.length);
+      for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+      if (M.play && M.play.url) g.URL.revokeObjectURL(M.play.url);
+      M.play = { code, id, url: g.URL.createObjectURL(new g.Blob([u8], { type: r.mime })), letters: it.letters || [] };
+      if (!M.marks[mk(code, id)]) {
+        const old = g.CLOUD && g.CLOUD.kids && g.CLOUD.kids.getReview ? await g.CLOUD.kids.getReview(code, id) : null;
+        M.marks[mk(code, id)] = (it.letters || []).map((x, i) => (old && /^[01-]$/.test(old.marks[i] || '') ? old.marks[i] : '-'));
+      }
+    } catch (e) { M.err[code] = e.message || 'Recording nahi chali.'; }
+    M.busy[code] = false; draw();
+  }
+  function mMark(code, id, i, v) {
+    const a = M.marks[mk(code, id)]; if (!a || !(i >= 0 && i < a.length)) return;
+    a[i] = a[i] === v ? '-' : v; M.msg[code] = ''; draw();
+  }
+  async function mSave(code, id) {
+    const a = M.marks[mk(code, id)]; if (!a || !a.length || M.busy[code]) return;
+    M.busy[code] = true; M.err[code] = ''; M.msg[code] = ''; draw();
+    try { await g.CLOUD.kids.putReview(code, id, a.join('')); M.msg[code] = 'Marks save ho gaye.'; } catch (e) { M.err[code] = e && e.code === 'permission-denied' ? 'Sunne ka time khatam ho gaya. Marks save nahi hue.' : 'Save nahi hua. Dobara try karo.'; }
+    M.busy[code] = false; draw();
+  }
+  function mClose(code) { M.open[code] = false; if (M.play && M.play.code === code) { if (M.play.url) g.URL.revokeObjectURL(M.play.url); M.play = null; } }
+  // until = the end of the parent's window (ms). Outside the window nothing is listed and any open recording is dropped from the page.
+  function mentorHTML(code, until) {
+    if (!g.BOLOREC_CORE) return '';
+    if (!(+until > Date.now())) { mClose(code); M.list[code] = null; return '<p class="mut" style="margin:10px 0 0">Bachche ki awaaz sunne ke liye parent se \"1 ghante ke liye sunne do\" ki manzoori maango.</p>'; }
+    const open = !!M.open[code], items = M.list[code];
+    let h = `<p style="margin:10px 0 0">Awaaz sunne ka time: <b>${hm(until)}</b> tak.</p><div class="chips" style="margin-top:8px"><button class="chip" data-br="mtoggle" data-v="${esc(code)}">${open ? 'Recordings band karo' : 'Bachche ki awaaz sunao'}</button></div>`;
+    if (!open) return h;
+    if (M.busy[code] && !items) return h + '<p class="mut">Load ho raha hai…</p>';
+    if (M.err[code]) h += `<p class="err" role="alert">${esc(M.err[code])}</p>`;
+    if (items && !items.length) return h + '<p class="mut" style="margin:8px 0 0">Abhi koi recording nahi hai. Bachcha Saath me bolo kare tab yahan aayegi. Recording 2 ghante baad hat jaati hai.</p>';
+    (items || []).forEach(it => {
+      const cur = M.play && M.play.code === code && M.play.id === it.id, marks = M.marks[mk(code, it.id)] || [];
+      h += `<div class="card" style="margin-top:8px;padding:12px"><div class="bl-row"><b>${hm(it.at)} ki recording</b><span class="mut" style="font-size:12.5px">${hm(it.expiresAt)} tak</span></div>`;
+      if (!cur) h += `<button class="chip" data-br="mplay" data-v="${esc(it.id)}" data-c="${esc(code)}">Sunao</button>`;
+      else {
+        h += `<audio id="brAud" controls src="${esc(M.play.url)}" style="width:100%"></audio>
+          <p class="mut" style="font-size:12.5px;margin:6px 0">Letter dabao, wahin se sunai dega. Phir Sahi ya Galat dabao.</p>
+          <div data-br-marks style="display:grid;gap:6px">${(it.letters || []).map((x, i) => `<div class="bl-row" style="margin:0"><button class="chip" lang="as" data-br="seek" data-v="${+x.t}">${esc(x.l)}</button><span style="display:flex;gap:6px"><button class="chip" data-br="mark" data-c="${esc(code)}" data-id="${esc(it.id)}" data-i="${i}" data-v="1" aria-pressed="${marks[i] === '1'}" aria-label="${esc(x.l)} sahi" style="${marks[i] === '1' ? 'background:#1a9d5a;color:#fff' : ''}">Sahi</button><button class="chip" data-br="mark" data-c="${esc(code)}" data-id="${esc(it.id)}" data-i="${i}" data-v="0" aria-pressed="${marks[i] === '0'}" aria-label="${esc(x.l)} galat" style="${marks[i] === '0' ? 'background:#d64545;color:#fff' : ''}">Galat</button></span></div>`).join('')}</div>
+          <div class="chips" style="margin-top:10px"><button class="chip" data-br="msave" data-c="${esc(code)}" data-id="${esc(it.id)}">Marks save karo</button></div>
+          ${M.msg[code] ? `<p class="mut" role="status" style="margin:6px 0 0">${esc(M.msg[code])}</p>` : ''}`;
+      }
+      h += '</div>';
+    });
+    return h;
+  }
   g.document.addEventListener('click', e => {
     const b = e.target && e.target.closest ? e.target.closest('[data-br]') : null; if (!b || b.disabled) return;
     const a = b.dataset.br;
     if (a === 'toggle') { const c = b.dataset.v; S.open[c] = !S.open[c]; if (S.open[c]) load(c); else draw(); }
     else if (a === 'play') play(b.dataset.c, b.dataset.v);
     else if (a === 'seek') seek(+b.dataset.v);
+    else if (a === 'mtoggle') { const c = b.dataset.v; if (M.open[c]) { mClose(c); draw(); } else { M.open[c] = true; mLoad(c); } }
+    else if (a === 'mplay') mPlay(b.dataset.c, b.dataset.v);
+    else if (a === 'mark') mMark(b.dataset.c, b.dataset.id, +b.dataset.i, b.dataset.v);
+    else if (a === 'msave') mSave(b.dataset.c, b.dataset.id);
   });
   // The parent's page must not redraw (and cut the sound) while a recording is open and playing or paused half way.
   const busy = () => { const a = g.document.getElementById('brAud'); return !!(a && (!a.paused || a.currentTime > 0.5)); };
-  g.BOLOREC = { can, run, send, parentHTML, busy };
+  g.BOLOREC = { can, run, send, parentHTML, mentorHTML, busy };
 })(typeof window !== 'undefined' ? window : globalThis);

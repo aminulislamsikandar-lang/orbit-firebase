@@ -4,7 +4,8 @@
 // db = Firestore (firebase-admin) or null. store = { put(key, buf), get(key) -> buf|null, list(prefix) -> [key], del(key) } (Backblaze B2, or memory when B2 is not set).
 // Who may do what (the code is never enough on its own, the login is checked too):
 //   upload  - only the child's own login: kidLinks/{code}.kidUid == uid
-//   list/get - only a parent who joined that code: kidLinks/{code}/parents/{uid} exists
+//   list/get - only a parent who joined that code: kidLinks/{code}/parents/{uid} exists,
+//              or an approved mentor while the parent's listening window is open: kidLinks/{code}/mentors/{uid}.status == 'approved' and listenUntil > now (at most 1 hour, closed any time by the parent or the child)
 const C = require('./public/bolorec-core.js');
 
 function make({ db, store, now }) {
@@ -17,6 +18,12 @@ function make({ db, store, now }) {
   const pre = code => 'bolo-rec/' + code + '/';
 
   async function isKid(code, uid) { const d = await db.collection('kidLinks').doc(code).get(); return !!(d && d.exists && d.data().kidUid === uid); }
+  // A mentor may hear recordings only while a parent's window is open. Returns the mentor's doc ref when allowed, else null.
+  async function listenerRef(code, uid) {
+    const ref = db.collection('kidLinks').doc(code).collection('mentors').doc(uid), d = await ref.get();
+    if (!d || !d.exists) return null; const m = d.data() || {};
+    return m.status === 'approved' && +m.listenUntil > now() ? { ref, m } : null;
+  }
   async function isParent(code, uid) { const d = await db.collection('kidLinks').doc(code).collection('parents').doc(uid).get(); return !!(d && d.exists); }
 
   let lastSweep = 0;
@@ -55,7 +62,7 @@ function make({ db, store, now }) {
     if (!db) return NODB;
     if (!C.okCode(code)) return err(400, 'Code sahi nahi hai.');
     if (!L.rd(uid)) return err(429, 'Thodi der baad try karo.');
-    if (!(await isParent(code, uid))) return err(403, 'Is bachche se juda parent hi recording sun sakta hai.');
+    if (!(await isParent(code, uid)) && !(await listenerRef(code, uid))) return err(403, 'Recording sirf bachche ke parent ko, ya parent ke diye sunne ke time mein mentor ko milti hai.');
     sweep().catch(() => {});
     const ids = (await store.list(pre(code))).map(k => (/\/([^/]+)\.json$/.exec(k) || [])[1]).filter(id => C.okId(id) && !C.expired(id, now())).sort().reverse().slice(0, 10);
     const items = [];
@@ -73,11 +80,13 @@ function make({ db, store, now }) {
     if (!db) return NODB;
     if (!C.okCode(b.code) || !C.okId(b.id)) return err(400, 'Recording ki detail sahi nahi hai.');
     if (!L.rd(uid)) return err(429, 'Thodi der baad try karo.');
-    if (!(await isParent(b.code, uid))) return err(403, 'Is bachche se juda parent hi recording sun sakta hai.');
+    const isPar = await isParent(b.code, uid), lis = isPar ? null : await listenerRef(b.code, uid);
+    if (!isPar && !lis) return err(403, 'Recording sirf bachche ke parent ko, ya parent ke diye sunne ke time mein mentor ko milti hai.');
     if (C.expired(b.id, now())) return err(410, 'Ye recording 2 ghante baad hat gayi.', 'expired');
     const meta = await store.get(pre(b.code) + b.id + '.json'), buf = await store.get(pre(b.code) + b.id + '.bin');
     if (!meta || !buf) return err(404, 'Recording nahi mili.');
     let m = {}; try { m = JSON.parse(meta.toString('utf8')); } catch (e) {}
+    if (lis) { try { await lis.ref.update({ lastListenAt: now(), listenCount: (+lis.m.listenCount || 0) + 1 }); } catch (e) {} }   // the parent's log: how many recordings the mentor heard, and when
     return ok({ mime: C.cleanMime(m.mime) || 'audio/webm', audio: buf.toString('base64'), expiresAt: C.idTime(b.id) + C.TTL_MS });
   }
 
