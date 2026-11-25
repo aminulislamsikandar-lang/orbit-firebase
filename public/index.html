@@ -35,6 +35,10 @@ h1,h2,h3{font-family:'Baloo 2',system-ui,sans-serif;margin:0;line-height:1.2}
 #app{max-width:640px;margin:0 auto;padding:16px 16px 48px}
 button{font:inherit;color:inherit;cursor:pointer}
 :focus-visible{outline:2px solid var(--tx);outline-offset:2px}
+/* Touch polish: no 300 ms tap delay or double-tap zoom on controls; 16 px fields so iPhones do not zoom in when a field is tapped; bigger tap targets */
+button,a,input,select,textarea,summary,label{touch-action:manipulation}
+input,textarea,select{font-size:16px}
+.btn{min-height:44px}.chip{min-height:36px}
 .logo{font-family:'Baloo 2',system-ui,sans-serif;font-size:28px;display:flex;align-items:center;gap:8px}
 .mut{color:var(--mut);font-size:14px}
 .seofoot{text-align:center;font-size:11px;line-height:1.9;padding:18px 12px 28px;color:var(--mut);opacity:.35;-webkit-user-select:none;user-select:none}
@@ -851,7 +855,7 @@ function settingsHTML(){
 }
 // ---- Account page (sidebar "Account"): who is logged in + Log out ----
 function loginHTML(){
- if(!USER)return `<h1 style="font-size:26px;margin-top:14px">Account</h1><p class="mut">Abhi log in nahi ho.</p><button class="btn" data-act="login" ${window.CLOUD?'':'disabled'}>Google se Log in</button>`;
+ if(!USER)return `<h1 style="font-size:26px;margin-top:14px">Account</h1><p class="mut">Abhi log in nahi ho.</p><button class="btn" data-act="login" ${window.CLOUD&&!LOGINBUSY?'':'disabled'} aria-busy="${LOGINBUSY}">${LOGINBUSY?SPN+'Login ho raha hai…':'Google se Log in'}</button>`;
  const nm=USER.name||'',em=USER.email||'',ini=(nm||em||'?').trim().charAt(0).toUpperCase();
  return `<h1 style="font-size:26px;margin-top:14px">Account</h1>
  <div class="card" style="display:flex;align-items:center;gap:14px"><div aria-hidden="true" style="width:52px;height:52px;border-radius:50%;background:var(--on);color:var(--onbg);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;flex:none">${esc(ini)}</div><div style="min-width:0"><div style="font-weight:600">${esc(nm||'Orbit student')}</div><div class="mut" style="overflow-wrap:anywhere">${esc(em)}</div></div></div>
@@ -859,7 +863,7 @@ function loginHTML(){
  <p class="mut" style="margin-top:10px">Log out karne par ye phone is account se alag ho jayega. Course, favourite aur progress account me safe rehte hain, dobara log in karte hi wapas aa jayenge.</p>`;
 }
 // ---- Google login + cloud sync (Firebase). cloud.js sets window.CLOUD; if it fails to load (offline) the app still works. ----
-let USER=null,LOGINERR='',SYNCT=null,AUTH_READY=false,CLOUDFAIL='';
+let USER=null,LOGINERR='',LOGINBUSY=false,SYNCT=null,AUTH_READY=false,CLOUDFAIL='';
 // ---- Free contents (no login): only the ready-made notes from /free-notes.json. No AI, videos, favourites or other features. ----
 let FREE=false,FREE_ID=null,FREE_NOTES=null,FREE_ERR=false,FREE_BUSY=false,FREE_LANG=null;   // FREE_LANG: null = default per note, or 'en' / 'as'
 {const m=/^#free(?:\/([\w-]+))?$/.exec(location.hash);if(m){FREE=true;FREE_ID=m[1]||null}}
@@ -871,7 +875,7 @@ function freeSet(on,id){FREE_ERR=false;FREE=on;FREE_ID=on?(id||null):null;try{hi
 function freeHTML(){
  freeLoad();
  const top=`<div class="logo" style="margin:14px 0">${LOGO}Orbit Tutorial</div>`;
- const cta=`<div class="card" style="text-align:center"><p style="margin:0;font-weight:600">AI answers, videos aur baaki features ke liye log in karo</p><button class="btn" data-act="login" ${window.CLOUD?'':'disabled'}>Google se Log in</button>${LOGINERR?`<p class="err">${esc(LOGINERR)}</p>`:''}</div>`;
+ const cta=`<div class="card" style="text-align:center"><p style="margin:0;font-weight:600">AI answers, videos aur baaki features ke liye log in karo</p><button class="btn" data-act="login" ${window.CLOUD&&!LOGINBUSY?'':'disabled'} aria-busy="${LOGINBUSY}">${LOGINBUSY?SPN+'Login ho raha hai…':'Google se Log in'}</button>${LOGINERR?`<p class="err">${esc(LOGINERR)}</p>`:''}</div>`;
  const back=(act,label)=>`<button class="back" data-act="${act}">${I.back}<span>${esc(label)}</span></button>`;
  const fl=n=>FREE_LANG||(/Assamese/.test((n&&n.medium)||'')?'as':'en');   // Assamese-medium notes open in Assamese first; the person can switch
  const chips=cur=>`<div class="chips" role="group" aria-label="Language"><button class="chip" data-act="freelang" data-v="en" aria-pressed="${cur==='en'}">English</button><button class="chip" data-act="freelang" data-v="as" aria-pressed="${cur==='as'}">অসমীয়া</button></div>`;
@@ -1033,10 +1037,10 @@ function gateHTML(){
  <div class="logo" style="font-size:30px;justify-content:center">${LOGO}Orbit Tutorial</div>
  <p style="margin:18px 0 4px;font-size:20px;font-weight:600">Shuru karne ke liye log in karo</p>
  <p class="mut" style="max-width:320px;margin:0 auto">Google se ek tap me login. Tumhare favourite, pinned aur settings har phone par saath rahenge.</p>
- <button class="btn" data-act="login" ${window.CLOUD?'':'disabled'} style="font-size:17px;padding:14px 22px;margin-top:22px">Google se Continue</button>
+ <button class="btn" data-act="login" ${window.CLOUD&&!LOGINBUSY?'':'disabled'} aria-busy="${LOGINBUSY}" style="font-size:17px;padding:14px 22px;margin-top:22px">${LOGINBUSY?SPN+'Login ho raha hai…':'Google se Continue'}</button>
  <button class="btn" data-act="freeopen" style="background:transparent;color:inherit;border:1px solid var(--ln);font-size:16px;padding:12px 22px;margin-top:12px">Free contents</button>
  <p class="mut" style="max-width:320px;margin:8px auto 0;font-size:13px">Bina login ke sirf ready-made notes.</p>
- ${CLOUDFAIL&&!window.CLOUD?`<p class="err" style="max-width:320px">Login system load nahi hua. Page refresh karo. Error: ${esc(CLOUDFAIL)}</p>`:''}${LOGINERR?`<p class="err" style="max-width:320px">${esc(LOGINERR)}</p>`:''}</div>`;
+ ${CLOUDFAIL&&!window.CLOUD?`<p class="err" style="max-width:320px">Login system load nahi hua. Page refresh karo. Error: ${esc(CLOUDFAIL)}</p>`:''}${LOGINERR?`<p class="err" role="alert" style="max-width:320px">${esc(LOGINERR)}</p>`:''}</div>`;
 }
 // Which screen is the student on? (sent to Google Analytics as a page_view; ids and numbers only)
 function screenInfo(){
@@ -1479,7 +1483,7 @@ document.addEventListener('click',e=>{
  else if(act==='qvdel'){if(window.QVideo)window.QVideo.remove(id)}
  else if(act==='ytv'){if(window.YTP)window.YTP.open(id)}
  else if(act==='ytadd'){ui(id).qm=false;draw();if(window.YTP)window.YTP.edit(id)}
- else if(act==='login'){LOGINERR='';window.CLOUD.login().catch(e=>{const c=e&&e.code;LOGINERR=c==='auth/popup-closed-by-user'?'':c==='auth/operation-not-allowed'?'Firebase Console me Authentication → Google enable karna baaki hai.':c==='auth/unauthorized-domain'?'Ye website Firebase ke Authorized domains me nahi hai.':'Login nahi ho paya. Dobara try karo.';draw()})}
+ else if(act==='login'){if(LOGINBUSY)return;LOGINERR='';LOGINBUSY=true;draw();window.CLOUD.login().catch(e=>{const c=e&&e.code;LOGINERR=c==='auth/popup-closed-by-user'?'':c==='auth/operation-not-allowed'?'Firebase Console me Authentication → Google enable karna baaki hai.':c==='auth/unauthorized-domain'?'Ye website Firebase ke Authorized domains me nahi hai.':'Login nahi ho paya. Dobara try karo.';draw()}).finally(()=>{LOGINBUSY=false;draw()})}
  else if(act==='logout'){if(!window.CLOUD)return;if(!confirm('Log out karna hai?'))return;window.CLOUD.logout().then(()=>{VIEW='home';openSide(false,true);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}).catch(()=>{alert('Log out nahi ho paya. Dobara try karo.')})}
  else if(act==='freelang'){FREE_LANG=b.dataset.v==='as'?'as':'en';draw()}
  else if(act==='freeopen')freeSet(true);
