@@ -61,7 +61,7 @@
   const canEdit = () => !hasPin() || st.unlocked;
   function firstOpen() { const m = marks(), n = list().length; for (let i = 0; i < n; i++) if (m[i] !== 'd') return i; return 0; }
   const stopAbc = () => { if (g.ABC) g.ABC.leave(); if (g.ABCLV) g.ABCLV.leave(); if (g.NUMG) g.NUMG.leave(); if (g.NUMLV) g.NUMLV.leave(); if (g.NUMCT) g.NUMCT.leave(); if (g.SUNO) g.SUNO.leave(); if (g.SWAR) g.SWAR.leave(); };   // the ABC topics keep their own speech and timers: stop them when the child changes topic or leaves
-  function reset(mode) { if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); stopListen(); stopSay(); clearAdv(); if (mode) { st.mode = mode; stopAbc(); } st.fb = null; st.err = ''; st.enter = true; st.i = firstOpen(); }
+  function reset(mode) { if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); if (g.SWARSAATH && g.SWARSAATH.running()) g.SWARSAATH.stop(); stopListen(); stopSay(); clearAdv(); if (mode) { st.mode = mode; stopAbc(); } st.fb = null; st.err = ''; st.enter = true; st.i = firstOpen(); }
 
   // ---- voice out ----
   // Byanjan items carry a recorded voice clip (item.audio) and a mouth "video" (byanjan-video.js); everything else uses the browser voice.
@@ -426,7 +426,7 @@
     g.document.head.appendChild(s); return '';
   }
 
-  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['saath', 'সাথে বলো', '#e0613a'], ['asvyanjan', 'ক – কল', '#00969f'], ['abc', 'ABC Games', '#f59e0b'], ['abclv', 'ABC Levels', '#16a34a'], ['numg', '123 Games', '#f59e0b'], ['numlv', '123 Levels', '#16a34a'], ['numct', '123 Ginti', '#f59e0b'], ['suno', 'Suno Game', '#f59e0b'], ['swar', 'স্বৰ-বৰ্ণ', '#8e44ad']];
+  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['saath', 'সাথে বলো', '#e0613a'], ['asvyanjan', 'ক – কল', '#00969f'], ['abc', 'ABC Games', '#f59e0b'], ['abclv', 'ABC Levels', '#16a34a'], ['numg', '123 Games', '#f59e0b'], ['numlv', '123 Levels', '#16a34a'], ['numct', '123 Ginti', '#f59e0b'], ['suno', 'Suno Game', '#f59e0b'], ['swar', 'স্বৰ-বৰ্ণ', '#8e44ad'], ['swarsaath', 'স্বৰ সাথে বলো', '#8e44ad']];
   const chipRow = (label, arr) => `<div class="chips bl-chips" role="group" aria-label="${label}">${arr.map(m => `<button class="chip" style="--c:${m[3]}" data-bl="${m[0]}" data-v="${m[1]}" aria-pressed="${m[4]}">${m[2]}</button>`).join('')}</div>`;
   const modeChips = () => chipRow('Kya bolna hai', MODES.map(m => ['mode', m[0], m[1], m[2], st.mode === m[0]]));
   function subPick() {   // the second row of chips (table number, or which poem) - still only chips at the top
@@ -459,6 +459,16 @@
     reset(); stopSay();
     g.SAATH.start({ sens: load().set.vol, code: linked() ? g.KIDLINK.kidCode() : '', api: g.api, redraw: () => { if (onScreen()) redraw(); } });
   }
+  // "স্বৰ সাথে বলো" (Swar saath me bolo): the same thing for the 11 vowels, its own screen and recorder in public/swarsaath.js; the same Start rules (mic switch, parent's tick when joined, practice when not joined).
+  function swarSaathCard() {
+    if (!g.SWARSAATH) return '<div class="card"><p class="mut" style="margin:0">Ye hissa abhi load nahi hua. Page dobara kholo.</p></div>';
+    return g.SWARSAATH.html({ ready: recOK(), why: over() ? '' : recWhy(), sens: load().set.vol, practice: !linked() });
+  }
+  function swarSaathStart() {
+    if (!g.SWARSAATH || g.SWARSAATH.running() || !recOK()) return;
+    reset(); stopSay();
+    g.SWARSAATH.start({ sens: load().set.vol, code: linked() ? g.KIDLINK.kidCode() : '', api: g.api, redraw: () => { if (onScreen()) redraw(); } });
+  }
 
   function card() {
     const s = load(), items = list(), it = items[st.i], m = marks(), done = items.filter((_, i) => m[i] === 'd').length, last = st.i >= items.length - 1;
@@ -471,6 +481,7 @@
     if (st.mode === 'numct') return g.NUMCT ? g.NUMCT.viewHTML() : '';   // 123 Ginti: fruit counting, easy to hard
     if (st.mode === 'swar') return g.SWAR ? g.SWAR.viewHTML() : '';   // Swar-borno: the vowels with the teacher's recording, a picture and a word each
     if (st.mode === 'saath') return saathCard();
+    if (st.mode === 'swarsaath') return swarSaathCard();
     const by = st.mode === 'byanjan', asv = st.mode === 'asvyanjan';
     const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:60px' : 'font-size:104px';
     const bigHTML = by && g.BYANJAN_VIDEO ? g.BYANJAN_VIDEO.stageHTML(it, C.PLACES) : `<div class="bl-big" style="${big}">${esc(it.big)}</div>`;
@@ -525,6 +536,8 @@
     else if (a === 'self') mark(v === '1', true);
     else if (a === 'auto') saathStart();
     else if (a === 'autostop') { if (g.SAATH) g.SAATH.stop(); }
+    else if (a === 'sauto') swarSaathStart();
+    else if (a === 'sautostop') { if (g.SWARSAATH) g.SWARSAATH.stop(); }
     else if (a === 'pin') pinAction(v);
   });
   g.document.addEventListener('change', e => {
@@ -548,7 +561,7 @@
     kidStart() {   // Kid mode (child), first screen of every app open: ABC Levels, at the level the child was last trying to pass. Later redraws and the child's own topic taps are left alone.
       if (st.kidInit) return; st.kidInit = true; st.mode = 'abclv'; st.fbInit = false; if (g.ABCLV && g.ABCLV.openAtLast) g.ABCLV.openAtLast();
     },
-    leave() { stopAbc(); if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); stopListen(); stopSay(); clearAdv(); save(); },
+    leave() { stopAbc(); if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); if (g.SWARSAATH && g.SWARSAATH.running()) g.SWARSAATH.stop(); stopListen(); stopSay(); clearAdv(); save(); },
     // Kid mode: what the parent's phone may see (no audio, no text), and the limit / mic switch the parent set there.
     // Kid mode: a short label of what the child is doing right now (the topic only), for the mentor's "live activity".
     activity() {
