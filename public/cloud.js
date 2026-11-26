@@ -1,7 +1,7 @@
 // Orbit: Google login (Firebase Auth) + per-user cloud copy of favourites, pins and settings (Firestore).
 // If this file fails to load (for example offline), the app still works with data kept on the device.
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
-import { getAuth, onAuthStateChanged, signInWithPopup, signInWithRedirect, GoogleAuthProvider, signOut }
+import { getAuth, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut }
   from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, documentId, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
@@ -9,6 +9,9 @@ import { firebaseConfig } from './firebase-config.js';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+// authDomain is our own site (firebase-config.js), so the redirect login keeps working when the browser blocks storage of another domain (phone Chrome, Safari).
+// If a redirect login comes back with an error, show it on the login screen instead of staying silent.
+getRedirectResult(auth).catch(e => { try { if (window.onCloudLoginError) window.onCloudLoginError(e); } catch (x) {} console.warn('redirect login failed', e); });
 const db = getFirestore(app);
 
 let pushed = {};   // saved id -> JSON last written to the cloud (so only changes are sent)

@@ -1,7 +1,7 @@
 // Orbit service worker: keeps the app page, its scripts and the question lists so chapters open offline.
 // API calls (/api/*) are never cached here; answers are stored by the page itself.
 // robots.txt, sitemap.xml and the Google verification file are NOT touched: they always go to the server.
-const SHELL = 'orbit-shell-v85';
+const SHELL = 'orbit-shell-v88';
 const FONTS = 'orbit-fonts-v1';
 const ASSETS = 'orbit-assets-v1';
 
@@ -10,12 +10,22 @@ const CORE = [
   '/config.js', '/catalog.js', '/publicchapters.js', '/custom-course.js', '/warp-loader.js', '/busy.js', '/team.js', '/mathvideo-admin.js',
   '/narration-sync.js', '/narration-sprites.js', '/mathvideo-player.js', '/narration-loader.js',
   '/voiceover.js', '/vkeep.js', '/vboost.js', '/vplayer.js', '/voiceover-admin.js', '/narration-admin.js', '/video-admin.js', '/qvideo.js', '/ytplayer.js', '/plan.js',
-  '/analytics.js', '/parent-key.js', '/recall.js', '/voicematch-core.js', '/assamese-fuse.js', '/bolo-core.js', '/bolorec-core.js', '/bolorec.js', '/saath-core.js', '/saath.js', '/swarsaath-core.js', '/swarsaath.js', '/bolo-audio/assamese-vyanjan.mp3', '/bolo-audio/saath-byanjan.mp3', '/byanjan-video.js', '/bolo.js', '/swarborno.js', '/swar/swar.mp3', '/swar/swar-01.webp', '/swar/swar-02.webp', '/swar/swar-03.webp', '/swar/swar-04.webp', '/swar/swar-05.webp', '/swar/swar-06.webp', '/swar/swar-07.webp', '/swar/swar-08.webp', '/swar/swar-09.webp', '/swar/swar-10.webp', '/swar/swar-11.webp', '/kidlink.js', '/vlab.js', '/models3d.js', '/promptbox.js', '/abcgames.js', '/abclevels.js', '/numcore.js', '/numgames.js', '/numlevels.js', '/sunogame.js', '/numcount.js', '/report.js', '/avatar.js', '/studytime.js', '/kidbank.js', '/cloud.js',
+  '/analytics.js', '/parent-key.js', '/recall.js', '/voicematch-core.js', '/assamese-fuse.js', '/bolo-core.js', '/bolorec-core.js', '/bolorec.js', '/saath-core.js', '/saath.js', '/swarsaath-core.js', '/swarsaath.js', '/byanjan-video.js', '/bolo.js', '/swarborno.js', '/swar/swar.mp3', '/swar/swar-01.webp', '/swar/swar-02.webp', '/swar/swar-03.webp', '/swar/swar-04.webp', '/swar/swar-05.webp', '/swar/swar-06.webp', '/swar/swar-07.webp', '/swar/swar-08.webp', '/swar/swar-09.webp', '/swar/swar-10.webp', '/swar/swar-11.webp', '/kidlink.js', '/vlab.js', '/models3d.js', '/promptbox.js', '/abcgames.js', '/abclevels.js', '/numcore.js', '/numgames.js', '/numlevels.js', '/sunogame.js', '/numcount.js', '/report.js', '/avatar.js', '/studytime.js', '/kidbank.js', '/cloud.js',
   '/limit-msg.js', '/revision-core.js', '/answer-check.js', '/quiz.js', '/exam.js', '/aireview.js', '/classroom.js', '/weekly.js', '/voice-tutor.js',
   '/firebase-config.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png',
   '/questions.json', '/videos.json', '/publicvideos.json'
 ];
 const CORE_SET = new Set(CORE);
+// Two big teacher recordings (about 1.3 MB) are NOT downloaded at install any more: a student who never opens Kid mode never pays for them.
+// The first time one is played it streams from the server and a full copy is saved in the background, so it works offline from then on.
+const AUDIO_LAZY = new Set(['/bolo-audio/assamese-vyanjan.mp3', '/bolo-audio/saath-byanjan.mp3']);
+async function lazyAudio(e, path) {
+  const cache = await caches.open(ASSETS);
+  const hit = await cache.match(path);
+  if (hit) return hit;
+  e.waitUntil(cache.add(path).catch(() => {}));   // a plain (non-range) request, so the full 200 answer can be saved
+  return fetch(e.request);
+}
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -58,6 +68,8 @@ self.addEventListener('fetch', e => {
     e.respondWith(staleWhileRevalidate(SHELL, '/', r));
   } else if (u.hostname === 'fonts.googleapis.com' || u.hostname === 'fonts.gstatic.com') {
     e.respondWith(staleWhileRevalidate(FONTS, r, r));
+  } else if (same && AUDIO_LAZY.has(u.pathname)) {
+    e.respondWith(lazyAudio(e, u.pathname));
   } else if (same && CORE_SET.has(u.pathname)) {
     // Ignore any ?query so /questions.json?x=1 and /questions.json share one saved copy.
     e.respondWith(staleWhileRevalidate(ASSETS, u.pathname, r));
