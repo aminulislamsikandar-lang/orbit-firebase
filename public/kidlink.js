@@ -84,8 +84,38 @@
     Object.keys(on).forEach(d => { (map[d] = map[d] || { d, o: 0, b: 0, k: 0, r: 0 }).o = Math.max(0, Math.min(86400, +on[d] || 0)); });
     return { days: Object.keys(map).sort().slice(-7).map(d => map[d]), weak: b.weak || [] };
   }
-  // Live screen for a mentor whose window is open (see firestore.rules state/live): only the WORDS on the child's screen, never a picture, a sound or anything typed.
-  const LIVE_MS = 5000;
+  // Live screen for a mentor whose window is open (see firestore.rules state/live): a clean copy of what the child's screen shows (the same boxes, colours and letters), never a photo, a sound or anything typed.
+  // Left out on purpose: every <details> (the "Parent ke liye" box with PIN, limits and the mic switch), inputs, scripts, [data-nolive] (e.g. "Recording parent ko bhej di gayi") and the "Mentor sun rahe hain" card.
+  // The same cleaner runs again on the mentor's phone, so a tampered document can never put script or a link into the mentor's page.
+  const LIVE_MS = 5000, LIVE_MAX = 60000;
+  const SNAP_DROP = 'details, input, textarea, select, script, style, iframe, audio, video, object, embed, canvas, link, meta, form, [data-nolive], .kl-listen';
+  const SNAP_TAGS = /^(div|span|p|b|strong|i|em|u|br|h1|h2|h3|h4|ul|ol|li|table|thead|tbody|tr|td|th|button|label|img|small|section|main|header|nav|a|svg|g|path|circle|rect|line|polyline|polygon|ellipse|text|tspan)$/;
+  const SNAP_ATTR = /^(class|lang|dir|alt|width|height|viewbox|d|fill|stroke|stroke-width|stroke-linecap|stroke-linejoin|cx|cy|r|rx|ry|x|y|x1|y1|x2|y2|points|transform|opacity|font-size|text-anchor)$/;
+  function snapNode(n, d, depth, cnt) {
+    if (n.nodeType === 3) { cnt.n++; return d.createTextNode(String(n.nodeValue || '').slice(0, 300)); }
+    if (n.nodeType !== 1 || depth > 40 || cnt.n > 900) return null;
+    let tag = String(n.localName || '').toLowerCase(); if (!SNAP_TAGS.test(tag)) return null;
+    if (tag === 'a') tag = 'span';   // a link on the child's screen is shown as plain text: the mentor can not be sent anywhere
+    cnt.n++;
+    const svg = /^(svg|g|path|circle|rect|line|polyline|polygon|ellipse|text|tspan)$/.test(tag);
+    const el = svg ? d.createElementNS('http://www.w3.org/2000/svg', tag) : d.createElement(tag);
+    for (const a of Array.from(n.attributes || [])) {
+      const k = String(a.name).toLowerCase(), v = String(a.value);
+      if (k === 'style') { if (!/url\s*\(|expression|@import|javascript:|<|\\/.test(v) && v.length <= 400) el.setAttribute('style', v); continue; }
+      if (k === 'src' && tag === 'img') { if (/^\/(?!\/)[\w\-./%]{1,200}$/.test(v) || /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]{1,6000}$/.test(v)) el.setAttribute('src', v); continue; }
+      if (k === 'class') { el.setAttribute('class', v.replace(/[^\w\- ]/g, '').slice(0, 120)); continue; }
+      if (SNAP_ATTR.test(k) && v.length <= 600 && !/javascript:|<|url\s*\(/i.test(v)) el.setAttribute(a.name, v);
+    }
+    if (tag === 'button') { el.setAttribute('tabindex', '-1'); el.setAttribute('type', 'button'); }
+    for (const c of Array.from(n.childNodes)) { const r = snapNode(c, d, depth + 1, cnt); if (r) el.appendChild(r); }
+    return el;
+  }
+  // Copies the children of src into dst (both are elements) through the cleaner. Returns how many nodes were copied.
+  function snapInto(src, dst, d) {
+    const cnt = { n: 0 };
+    for (const c of Array.from(src.childNodes)) { const r = snapNode(c, d, 0, cnt); if (r) dst.appendChild(r); }
+    return cnt.n;
+  }
   function liveBuild() {
     const doc = g.document, root = doc.getElementById('app'); if (!root) return null;
     const h = root.querySelector('h2'), out = [], skip = 'details, input, textarea, select, script, style, svg, [aria-hidden="true"], [data-nolive]';
@@ -96,7 +126,16 @@
       if (s && out[out.length - 1] !== s && out.length < 14) out.push(s);
     });
     let act = ''; try { act = String(g.BOLO && g.BOLO.activity ? g.BOLO.activity() || '' : '').slice(0, 40); } catch (e) {}
-    return { act, lines: out };
+    // The picture: a copy of the screen without the left-out parts, run through the cleaner and written as HTML text.
+    let html = '';
+    try {
+      const copy = root.cloneNode(true);
+      copy.querySelectorAll(SNAP_DROP).forEach(x => { if (x.parentNode) x.parentNode.removeChild(x); });
+      const box = doc.createElement('div');
+      if (snapInto(copy, box, doc) > 0) html = box.innerHTML;
+    } catch (e) { html = ''; }
+    if (html.length > LIVE_MAX) html = '';   // too big for one document: the mentor still gets the words
+    return { act, lines: out, html };
   }
   async function livePush(force) {
     const C = cloud(); if (role() !== 'kid' || !C || !S.uid || !S.kid.link || !C.putLive) return;
@@ -106,7 +145,7 @@
     const key = JSON.stringify(b), now = Date.now();
     if (!force && key === S.liveKey && now - S.liveAt < 15000) return;
     S.liveKey = key; S.liveAt = now; S.liveOn = true;
-    try { await C.putLive(code, { at: now, act: b.act, lines: b.lines }); } catch (e) { S.liveKey = ''; }
+    try { await C.putLive(code, { at: now, act: b.act, lines: b.lines, html: b.html }); } catch (e) { S.liveKey = ''; }
   }
   async function repPush(force) {
     const C = cloud(); if (role() !== 'kid' || !C || !S.uid || !S.kid.link || !seen()) return;
@@ -279,6 +318,7 @@
 .md-flag{display:inline-flex;align-items:center;gap:6px;margin:6px 6px 0 0;padding:4px 10px;border-radius:99px;font-size:12.5px;font-weight:600}.md-flag.a{background:rgba(245,158,11,.18);color:#b45309}.md-flag.r{background:rgba(239,68,68,.16);color:#b91c1c}
 :root[data-theme="dark"] .md-flag.a{color:#fbbf24}:root[data-theme="dark"] .md-flag.r{color:#fca5a5}@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .md-flag.a{color:#fbbf24}:root:not([data-theme="light"]) .md-flag.r{color:#fca5a5}}
 .md-live{display:flex;align-items:center;gap:8px;margin:10px 0 0;padding:8px 12px;border-radius:12px;background:rgba(34,197,94,.14)}
+.md-mirror{max-width:480px;max-height:70vh;overflow:auto;padding:8px;border-radius:14px;border:1px solid rgba(0,0,0,.12);background:var(--bg)}.md-mirror-in{pointer-events:none;user-select:none;-webkit-user-select:none}.md-mirror-in *{pointer-events:none!important;animation:none!important}
 .md-tg{margin-top:12px;padding:12px;border-radius:16px;background:rgba(99,102,241,.1)}.md-bar{height:10px;border-radius:99px;background:rgba(99,102,241,.2);overflow:hidden}.md-bar u{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--k1),var(--k2))}
 .md-done{display:inline-flex;align-items:center;gap:4px;font-weight:700;color:#15803d}:root[data-theme="dark"] .md-done{color:#4ade80}@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .md-done{color:#4ade80}}
 .md-n[aria-pressed="true"],.md-f[aria-pressed="true"]{background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff}
@@ -569,20 +609,30 @@
       <div class="md-body">${flagH}${live}${watch}${askBox}${last}${target}${prog}${week}${voice}
         <div class="chips" style="margin-top:14px">${wa}<button class="chip" data-kl="mleave" data-v="${esc(k.code)}">${ok ? 'Is bachche se hatao' : 'Request wapas lo'}</button></div></div></div>`;
   }
-  // Live screen on the mentor's side: words only, drawn with textContent-safe escaping; older than 20 s means the phone is in the background.
+  // Live screen on the mentor's side: the child's screen drawn again through the cleaner (never innerHTML of what came from Firestore), read-only. Older than 20 s means the phone is in the background.
   function liveHTML(l) {
     if (!l) return '<p class="mut" style="margin:0">Bachche ka screen yahan dikhega (kuch second mein).</p>';
     if (Date.now() - (+l.at || 0) > 20000) return '<p class="mut" style="margin:0">Bachche ka phone background mein hai ya Orbit band hai.</p>';
     const ln = (Array.isArray(l.lines) ? l.lines : []).slice(0, 14).map(x => `<div style="padding:3px 0">${esc(String(x).slice(0, 60))}</div>`).join('');
     return `${l.act ? `<p style="margin:0 0 4px"><b>${esc(String(l.act).slice(0, 40))}</b></p>` : ''}<div class="md-ln" style="padding:8px 12px;border-radius:12px;background:rgba(0,0,0,.05)">${ln || '<span class="mut">Abhi koi sawaal nahi.</span>'}</div>`;
   }
-  // Updates the open box in place with text nodes only (no innerHTML): what the child's screen shows is never run as HTML.
+  // Updates the open box in place: the copy is built node by node (snapInto), so what the child's screen shows is never run as HTML or script.
   function liveFill(el, l) {
     const d = g.document, mk = (tag, txt, st) => { const n = d.createElement(tag); n.textContent = txt; if (st) n.setAttribute('style', st); return n; };
     while (el.firstChild) el.removeChild(el.firstChild);
     if (!l) { el.appendChild(mk('p', 'Bachche ka screen yahan dikhega (kuch second mein).', 'margin:0')); return; }
     if (Date.now() - (+l.at || 0) > 20000) { el.appendChild(mk('p', 'Bachche ka phone background mein hai ya Orbit band hai.', 'margin:0')); return; }
     if (l.act) { const p = d.createElement('p'); p.setAttribute('style', 'margin:0 0 4px'); p.appendChild(mk('b', String(l.act).slice(0, 40))); el.appendChild(p); }
+    if (typeof l.html === 'string' && l.html && l.html.length <= LIVE_MAX) {
+      let n = 0;
+      try {
+        const mirror = d.createElement('div'); mirror.className = 'md-mirror';   // the outer box scrolls; the copy inside can not be touched
+        const inner = d.createElement('div'); inner.className = 'md-mirror-in'; inner.setAttribute('inert', ''); inner.setAttribute('aria-hidden', 'true'); mirror.appendChild(inner);
+        const parsed = new g.DOMParser().parseFromString('<body>' + l.html + '</body>', 'text/html');
+        n = snapInto(parsed.body, inner, d);
+        if (n > 0) { el.appendChild(mirror); el.appendChild(mk('p', 'Sirf dekh sakte ho: yahan dabane se bachche ki screen par kuch nahi badlega.', 'margin:6px 0 0;font-size:12.5px;opacity:.7')); return; }
+      } catch (e) { n = 0; }
+    }
     const box = d.createElement('div'); box.className = 'md-ln'; box.setAttribute('style', 'padding:8px 12px;border-radius:12px;background:rgba(0,0,0,.05)');
     const lines = (Array.isArray(l.lines) ? l.lines : []).slice(0, 14);
     lines.forEach(x => box.appendChild(mk('div', String(x).slice(0, 60), 'padding:3px 0')));

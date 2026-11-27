@@ -35,7 +35,7 @@ function cloudFor(db, uid) {
       leave: async code => { delete (db.parents[code] || {})[uid]; db.kids[uid] = (db.kids[uid] || []).filter(c => c !== code); },
       forget: async code => { db.kids[uid] = (db.kids[uid] || []).filter(c => c !== code); },
       // Online / Offline and mentors (same rules as firestore.rules: the child writes presence; a parent approves; only an approved mentor reads)
-      putLive: async (code, l) => { if (!db.links[code] || db.links[code].kidUid !== uid) throw denied(); if (!l || Object.keys(l).some(k => !['at', 'act', 'lines'].includes(k)) || !Array.isArray(l.lines) || l.lines.length > 14) throw denied(); db.live[code] = l; },
+      putLive: async (code, l) => { if (!db.links[code] || db.links[code].kidUid !== uid) throw denied(); if (!l || Object.keys(l).some(k => !['at', 'act', 'lines', 'html'].includes(k)) || !Array.isArray(l.lines) || l.lines.length > 14 || ('html' in l && (typeof l.html !== 'string' || l.html.length > 60000))) throw denied(); db.live[code] = l; },
       getLive: async code => { const m = (db.mentors[code] || {})[uid], own = db.links[code] && db.links[code].kidUid === uid, par = (db.parents[code] || {})[uid]; if (!(own || par || (m && m.status === 'approved' && +m.listenUntil > Date.now()))) return null; return db.live[code] || null; },
       delLive: async code => { if (db.links[code] && db.links[code].kidUid === uid) delete db.live[code]; },
       putPres: async (code, p) => { if (!db.links[code] || db.links[code].kidUid !== uid) throw denied(); db.pres[code] = p; },
@@ -221,12 +221,30 @@ async function boot(db, uid, { role } = {}) {
   t('the child\'s screen says "Mentor sun rahe hain" with a Band karo button', /Mentor sun rahe hain/.test(kid.app()) && /Rahul/.test(kid.app()) && !!kid.d.querySelector('[data-kl=kstop]'));
   men.click('[data-kl=mrefresh]'); await tick(150);
   t('the mentor now sees the listening time and can open the recordings', /Awaaz sunne ka time/.test(men.app()) && !!men.d.querySelector('[data-br=mtoggle]'));
-  // Live screen (words only): the child's phone writes it only while the window is open; the mentor sees it inside the window.
+  // Live screen (a cleaned copy of the real screen + the words as fallback): the child's phone writes it only while the window is open; the mentor sees it inside the window.
   await kid.w.KIDLINK._livePush(true); await tick(80);
   const lv = db.live[kcode];
-  t('window open: the child phone writes the words on its screen (act + lines, nothing else)', !!lv && Object.keys(lv).sort().join() === 'act,at,lines' && Array.isArray(lv.lines) && lv.lines.length <= 14 && lv.lines.every(x => typeof x === 'string' && x.length <= 60));
+  t('window open: the child phone writes its screen (act + lines + html, nothing else)', !!lv && Object.keys(lv).sort().join() === 'act,at,html,lines' && Array.isArray(lv.lines) && lv.lines.length <= 14 && lv.lines.every(x => typeof x === 'string' && x.length <= 60));
   t('the live words never include the Parent ke liye box (PIN and settings)', !lv.lines.some(x => /PIN|Parent ke liye|Badalne ke liye/.test(x)));
+  t('the live html is a real copy of the screen (not empty, under the size limit)', typeof lv.html === 'string' && lv.html.length > 50 && lv.html.length <= 60000);
+  t('the live html never has the Parent ke liye box, PIN, inputs, scripts, handlers or data-bl', !/Parent ke liye|Badalne ke liye|PIN|<details|<summary|<input|<textarea|<select|<script|<iframe| on[a-z]+=|data-bl|data-kl|javascript:/i.test(lv.html));
+  t('the live html never has the line "Recording parent ko bhej di gayi"', !/Recording parent ko bhej di gayi/.test(lv.html));
   t('the mentor card has a Live screen box', !!men.d.querySelector('[data-kl-live]') && /Live screen/.test(men.app()));
+  await men.w.KIDLINK._liveTick(); await tick(50);
+  const mir = men.d.querySelector('[data-kl-live] .md-mirror-in');
+  t('the mentor sees the real screen copy (mirror), read-only (inert)', !!mir && mir.hasAttribute('inert') && mir.textContent.trim().length > 5 && !mir.querySelector('details, input, script, [data-bl]'));
+  t('the mirror has no Parent ke liye text', !/Parent ke liye|Badalne ke liye/.test(mir.textContent));
+  // A tampered document must not run anything on the mentor's phone: script, handlers, outside images, links, details and data-bl are all cut out.
+  men.w.__x = 0; men.w.__y = 0; men.w.__z = 0;
+  db.live[kcode] = { at: Date.now(), act: 'Saath', lines: ['x'], html: '<div class="card" onclick="window.__z=1" style="background:url(https://evil.example/a.png)">Namaste<script>window.__x=1</script><img src="https://evil.example/x.png" onerror="window.__y=1"><a href="javascript:alert(1)">link</a><button class="chip" data-bl="next" onclick="window.__z=1">Aage</button><details open><summary>Parent ke liye</summary><p>PIN 1234</p></details><input value="secret"><span class="mut" style="color:red">sahi</span></div>' };
+  await men.w.KIDLINK._liveTick(); await tick(50);
+  const mir2 = men.d.querySelector('[data-kl-live] .md-mirror-in');
+  t('tampered html: the good parts still show (text, button, class, plain style)', !!mir2 && /Namaste/.test(mir2.textContent) && /Aage/.test(mir2.textContent) && !!mir2.querySelector('.card') && !!mir2.querySelector('.chip') && !!mir2.querySelector('span[style*="color:red"]'));
+  t('tampered html: no script, handler, outside image, link, details, input or data-bl', !mir2.querySelector('script, details, input, a, [data-bl], [onclick], [onerror], img[src]') && !/PIN 1234|secret|Parent ke liye/.test(mir2.textContent) && !/url\(/.test(mir2.innerHTML) && men.w.__x === 0 && men.w.__y === 0 && men.w.__z === 0);
+  t('tampered html: buttons in the mirror do nothing (inert, tabindex -1)', mir2.hasAttribute('inert') && mir2.querySelector('button').getAttribute('tabindex') === '-1');
+  db.live[kcode] = { at: Date.now(), act: 'Saath', lines: ['Fallback line'], html: 'x'.repeat(60001) };
+  await men.w.KIDLINK._liveTick(); await tick(50);
+  t('html over the size limit is ignored and the words show instead', !men.d.querySelector('[data-kl-live] .md-mirror') && /Fallback line/.test(men.d.querySelector('[data-kl-live]').textContent));
   db.live[kcode] = { at: Date.now(), act: 'ABC Levels', lines: ['Level 1 · 1 / 10', 'Fish — ye kis letter se shuru hota hai?', 'F', 'B', 'C', 'Y', '<img src=x onerror=alert(1)>'] };
   await men.w.KIDLINK._liveTick(); await tick(50);
   const box = men.d.querySelector('[data-kl-live]');
