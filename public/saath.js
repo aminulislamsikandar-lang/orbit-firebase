@@ -96,9 +96,9 @@
       rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
       const stopped = new Promise(r => { rec.onstop = r; });
       rec.start(1000); const t0 = Date.now();
-      let peak = 0; const c0 = Date.now(), calib = o.calibMs == null ? 1000 : o.calibMs;
-      while (Date.now() - c0 < calib && !S.cancel) { peak = Math.max(peak, level()); await sleep(30); }   // 1 s of quiet: the room's own noise sets the level that counts as a voice
-      const base = BC.threshold(peak), thr = base * S.mult;   // base: the room's level x 2.5; the parent's slider scales it (x1 at the middle)
+      let peak = 0; const cal = [], c0 = Date.now(), calib = o.calibMs == null ? 1000 : o.calibMs;
+      while (Date.now() - c0 < calib && !S.cancel) { cal.push(level()); await sleep(30); }   peak = BC.ambient(cal);   // 1 s of quiet: the room's own noise sets the level that counts as a voice
+      const base = BC.threshold(peak, 0.015), thr = base * S.mult;   // base: the room's level x 2.5; the parent's slider scales it (x1 at the middle)
       if (!S.cancel) {
         au = new g.Audio(K.SRC);
         const done = new Promise(r => { S.end = r; au.onended = () => { natural = true; r(); }; au.onerror = () => r(); });

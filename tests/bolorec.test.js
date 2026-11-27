@@ -18,6 +18,8 @@ const REP = { total: 3, letters: [{ i: 0, l: 'ক', t: 1000, s: 1 }, { i: 1, l: 
   t('spoke: 250 ms of sound counts, less does not', C.spoke(250) && !C.spoke(249) && !C.spoke(0) && !C.spoke(undefined));
   t('window: lead + clip + quiet time, clip length is capped', C.windowMs(1000) === C.LEAD_MS + 1000 + C.GAP_MS && C.windowMs(1e9) === C.LEAD_MS + 10000 + C.GAP_MS && C.windowMs(-5) === C.LEAD_MS + C.GAP_MS);
   t('threshold: never below 0.02, 2.5 times the room noise above it', C.threshold(0) === 0.02 && Math.abs(C.threshold(0.1) - 0.25) < 1e-9);
+  t('threshold: an optional lower floor works, the default stays 0.02', C.threshold(0, 0.015) === 0.015 && C.threshold(0) === 0.02 && Math.abs(C.threshold(0.1, 0.015) - 0.25) < 1e-9);
+  t('ambient: one loud click in the quiet second does not set the room level; empty or bad input is 0', C.ambient([0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.5]) === 0.01 && C.ambient([]) === 0 && C.ambient(null) === 0 && C.ambient([0.02]) === 0.02);
   t('TTL is exactly 2 hours', C.TTL_MS === 7200000);
   t('ids: 13 digits + 6 chars, time can be read back', C.okId(C.newId(1700000000000)) && C.idTime(C.newId(1700000000123)) === 1700000000123 && !C.okId('../x') && !C.okId('1700000000000-ABCDEF'));
   t('expired: just under 2 hours is kept, 2 hours is gone, bad id is gone', !C.expired(C.newId(1000), 1000 + C.TTL_MS - 1) && C.expired(C.newId(1000), 1000 + C.TTL_MS) && C.expired('nope', 1));

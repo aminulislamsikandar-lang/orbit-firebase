@@ -22,7 +22,9 @@
   const extOf = m => MIMES[cleanMime(m)] || '';
   const windowMs = clipMs => LEAD_MS + Math.max(0, Math.min(10000, +clipMs || 0)) + GAP_MS;   // how long one letter's window lasts
   const spoke = voicedMs => (+voicedMs || 0) >= MIN_VOICE_MS;
-  const threshold = ambientPeak => Math.max(0.02, (+ambientPeak || 0) * 2.5);   // RMS level that counts as a voice
+  const threshold = (ambientPeak, floor) => Math.max(+floor > 0 ? +floor : 0.02, (+ambientPeak || 0) * 2.5);   // RMS level that counts as a voice (floor: optional, default 0.02)
+  // The room's level from the quiet-time samples: the 90th percentile, so one tap or click does not raise the line for the whole session.
+  const ambient = levels => { const a = (Array.isArray(levels) ? levels : []).filter(x => Number.isFinite(x) && x >= 0).sort((p, q) => p - q); return a.length ? a[Math.min(a.length - 1, Math.floor(a.length * 0.9))] : 0; };
 
   const int = (v, lo, hi) => { v = Math.round(+v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : lo; };
   // The report that travels with a recording: how many letters, and for each letter when it started (ms from the recording start) and whether any sound came.
@@ -33,5 +35,5 @@
     return { total: int(r.total, letters.length, MAX_LETTERS), letters };
   }
   const silentOf = rep => (rep && rep.letters || []).filter(x => !x.s);
-  return { TTL_MS, MIN_VOICE_MS, GAP_MS, LEAD_MS, MAX_LETTERS, MAX_AUDIO_B64, MAX_SESSION_MS, okCode, okId, newId, idTime, expired, cleanMime, extOf, windowMs, spoke, threshold, cleanReport, silentOf };
+  return { TTL_MS, MIN_VOICE_MS, GAP_MS, LEAD_MS, MAX_LETTERS, MAX_AUDIO_B64, MAX_SESSION_MS, okCode, okId, newId, idTime, expired, cleanMime, extOf, windowMs, spoke, threshold, ambient, cleanReport, silentOf };
 });

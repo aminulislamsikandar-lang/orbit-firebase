@@ -25,7 +25,7 @@
   const rows = () => { const out = []; let k = 0; ROWS.forEach(n => { const r = []; for (let j = 0; j < COLS; j++) r.push(j < n ? k++ : -1); out.push(r); }); return out; };
   const pic = i => '/swar/swar-' + String(i + 1).padStart(2, '0') + '.webp?v=' + V;
   // The parent's "how loud must the voice be" slider (1 = very soft ... 5 = very loud), the same one as Saath me bolo. 3 = the room's own noise x 2.5.
-  const SENS = [0.4, 0.7, 1, 1.6, 2.4];
+  const SENS = [0.4, 0.7, 1, 1.3, 1.8];
   const vol = v => { v = Math.round(+v); return Number.isFinite(v) ? Math.min(5, Math.max(1, v)) : 3; };
   const mult = v => SENS[vol(v) - 1];
   const SPOKE_MS = 80;   // this much sound above the line inside a vowel's window turns the vowel green (two 40 ms checks)

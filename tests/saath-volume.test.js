@@ -69,7 +69,7 @@ const fire = (w, el, type) => el.dispatchEvent(new w.Event(type, { bubbles: true
   b = boot({ vol: 4 });
   const chip = [...b.d.querySelectorAll('.bl-chips [data-bl=mode]')].find(x => x.dataset.v === 'saath'); chip.click();
   const mk = () => +b.q('#saMk').style.left.replace('%', '');
-  t('Saath screen: the line sits at 35% x multiplier (Tez = 56%)', Math.abs(mk() - 56) < 0.2, String(mk()));
+  t('Saath screen: the line sits at 35% x multiplier (Tez = 45.5%)', Math.abs(mk() - 45.5) < 0.2, String(mk()));
   b.q('[data-bl=auto]').click();
   t('Start passes the loudness step to the recorder', b.w.__starts.length === 1 && b.w.__starts[0].sens === 4);
   b = boot({ vol: 1 }); [...b.d.querySelectorAll('.bl-chips [data-bl=mode]')].find(x => x.dataset.v === 'saath').click();
@@ -79,7 +79,7 @@ const fire = (w, el, type) => el.dispatchEvent(new w.Event(type, { bubbles: true
 
   // the recorder code: the parent's step scales the room level; the bar scale does not change with the slider
   const sa = rd('public/saath.js');
-  t('recorder: threshold = room level x 2.5 x the parent multiplier, and the bar is drawn against the unscaled level', /const base = BC\.threshold\(peak\), thr = base \* S\.mult;/.test(sa) && /Math\.min\(100, l \/ base \* 35\)/.test(sa) && /l > thr\) S\.voiced\[i\] \+= dt/.test(sa));
+  t('recorder: threshold = room level x 2.5 x the parent multiplier, and the bar is drawn against the unscaled level', /const base = BC\.threshold\(peak, 0\.015\), thr = base \* S\.mult;/.test(sa) && /Math\.min\(100, l \/ base \* 35\)/.test(sa) && /l > thr\) S\.voiced\[i\] \+= dt/.test(sa));
   t('recording, red alerts and the 41-letter grid are unchanged (still the same calls)', /S\.cells\[k\] = ok \? 1 : 2/.test(sa) && /BOLOREC\.send/.test(sa) && /K\.letterAt\(t\)/.test(sa));
   console.log(pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

@@ -21,7 +21,7 @@
   const startMs = (off, i) => Math.max(0, Math.round(((+off || 0) + CUES[i][0]) * 1000));
   const rows = () => { const out = []; let k = 0; ROWS.forEach(n => { const r = []; for (let j = 0; j < 5; j++) r.push(j < n ? k++ : -1); out.push(r); }); return out; };
   // The parent's "how loud must the voice be" slider (1 = very soft ... 5 = very loud). 3 is the level used before this slider existed (the room's own noise x 2.5).
-  const SENS = [0.4, 0.7, 1, 1.6, 2.4];
+  const SENS = [0.4, 0.7, 1, 1.3, 1.8];
   const vol = v => { v = Math.round(+v); return Number.isFinite(v) ? Math.min(5, Math.max(1, v)) : 3; };
   const mult = v => SENS[vol(v) - 1];
   const SPOKE_MS = 80;   // this much sound above the line inside a letter's window turns the letter green (two 40 ms checks), so a short "ka" counts as soon as it crosses the line
