@@ -410,14 +410,15 @@ service cloud.firestore {
           && (!('act' in request.resource.data) || (request.resource.data.act is string && request.resource.data.act.size() <= 40));
         allow delete: if kidOwner(code);
       }
-      // Live screen (text only): the words on the child's screen (game, level, question, answer buttons), written by the child's phone about every 5 s ONLY while a parent has opened a mentor's window
-      // (the same 1-hour window as listening); the mentor can read it only inside that window. No photo, no audio, nothing typed.
+      // Live screen: a cleaned copy of the child's screen (html, same boxes and letters) plus the words (lines) as a fallback, written by the child's phone about every 5 s ONLY while a parent has opened a mentor's window
+      // (the same 1-hour window as listening); the mentor can read it only inside that window. The Parent ke liye box is never in it. No photo, no audio, nothing typed.
       match /state/live {
         allow read: if kidOwner(code) || kidParent(code) || mentorListens(code);
         allow create, update: if kidOwner(code)
-          && request.resource.data.keys().hasOnly(['at', 'act', 'lines'])
+          && request.resource.data.keys().hasOnly(['at', 'act', 'lines', 'html'])
           && request.resource.data.at is number
           && (!('act' in request.resource.data) || (request.resource.data.act is string && request.resource.data.act.size() <= 40))
+          && (!('html' in request.resource.data) || (request.resource.data.html is string && request.resource.data.html.size() <= 60000))
           && request.resource.data.lines is list && request.resource.data.lines.size() <= 14;
         allow delete: if kidOwner(code);
       }
