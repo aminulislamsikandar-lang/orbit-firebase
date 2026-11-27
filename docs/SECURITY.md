@@ -15,6 +15,11 @@ Orbit's students are children. The most sensitive things in the app are the **pa
 | Headers (API server) | Same basics on every response, `Cache-Control: no-store` for personal API answers, `X-Powered-By` off. | `security.js` |
 | Rate limit | 20 AI requests / minute and 40 picture searches / minute **per logged-in student**, not per IP (a school WiFi, or Render's proxy, gives many students one IP). Idle entries are pruned. | `security.js`, `server.js` |
 | Admin | Server checks the verified Firebase token, verified e-mail and the admin list. | `server.js` (`isAdminReq`) |
+| Login before parsing | The Firebase login check runs **before** any request body is read. A stranger sending a 4 MB body or broken JSON gets `401` without the server parsing it. `/csp-report` has its own 8 kB parser and needs no login. | `server.js`, `tests/auth-order.test.js` |
+| Wrong-login limit | Wrong or missing logins are counted per IP (`trust proxy` = 1 on Render): the 31st in a minute gets `429`. A correct login is never counted, so a school WiFi is not blocked. | `server.js`, `security.js` |
+| Fail closed | If Firestore cannot be read, the course lock uses the student's last known lock (up to 24 h old); with none, the gated routes answer `503`, they do not open. The free-plan gate does the same. Admins are never blocked. `REQUIRE_FIRESTORE=true` makes a missing service account a startup error. | `course-lock-core.js` (`makeLockReader`), `server.js`, `tests/lock-reader.test.js` |
+| Cron key | `/api/study/tick` takes the key in the `x-cron-key` header. The old `?key=` still works but logs a warning (at most once an hour), because URLs end up in logs. | `study-routes.js` |
+| Video errors | Students get a plain message when storage fails; the Backblaze status and code go to the admin only. | `server.js` |
 
 ## Content-Security-Policy rollout
 
@@ -32,7 +37,9 @@ CSP violation: connect-src blocked=https://example.com/x page=https://orbittutor
 ## Known open items
 
 - `npm audit` (production dependencies) shows moderate advisories that come through `firebase-admin` (Google Cloud storage libraries). No high or critical ones. Fixing needs a major `firebase-admin` upgrade; Dependabot will propose it, test it on a branch first.
-- Daily limits (`MV_USE`, free-check counters) are kept in server memory and reset when Render restarts.
+- Daily limits (`MV_USE`, free-check counters) are kept in server memory and reset when Render restarts. Set `FIREBASE_SERVICE_ACCOUNT` and `REQUIRE_FIRESTORE=true` on Render so the limits and the course lock live in Firestore and the server refuses to start without it.
+- `npm audit fix` (without `--force`) changes nothing. The 8 remaining moderate advisories (`uuid` buffer bounds check, through `firebase-admin` -> `@google-cloud/*` -> `teeny-request` / `retry-request` / `gaxios`) are fixed only by `firebase-admin@14.5.1`, a major upgrade. The `uuid` issue needs a caller to pass a `buf` argument, which this code does not. Upgrade in its own pull request and run `npm test`.
+- The Content-Security-Policy is still Report-Only and still allows `'unsafe-inline'` scripts (see the rollout above). A partial enforcing header (`object-src`, `base-uri`, `frame-ancestors`) was **not** added on purpose: Firebase Hosting merges header rules by key, and a second `Content-Security-Policy` on `**` could override the `sandbox` header of `/public-videos/**`. Do it only after testing that on a preview channel.
 - Third-party scripts (Google Analytics, Clarity) run on the page by design; they can see page content that is not masked.
 - Chrome / Safari Content-Security-Policy support for `report-uri` is complete; the newer `report-to` is not used.
 

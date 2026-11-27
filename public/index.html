@@ -236,7 +236,7 @@ body.kidmode{--bg:#fff3c4;--card:#fff;--tx:#2b1a4a;--mut:#7a5a9a;--ln:#ffcf5c;--
 <aside id="side" class="side" aria-label="Menu" aria-hidden="true" inert></aside>
 <div id="inst" class="inst" hidden></div>
 <div id="app"><h1 style="font-size:26px;margin-top:14px">Orbit Tutorial</h1><p class="mut">Free AI study helper for school students in Assam: textbook-style answers, diagrams and translations for Class 7, Class 8 and Class 10 (English, Mathematics, Science). Log in with Google to start.</p><p class="mut"><span class="busy-spin" aria-hidden="true"></span>Loading…</p></div>
-<footer class="seofoot"><div><a href="/learn/">All classes and subjects</a> · <a href="/seba-class-10-notes/">SEBA Class 10 notes</a> · <a href="/notes/">Free notes</a></div><div><a href="/about/">About</a> · <a href="/faq/">FAQ</a> · <a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a> · <a href="/contact/">Contact</a></div><div class="soc"><a href="https://www.instagram.com/ameen_ul_islam1/" target="_blank" rel="noopener noreferrer" aria-label="Instagram: ameen_ul_islam1" title="Instagram: ameen_ul_islam1"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="3"/><path d="M16.5 7.5v.01"/></svg></a><a href="https://www.instagram.com/arjina5136/" target="_blank" rel="noopener noreferrer" aria-label="Instagram: arjina5136" title="Instagram: arjina5136"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="3"/><path d="M16.5 7.5v.01"/></svg></a><span role="img" aria-label="Facebook (link coming soon)" title="Facebook (coming soon)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v4h3v7h4v-7h3l1-4h-4V8a1 1 0 0 1 1-1h3V3h-3a5 5 0 0 0-5 5v2H7"/></svg></span><span role="img" aria-label="YouTube (link coming soon)" title="YouTube (coming soon)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="4"/><path d="M10 9l5 3-5 3z"/></svg></span><a href="https://wa.me/919678295156?text=Orbit%20Tutorial%3A%20" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" title="WhatsApp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21l1.65-3.8a9 9 0 1 1 3.4 2.9L3 21"/><path d="M9 10a.5.5 0 0 0 1 0V9a.5.5 0 0 0-1 0v1a5 5 0 0 0 5 5h1a.5.5 0 0 0 0-1h-1a.5.5 0 0 0 0 1"/></svg></a></div></footer>
+<footer class="seofoot"><div><a href="/learn/">All classes and subjects</a> · <a href="/seba-class-10-notes/">SEBA Class 10 notes</a> · <a href="/notes/">Free notes</a></div><div><a href="/about/">About</a> · <a href="/faq/">FAQ</a> · <a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a> · <a href="/refund/">Refunds</a> · <a href="/contact/">Contact</a></div><div class="soc"><a href="https://www.instagram.com/ameen_ul_islam1/" target="_blank" rel="noopener noreferrer" aria-label="Instagram: ameen_ul_islam1" title="Instagram: ameen_ul_islam1"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="3"/><path d="M16.5 7.5v.01"/></svg></a><a href="https://www.instagram.com/arjina5136/" target="_blank" rel="noopener noreferrer" aria-label="Instagram: arjina5136" title="Instagram: arjina5136"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="3"/><path d="M16.5 7.5v.01"/></svg></a><span role="img" aria-label="Facebook (link coming soon)" title="Facebook (coming soon)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v4h3v7h4v-7h3l1-4h-4V8a1 1 0 0 1 1-1h3V3h-3a5 5 0 0 0-5 5v2H7"/></svg></span><span role="img" aria-label="YouTube (link coming soon)" title="YouTube (coming soon)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="4"/><path d="M10 9l5 3-5 3z"/></svg></span><a href="https://wa.me/919678295156?text=Orbit%20Tutorial%3A%20" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" title="WhatsApp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21l1.65-3.8a9 9 0 1 1 3.4 2.9L3 21"/><path d="M9 10a.5.5 0 0 0 1 0V9a.5.5 0 0 0-1 0v1a5 5 0 0 0 5 5h1a.5.5 0 0 0 0-1h-1a.5.5 0 0 0 0 1"/></svg></a></div></footer>
 <script src="/config.js"></script>
 <script src="/catalog.js"></script>
 <script src="/publicchapters.js"></script>
@@ -960,7 +960,26 @@ window.orbitRedraw=()=>{if(DATA)draw()};
 window.orbitQ=id=>{const x=IDX[id];if(!x)return null;const q=x.q;return{id,courseId:x.course.id,chapter:x.ch.no,label:q.label||('Q'+q.no+'.'),text:[q.text].concat(q.parts||[]).filter(Boolean).join(' ').slice(0,160),count:qVids(id).length}};
 window.qvAdded=rec=>{CLOUD_V=CLOUD_V.filter(v=>v.id!==rec.id).concat([rec]);mergeV()};
 window.qvRemoved=id=>{CLOUD_V=CLOUD_V.filter(v=>v.id!==id);delete VID[id];mergeV()};
-function vidFail(id){const s=VID[id];if(!s)return;delete s.url;s.err='Video chal nahi paayi. Dobara dabao. Phir bhi na chale to video ka format (mp4, H.264) check karo.';draw()}
+function vidGiveUp(id){const s=VID[id];if(!s)return;delete s.url;s.renewed=false;s.err='Video chal nahi paayi. Dobara dabao. Phir bhi na chale to video ka format (mp4, H.264) check karo.';draw()}
+// The signed video link can run out while a student watches (it lives VIDEO_URL_TTL seconds). First failure: ask the server for a NEW link once and put it on the SAME video element
+// (same position, resumes only if it was playing, no redraw). Only if that also fails the old "Video chal nahi paayi" message is shown.
+function vidFail(id){
+ const s=VID[id];if(!s)return;
+ if(s.url&&!s.renewed){
+  const el=document.querySelector('video[data-vo="'+String(id).replace(/["\\]/g,'')+'"]');
+  if(el){
+   s.renewed=true;const t=el.currentTime||0,was=!el.paused;
+   api('/api/video',{id}).then(j=>{
+    const c=VID[id];if(!c||!c.url||!j||!j.url)return vidGiveUp(id);
+    c.url=j.url;el.addEventListener('loadedmetadata',()=>{try{if(t>0)el.currentTime=t}catch(e){}if(was)el.play().catch(()=>{})},{once:true});
+    el.addEventListener('playing',()=>{const x=VID[id];if(x)x.renewed=false},{once:true});
+    el.src=j.url;el.load();
+   }).catch(()=>vidGiveUp(id));
+   return;
+  }
+ }
+ vidGiveUp(id);
+}
 // JSON ("plan") and HTML videos added from the admin menu: their content sits in Firestore videoCode/{id}
 function openHtmlVideo(title,html){   // self-contained HTML animation, run in a sandbox: it cannot reach the app, the login or storage
  closePV();stopSay();
@@ -1006,7 +1025,7 @@ async function openVideo(id){
  const s=VID[id]=VID[id]||{};
  if(s.url){delete s.url;draw();return}
  s.loading=true;s.err='';s.sub=false;draw();
- try{const j=await api('/api/video',{id});s.url=j.url}catch(e){s.err=errMsg(e);s.sub=!!e&&e.code==='subscription_required'}
+ try{const j=await api('/api/video',{id});s.url=j.url;s.renewed=false}catch(e){s.err=errMsg(e);s.sub=!!e&&e.code==='subscription_required'}
  s.loading=false;draw();
 }
 fetch('/videos.json').then(r=>r.ok?r.json():[]).then(v=>{STATIC_V=v;mergeV()}).catch(()=>{});
