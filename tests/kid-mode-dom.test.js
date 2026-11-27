@@ -378,13 +378,22 @@ async function boot(db, uid, { role } = {}) {
   t('with two children the online one comes first and the one needing attention next', order.length === 2 && order[0] === kcode && order[1] === 'WXYZ2345');
   const styleBefore = men.d.querySelector('[data-kl-mcard="' + kcode + '"]').getAttribute('style');
   t('every card has a valid colour pair', [...men.d.querySelectorAll('.md-card')].every(x => /--k1:#[0-9a-f]{6};--k2:#[0-9a-f]{6}/i.test(x.getAttribute('style'))));
-  t('filter buttons appear for two children, with counts', men.d.querySelectorAll('[data-kl=mfilter]').length === 3 && /Sab \(2\)/.test(men.app()) && /Dhyan chahiye \(1\)/.test(men.app()));
+  t('filter buttons appear for two children, with counts', men.d.querySelectorAll('[data-kl=mfilter]').length === 5 && /Sab \(2\)/.test(men.app()) && /Dhyan chahiye \(1\)/.test(men.app()));
   men.click('[data-kl=mfilter][data-v=attn]');
   t('the "Dhyan chahiye" filter shows only the child who needs attention', [...men.d.querySelectorAll('[data-kl-mcard]')].map(x => x.getAttribute('data-kl-mcard')).join() === 'WXYZ2345' && men.d.querySelector('[data-kl=mfilter][data-v=attn]').getAttribute('aria-pressed') === 'true');
   men.click('[data-kl=mfilter][data-v=online]');
   t('the Online filter shows only the online child', [...men.d.querySelectorAll('[data-kl-mcard]')].map(x => x.getAttribute('data-kl-mcard')).join() === kcode);
   men.click('[data-kl=mfilter][data-v=all]');
   t('Sab shows both again', men.d.querySelectorAll('[data-kl-mcard]').length === 2);
+  // The Namaste box stays on top and a child can be picked by name.
+  const stk = men.d.querySelector('.md-sticky');
+  t('the Namaste box and the picker are in one block that stays on top (sticky)', !!stk && !!stk.querySelector('.md-hero') && !!stk.querySelector('.md-sw') && /\.md-sticky\{position:sticky;top:0/.test(men.d.documentElement.innerHTML));
+  t('the picker lists every child by first name, plus Sab, Online and Dhyan chahiye', [...stk.querySelectorAll('[data-kl=mfilter]')].map(x => x.getAttribute('data-v')).join() === ['all', kcode, 'WXYZ2345', 'online', 'attn'].join() || [...stk.querySelectorAll('[data-kl=mfilter]')].map(x => x.getAttribute('data-v')).sort().join() === ['all', kcode, 'WXYZ2345', 'online', 'attn'].sort().join());
+  men.click('[data-kl=mfilter][data-v=' + kcode + ']');
+  t('tapping a child shows only that child and the Namaste box is still there', [...men.d.querySelectorAll('[data-kl-mcard]')].map(x => x.getAttribute('data-kl-mcard')).join() === kcode && !!men.d.querySelector('.md-sticky .md-hero') && men.d.querySelector('[data-kl=mfilter][data-v=' + kcode + ']').getAttribute('aria-pressed') === 'true');
+  men.click('[data-kl=mfilter][data-v=WXYZ2345]');
+  t('tapping the other child switches to that child', [...men.d.querySelectorAll('[data-kl-mcard]')].map(x => x.getAttribute('data-kl-mcard')).join() === 'WXYZ2345');
+  men.click('[data-kl=mfilter][data-v=all]');
   delete db.links.WXYZ2345; delete db.mentors.WXYZ2345; delete db.pres.WXYZ2345; db.mentees.men1 = db.mentees.men1.filter(c => c !== 'WXYZ2345');
   men.click('[data-kl=mrefresh]'); await tick(200);
   t('a child keeps the same colour after a refresh', men.d.querySelector('[data-kl-mcard="' + kcode + '"]').getAttribute('style') === styleBefore);

@@ -265,6 +265,12 @@
 .md-hero{margin-top:12px;border-radius:22px;padding:16px;color:#fff;background:linear-gradient(135deg,#6366f1,#a855f7 55%,#ec4899);box-shadow:0 10px 26px rgba(99,102,241,.35)}.md-hero small{display:block;opacity:.85;font-size:13px}.md-hero>div>b{font-size:24px}
 .md-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.md-stats>div{background:rgba(255,255,255,.18);border-radius:14px;padding:10px 6px;text-align:center}.md-stats b{display:block;font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}.md-stats span{font-size:11.5px;opacity:.95}.md-stats .md-warn{background:rgba(251,191,36,.95);color:#78350f}
 .md-hero p{margin:10px 0 0;font-size:13.5px}
+.md-sticky{position:sticky;top:0;z-index:20;margin:0 -16px;padding:8px 16px 8px;background:rgba(255,255,255,.62);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+:root[data-theme="dark"] .md-sticky{background:rgba(17,17,17,.7)}@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .md-sticky{background:rgba(17,17,17,.7)}}
+.md-sticky .md-hero{margin-top:0;padding:10px 12px;border-radius:18px}.md-sticky .md-hero small{display:inline;margin-right:6px}.md-sticky .md-hero>div>b{font-size:17px}
+.md-sticky .md-stats{margin-top:8px;gap:6px}.md-sticky .md-stats>div{padding:6px 4px;border-radius:12px}.md-sticky .md-stats b{font-size:18px}
+.md-sw{display:flex;gap:8px;overflow-x:auto;margin-top:8px;padding-bottom:2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}.md-sw::-webkit-scrollbar{display:none}
+.md-sw .chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.md-sw .md-dot{width:9px;height:9px;border-radius:50%;background:#9ca3af;flex:0 0 auto}.md-sw .md-dot.on{background:#22c55e}
 .md-card{margin-top:14px;border-radius:22px;overflow:hidden;background:var(--card);box-shadow:0 8px 22px rgba(0,0,0,.12)}
 .md-top{display:flex;align-items:center;gap:12px;padding:14px 16px;color:#fff;background:linear-gradient(135deg,var(--k1),var(--k2))}.md-av{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.24);font-weight:800;font-size:22px;flex:none}
 .md-nm{flex:1;min-width:0}.md-nm h2{margin:0 0 4px;font-size:20px;color:#fff}.md-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 11px;border-radius:99px;background:rgba(255,255,255,.24);font-size:13px}.md-pill .kl-dot{box-shadow:0 0 0 2px rgba(255,255,255,.6)}
@@ -599,15 +605,20 @@
     const appr = M.kids.filter(k => k.status === 'approved'), dk = dayKey();
     const onl = appr.filter(k => isOnline(k.pres)).length, attn = appr.filter(k => flagsOf(k).length).length;
     const tmin = appr.reduce((a, k) => a + min(onlineSec(k.pres, dk)), 0), tright = appr.reduce((a, k) => a + ((k.sum && k.sum.day === dk) ? +k.sum.ok || 0 : 0), 0);
-    const hero = appr.length ? `<div class="md-hero"><div><small>Namaste</small><b>${esc(firstName() || 'Mentor')}</b></div>
+    const heroBox = appr.length ? `<div class="md-hero"><div><small>Namaste</small><b>${esc(firstName() || 'Mentor')}</b></div>
       <div class="md-stats"><div><b>${appr.length}</b><span>Bachche</span></div><div><b>${onl}</b><span>Abhi online</span></div><div><b>${tmin}</b><span>Aaj ke min</span></div><div class="${attn ? 'md-warn' : ''}"><b>${attn}</b><span>Dhyan chahiye</span></div></div>
-      ${tright ? `<p>Aaj sab bachchon ne milkar <b>${tright}</b> sahi jawab diye.</p>` : ''}</div>` : '';
-    const F = ['all', 'online', 'attn'].includes(M.filter) ? M.filter : 'all';
-    const filt = M.kids.length >= 2 ? `<div class="chips" role="group" aria-label="Bachche chuno" style="margin-top:12px">${[['all', 'Sab (' + M.kids.length + ')'], ['online', 'Online (' + onl + ')'], ['attn', 'Dhyan chahiye (' + attn + ')']].map(x => `<button class="chip md-f" data-kl="mfilter" data-v="${x[0]}" aria-pressed="${F === x[0]}">${x[1]}</button>`).join('')}</div>` : '';
-    const shown = M.kids.filter(k => F === 'all' || (F === 'online' && k.status === 'approved' && isOnline(k.pres)) || (F === 'attn' && flagsOf(k).length))
+      </div>` : '';
+    const tsum = appr.length && tright ? `<p class="mut" style="margin:8px 0 0">Aaj sab bachchon ne milkar <b>${tright}</b> sahi jawab diye.</p>` : '';
+    // One picker: Sab, each child (tap to see only that child), then Online and Dhyan chahiye. It stays on top together with the Namaste box.
+    const F = ['all', 'online', 'attn'].includes(M.filter) || M.kids.some(k => k.code === M.filter) ? M.filter : 'all';
+    const kidsSorted = M.kids.slice().sort((a, b) => rankOf(a) - rankOf(b) || String(a.name).localeCompare(String(b.name)));
+    const pill = (v, label, dot) => `<button class="chip md-f" data-kl="mfilter" data-v="${esc(v)}" aria-pressed="${F === v}">${dot || ''}${label}</button>`;
+    const filt = M.kids.length >= 2 ? `<div class="md-sw" role="group" aria-label="Bachche chuno">${pill('all', 'Sab (' + M.kids.length + ')')}${kidsSorted.map(k => pill(k.code, esc(String(k.name || '?').trim().split(/\s+/)[0].slice(0, 14)), k.status === 'approved' ? `<i class="md-dot ${isOnline(k.pres) ? 'on' : ''}" aria-hidden="true"></i>` : '')).join('')}${pill('online', 'Online (' + onl + ')')}${pill('attn', 'Dhyan chahiye (' + attn + ')')}</div>` : '';
+    const hero = heroBox || filt ? `<div class="md-sticky">${heroBox}${filt}</div>${tsum}` : '';
+    const shown = M.kids.filter(k => F === 'all' || F === k.code || (F === 'online' && k.status === 'approved' && isOnline(k.pres)) || (F === 'attn' && flagsOf(k).length))
       .sort((a, b) => rankOf(a) - rankOf(b) || String(a.name).localeCompare(String(b.name)));
     const cards = shown.map(kidCard).join('');
-    return `<h1 style="font-size:26px;margin-top:14px">Mentor</h1>${hero}${filt}
+    return `<h1 style="font-size:26px;margin-top:14px">Mentor</h1>${hero}
       ${M.busy && !M.loaded ? '<p class="mut" style="margin-top:14px">Load ho raha hai…</p>' : cards || (M.kids.length ? '<p class="mut" style="margin-top:14px">Is filter me koi bachcha nahi hai.</p>' : '<p class="mut" style="margin-top:14px">Abhi koi bachcha juda nahi hai. Niche code daalo.</p>')}
       <div class="card" style="margin-top:14px"><h2 class="sec" style="margin:0 0 6px">Bachche ka code daalo</h2><p class="mut" style="margin:0 0 6px">Code bachche ke parent se lo. Parent ko request manzoor karni hogi.</p>
         <input id="klMCode" style="${field}" maxlength="9" autocomplete="off" autocapitalize="characters" placeholder="ABCD-EFGH" aria-label="Bachche ka code"><button class="btn" data-kl="madd" ${M.busy ? 'disabled' : ''} style="margin-top:10px">Request bhejo</button></div>
@@ -643,7 +654,7 @@
     else if (a === 'madd') menAdd();
     else if (a === 'mwa') menWa(b.dataset.v);
     else if (a === 'mtarget') menTarget(b.dataset.v, b.dataset.n);
-    else if (a === 'mfilter') { S.men.filter = ['all', 'online', 'attn'].includes(b.dataset.v) ? b.dataset.v : 'all'; draw(); }
+    else if (a === 'mfilter') { const v = b.dataset.v; S.men.filter = ['all', 'online', 'attn'].includes(v) || S.men.kids.some(k => k.code === v) ? v : 'all'; draw(); try { g.scrollTo(0, 0); } catch (e) {} }
     else if (a === 'mleave') menLeave(b.dataset.v);
     else if (a === 'mrefresh') { S.men.msg = ''; menLoad(true); }
   });
