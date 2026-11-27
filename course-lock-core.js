@@ -23,4 +23,33 @@ function decide({ admin, canRead, lock, courseIds, custom, ids }) {
   return { ok: true };
 }
 
-module.exports = { GATED, courseIdsOf, decide };
+// The student's course lock, read from Firestore through a small cache. If Firestore fails, the last known lock (up to staleMs old) is used, so a
+// hiccup never opens the gate; with nothing to fall back on, the error is thrown and the caller answers 503 (closed).
+// readDoc(uid) -> the lock object or null ("no course yet", never cached) and may throw.
+function makeLockReader({ readDoc, now = Date.now, freshMs = 600000, staleMs = 24 * 3600000, maxSize = 5000, warn = () => {} } = {}) {
+  const cache = new Map();   // uid -> { lock, at }
+  let warnedAt = 0;
+  async function get(uid) {
+    const hit = cache.get(uid);
+    if (hit && now() - hit.at < freshMs) return hit.lock;
+    try {
+      const lock = await readDoc(uid);
+      if (!lock) return null;
+      cache.set(uid, { lock, at: now() });
+      return lock;
+    } catch (e) {
+      if (hit && now() - hit.at < staleMs) {
+        if (now() - warnedAt > 600000) { warnedAt = now(); warn('Firestore read failed, using the last known lock: ' + (e && e.message)); }
+        return hit.lock;
+      }
+      throw e;
+    }
+  }
+  const forget = uid => cache.delete(uid);
+  const peek = uid => cache.get(uid);
+  const restore = (uid, entry) => { if (entry) cache.set(uid, entry); };
+  const prune = () => { if (cache.size > maxSize) cache.clear(); };
+  return { get, forget, peek, restore, prune, size: () => cache.size };
+}
+
+module.exports = { GATED, courseIdsOf, decide, makeLockReader };

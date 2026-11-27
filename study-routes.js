@@ -9,8 +9,9 @@
 //   studyParents/{parentUid} { children: [childUid], subs: [PushSubscription] }
 const C = require('./study-core');
 
-function make({ db, webpush, env, now }) {
+function make({ db, webpush, env, now, log }) {
   env = env || {}; now = now || Date.now;
+  const clock = now; let lastKeyWarn = 0;
   const err = (status, error, code) => ({ status, body: code ? { error, code } : { error } });
   const ok = body => ({ status: 200, body });
   const plans = () => db.collection('studyPlans'), parentsC = () => db.collection('studyParents'), links = () => db.collection('studyLinks');
@@ -187,7 +188,8 @@ function make({ db, webpush, env, now }) {
       return { checked, alerted };
     },
     tick: async r => {
-      const key = (r.headers && r.headers['x-cron-key']) || (r.query && r.query.key) || '';
+      const hdr = (r.headers && r.headers['x-cron-key']) || '', key = hdr || (r.query && r.query.key) || '';
+      if (!hdr && key && typeof log === 'function' && (!lastKeyWarn || clock() - lastKeyWarn > 3600000)) { lastKeyWarn = clock(); log('[study] the cron key came in the URL (?key=...), which ends up in logs: send it in the x-cron-key header instead'); }
       if (!env.STUDY_CRON_KEY || !C.safeEq(key, env.STUDY_CRON_KEY)) return err(403, 'Key galat hai.');
       if (!db || !webpush) return err(503, 'FIREBASE_SERVICE_ACCOUNT ya VAPID keys nahi lagi.');
       return ok(await handlers.tickCore());

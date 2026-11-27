@@ -53,6 +53,14 @@ async function loadPeople() {
   } catch (e) { console.warn('people load failed', e); }
 }
 
+// A student's AI video for the admin to review: the SERVER writes it (daily limit, size and shape checks). firestore.rules no longer lets a browser create it.
+async function postPending(body) {
+  const u = auth.currentUser; if (!u) throw new Error('login');
+  const tok = await u.getIdToken();
+  const r = await fetch((window.ORBIT_API || '') + '/api/videoreq/pending', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error('pending ' + r.status);
+  return r.json();
+}
 window.CLOUD = {
   // AI narration metadata (collection narration, doc id = lesson code): audio KEYS and timings only, never audio. Read: signed-in. Write: admin only (firestore.rules).
   narration: {
@@ -86,12 +94,7 @@ window.CLOUD = {
     async askedGet(key) { const s = await getDoc(doc(db, 'mathVideoAsked', key)); return s.exists() ? s.data().plan || null : null; },
     askedSet(key, text, plan) { return setDoc(doc(db, 'mathVideoAsked', key), JSON.parse(JSON.stringify({ text, plan }))); },
     // qid (optional) = textbook question id from "Copy question"; the admin form uses it to fill Exercise / Question by itself
-    pendingAdd(key, text, plan, qid) {
-      const u = auth.currentUser; if (!u) return Promise.reject(new Error('login'));
-      const d = { text, plan, uid: u.uid, ts: Date.now() };
-      if (qid) d.qid = qid;
-      return setDoc(doc(db, 'mathVideoPending', key), JSON.parse(JSON.stringify(d)));
-    },
+    pendingAdd(key, text, plan, qid) { return postPending({ store: 'math', key, text, plan, qid: qid || undefined }); },
     async pendingList() { const s = await getDocs(collection(db, 'mathVideoPending')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); a.sort((x, y) => (y.ts || 0) - (x.ts || 0)); return a; },
     pendingDel(key) { return deleteDoc(doc(db, 'mathVideoPending', key)); },
     async byPrefix(prefix) {
@@ -103,10 +106,7 @@ window.CLOUD = {
   scienceVideo: {
     async askedGet(key) { const s = await getDoc(doc(db, 'scienceVideoAsked', key)); return s.exists() ? s.data().plan || null : null; },
     askedSet(key, text, plan) { return setDoc(doc(db, 'scienceVideoAsked', key), JSON.parse(JSON.stringify({ text, plan }))); },
-    pendingAdd(key, text, plan) {
-      const u = auth.currentUser; if (!u) return Promise.reject(new Error('login'));
-      return setDoc(doc(db, 'sciencePending', key), JSON.parse(JSON.stringify({ text, plan, uid: u.uid, ts: Date.now() })));
-    },
+    pendingAdd(key, text, plan) { return postPending({ store: 'science', key, text, plan }); },
     async pendingList() { const s = await getDocs(collection(db, 'sciencePending')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); a.sort((x, y) => (y.ts || 0) - (x.ts || 0)); return a; },
     pendingDel(key) { return deleteDoc(doc(db, 'sciencePending', key)); }
   },

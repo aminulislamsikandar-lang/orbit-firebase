@@ -335,16 +335,17 @@ async function hiddenIdTests() {
 
   // 5e. rules + service worker + cloud.js
   const rules = fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8'), pend = rules.slice(rules.indexOf('match /mathVideoPending/'), rules.indexOf('match /subscriptions/'));
-  t('rules: pending allows only text, plan, uid, ts, qid', /hasOnly\(\['text', 'plan', 'uid', 'ts', 'qid'\]\)/.test(pend));
-  t('rules: qid must be a string of at most 40 characters', /get\('qid', ''\) is string/.test(pend) && /get\('qid', ''\)\.size\(\) <= 40/.test(pend));
+  // Since the security hardening a browser cannot create pending documents: the server does it (pending-core.js, see tests/pending.test.js for the field checks).
+  t('rules: a browser cannot create or change a maths pending document; only the admin reads / deletes', (() => { const blk = rules.slice(rules.indexOf('match /mathVideoPending/'), rules.indexOf('match /scienceVideoAsked/')); return /allow create, update: if false;/.test(blk) && /allow read, delete: if isAdmin\(\)/.test(blk) && !/hasOnly/.test(blk); })());
+  t('pending-core.js keeps the old field rules: text, plan, uid, ts, qid; qid <= 40; key = 40 hex', (() => { const P = require(path.join(ROOT, 'pending-core.js')), v = P.validate({ store: 'math', key: 'a'.repeat(40), text: 'x', plan: { type: 'equation', steps: [{}] }, qid: 'q' }, 'u', () => 1); return Object.keys(v.doc).sort().join() === 'plan,qid,text,ts,uid' && P.validate({ store: 'math', key: 'a'.repeat(40), text: 'x', plan: { type: 'equation', steps: [{}] }, qid: 'q'.repeat(41) }, 'u', () => 1).error && P.validate({ store: 'math', key: 'zz', text: 'x', plan: { type: 'equation', steps: [{}] } }, 'u', () => 1).error; })());
   t('rules: approved library keys unchanged (text, plan only)', /match \/mathVideoAsked\/\{key\}[\s\S]*?hasOnly\(\['text', 'plan'\]\)/.test(rules));
   const cloud = fs.readFileSync(path.join(ROOT, 'public/cloud.js'), 'utf8');
-  t('cloud.js: qid is added to the request only when present', /pendingAdd\(key, text, plan, qid\)/.test(cloud) && /if \(qid\) d\.qid = qid/.test(cloud));
+  t('cloud.js: qid is added to the request only when present', /pendingAdd\(key, text, plan, qid\)/.test(cloud) && /qid: qid \|\| undefined/.test(cloud));
   t('sw.js: SHELL has a version number', /const SHELL = 'orbit-shell-v\d+'/.test(fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8')));
   const rsci = rules.slice(rules.indexOf('match /scienceVideoAsked/'), rules.indexOf('match /subscriptions/'));
-  t('rules: science library is admin-write, signed-in read, type science, text <= 700', /scienceVideoAsked\/\{key\}[\s\S]*?allow read: if request\.auth != null;[\s\S]*?allow create, update: if isAdmin\(\)[\s\S]*?hasOnly\(\['text', 'plan'\]\)[\s\S]*?plan\.type == 'science'[\s\S]*?size\(\) <= 700/.test(rsci));
-  t('rules: science pending = students add only, admin reads / deletes, own uid, key = 40 hex', /match \/sciencePending\/\{key\}[\s\S]*?hasOnly\(\['text', 'plan', 'uid', 'ts'\]\)[\s\S]*?uid == request\.auth\.uid[\s\S]*?plan\.type == 'science'[\s\S]*?allow read, delete: if isAdmin\(\)/.test(rsci) && /\[0-9a-f\]\{40\}/.test(rsci));
-  t('rules: maths collections still only accept type equation', /mathVideoAsked[\s\S]*?plan\.type == 'equation'/.test(rules) && /mathVideoPending[\s\S]*?plan\.type == 'equation'/.test(rules));
+  t('rules: science library is admin-write, signed-in read, type science, text <= 700', /scienceVideoAsked\/\{key\}[\s\S]*?allow read: if request\.auth != null;[\s\S]*?allow create, update: if isAdmin\(\)[\s\S]*?hasOnly\(\['text', 'plan'\]\)[\s\S]*?size\(\) <= 700[\s\S]*?plan\.type == 'science'/.test(rsci));
+  t('rules: science pending = written by the server only, admin reads / deletes', /match \/sciencePending\/\{key\}[\s\S]*?allow create, update: if false;[\s\S]*?allow read, delete: if isAdmin\(\)/.test(rsci));
+  t('maths library rules still only accept type equation, and the server-side pending check accepts only equation (maths) / science', /mathVideoAsked[\s\S]*?plan\.type == 'equation'/.test(rules) && require(path.join(ROOT, 'pending-core.js')).STORES.math.planType === 'equation' && require(path.join(ROOT, 'pending-core.js')).STORES.science.planType === 'science');
   t('cloud.js: scienceVideo store uses scienceVideoAsked + sciencePending', /scienceVideo: \{/.test(cloud) && /'scienceVideoAsked'/.test(cloud) && /'sciencePending'/.test(cloud));
   t('team.js passes the science store to the admin panel', /science: window\.CLOUD\.scienceVideo/.test(fs.readFileSync(path.join(ROOT, 'public/team.js'), 'utf8')));
   t('team.js passes qFields to the admin panel', /qFields: function \(id\) \{ return window\.mvQFields/.test(fs.readFileSync(path.join(ROOT, 'public/team.js'), 'utf8')));

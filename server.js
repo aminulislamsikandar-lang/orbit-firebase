@@ -13,7 +13,12 @@ const { securityHeaders, rateKey, createLimiter, cspReport } = require('./securi
 
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', 1);   // Render puts one proxy in front: the visitor's own IP is then used (only to count failed logins)
 app.use(securityHeaders);
+// Razorpay webhook (see the payment section below): Razorpay calls this itself, so there is no login and no browser. It needs the RAW body, because the
+// signature is over the exact bytes, so it is registered before every JSON parser and before the login check. payWebhook is defined with the other pay routes.
+app.post('/api/pay/webhook', express.raw({ type: () => true, limit: '100kb' }), (req, res) => payWebhook(req, res));
+app.use('/api/pay/webhook', (err, req, res, next) => res.status(400).json({ code: 'bad_request' }));   // body too large / unreadable: no stack, no HTML
 const jsonSmall = express.json({ limit: '10kb' });
 const jsonNarration = express.json({ limit: '128kb' });      // Assamese/Hindi text is 3 bytes per character, so narration text needs more room
 const jsonRec = express.json({ limit: '4.5mb' });               // Bolo "Saath me bolo": the whole recording for the parent (base64, at most 3.2 MB, checked again in bolorec-core.js)
@@ -23,13 +28,11 @@ const jsonNotes = express.json({ limit: '64kb' });              // a custom ques
 const NOTES_PATHS = new Set(['/api/read/passage', '/api/answer', '/api/translate', '/api/qtranslate', '/api/more', '/api/visual', '/api/image']);
 const VOICE_AUDIO_PATHS = new Set(['/api/read/evaluate', '/api/talk/turn', '/api/bolo/check']);   // Phase 5: a short recording + the chapter notes
 const jsonImage = express.json({ limit: '4mb' });              // one textbook photo (shrunk by the app to about 0.4 MB) for Add custom course
-app.use('/api/ask', jsonImage);   // prompt box: a question can carry up to 2 photos / PDFs. The body is read here first; the generic parser below then skips it (body already parsed).
-app.use((req, res, next) => ((req.path === '/api/custom/extract' || req.path === '/api/answer/check') ? jsonImage : NOTES_PATHS.has(req.path) ? jsonNotes : req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : req.path === '/api/bolo/rec/upload' ? jsonRec : req.path === '/api/recall/evaluate' ? jsonAudio : VOICE_AUDIO_PATHS.has(req.path) ? jsonAudio : jsonSmall)(req, res, next));
+// Body parsers: see "Body parsers (AFTER the login check)" below. A request without a valid login is never read or parsed.
 
 // The browser reports Content-Security-Policy violations here (the policy is set in firebase.json, in Report-Only mode first). No login, tiny body.
 app.post('/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '8kb' }), cspReport());
 app.use('/csp-report', (err, req, res, next) => res.status(204).end());   // a broken report body is ignored, never logged as a crash
-
 // ---- CORS + Firebase login check --------------------------------------------
 // The website lives on Firebase Hosting; this server only answers AI requests from logged-in users.
 // Render env vars: FIREBASE_PROJECT_ID (your Firebase project id) and ALLOWED_ORIGINS (comma separated,
@@ -49,7 +52,10 @@ let FSDB = null;
     console.error('[limits] service account not usable, daily limits stay in memory: ' + e.message);
     if (!admin.apps.length) admin.initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID });
   }
-  if (!FSDB) console.warn('[limits] FIREBASE_SERVICE_ACCOUNT is not set: daily limits are kept in memory and start again when Render restarts.');
+  if (!FSDB) {
+    if (process.env.REQUIRE_FIRESTORE === 'true') { console.error('[startup] REQUIRE_FIRESTORE=true but FIREBASE_SERVICE_ACCOUNT is missing or not usable: refusing to start (the course lock and daily limits would not work).'); process.exit(1); }
+    console.error('[limits] FIREBASE_SERVICE_ACCOUNT is not set: daily limits are kept in memory (they restart when Render restarts) and the course lock is NOT checked. Set REQUIRE_FIRESTORE=true to make this a startup error.');
+  }
 }
 // Allowed browser origins (exact match). A trailing slash in ALLOWED_ORIGINS is ignored. If the variable is empty, the two default Orbit domains are used,
 // so a missing or mistyped env var can not block every request. A blocked origin is logged once, so Render logs show why a browser got a CORS error.
@@ -70,30 +76,38 @@ app.use('/api', (req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+const authFail = createLimiter(30, 60000);   // WRONG or missing logins per IP per minute (rateKey = the IP while nobody is logged in). A correct login is never counted or blocked: a school WiFi shares one IP.
+const badLogin = (req, res, msg) => res.status(authFail.hit(rateKey(req)) ? 429 : 401).json({ error: msg });
 app.use('/api', async (req, res, next) => {
   if (req.path === '/questions' || req.path === '/ping' || req.path === '/study/tick') return next();   // /study/tick is for the free cron service: it has its own secret key
   const h = req.headers.authorization || '';
   const t = h.startsWith('Bearer ') ? h.slice(7) : '';
-  if (!t) return res.status(401).json({ error: 'Pehle Google se log in karo.' });
+  if (!t) return badLogin(req, res, 'Pehle Google se log in karo.');
   try { req.user = await admin.auth().verifyIdToken(t); next(); }
-  catch (e) { res.status(401).json({ error: 'Login expire ho gaya. Dobara log in karo.' }); }
+  catch (e) { badLogin(req, res, 'Login expire ho gaya. Dobara log in karo.'); }
 });
+// ---- Body parsers (AFTER the login check) -------------------------------------------------------------------------------
+// Until here nobody has been read: a request without a valid login is answered 401 before any body is parsed (a 4 MB body or broken JSON from
+// a stranger costs the server nothing). Every limit below is unchanged. /csp-report has its own small parser above and needs no login.
+app.use('/api/ask', jsonImage);   // prompt box: a question can carry up to 2 photos / PDFs. The body is read here first; the generic parser below then skips it (body already parsed).
+app.use((req, res, next) => ((req.path === '/api/custom/extract' || req.path === '/api/answer/check') ? jsonImage : NOTES_PATHS.has(req.path) ? jsonNotes : req.path === '/api/narration/generate' ? jsonNarration : req.path === '/api/mathvideo/translate' ? jsonPlan : req.path === '/api/videoreq/pending' ? jsonPlan : req.path === '/api/bolo/rec/upload' ? jsonRec : req.path === '/api/recall/evaluate' ? jsonAudio : VOICE_AUDIO_PATHS.has(req.path) ? jsonAudio : jsonSmall)(req, res, next));
+
+
 // ---- Course lock: a student may use only the one course they chose (Firestore studentCourse/<uid>, see course-lock-core.js) ----
 // Needs the service account (FIREBASE_SERVICE_ACCOUNT) to read that document. Without it the check is skipped and only the app screens are limited.
 const CATALOG = require('./public/catalog.js');
 const COURSELOCK = require('./course-lock-core.js');
-const COURSE_CACHE = new Map();   // uid -> { lock, at }. A course only changes when the admin edits it, so 10 minutes is safe.
+const COURSE_LOCKS = COURSELOCK.makeLockReader({   // lock cache: fresh for 10 minutes (a course only changes when the admin edits it); if Firestore fails the last known lock is used for up to 24 h
+  readDoc: async uid => {
+    const snap = await FSDB.collection('studentCourse').doc(uid).get();
+    const d = snap.exists ? snap.data() : null, lock = d ? (d.kid === true ? { kid: true } : d.own === true ? { own: true } : { org: d.org, cls: d.cls, med: d.med }) : null;
+    return CATALOG.validLock(lock) ? lock : null;   // "no course yet" is not cached, so choosing one works at once
+  },
+  warn: m => console.warn('[course] ' + m)
+});
 let courseWarned = false;
-async function lockOf(uid) {
-  const hit = COURSE_CACHE.get(uid);
-  if (hit && Date.now() - hit.at < 600000) return hit.lock;
-  const snap = await FSDB.collection('studentCourse').doc(uid).get();
-  const d = snap.exists ? snap.data() : null, lock = d ? (d.kid === true ? { kid: true } : d.own === true ? { own: true } : { org: d.org, cls: d.cls, med: d.med }) : null;
-  if (!CATALOG.validLock(lock)) return null;   // "no course yet" is not cached, so choosing one works at once
-  COURSE_CACHE.set(uid, { lock, at: Date.now() });
-  return lock;
-}
-setInterval(() => { if (COURSE_CACHE.size > 5000) COURSE_CACHE.clear(); }, 3600000).unref();
+const lockOf = uid => COURSE_LOCKS.get(uid);
+setInterval(() => COURSE_LOCKS.prune(), 3600000).unref();
 app.use('/api', async (req, res, next) => {
   if (req.method !== 'POST' || !COURSELOCK.GATED.has(req.path)) return next();
   try {
@@ -106,10 +120,16 @@ app.use('/api', async (req, res, next) => {
     const decideWith = lk => COURSELOCK.decide({ admin: adm, canRead, lock: lk, courseIds, custom: b.custom, ids: lk ? CATALOG.idsFor(lk, QUIZ.courses) : [] });
     let r = decideWith(lock);
     // The cached lock may be old (course changed in the last 10 minutes). Before saying "not your course", forget the cache and read Firestore once more.
-    if (!r.ok && (r.code === 'wrong_course' || r.code === 'no_course')) { COURSE_CACHE.delete(req.user.uid); r = decideWith(await lockOf(req.user.uid)); }
+    if (!r.ok && (r.code === 'wrong_course' || r.code === 'no_course')) {
+      const old = COURSE_LOCKS.peek(req.user.uid); COURSE_LOCKS.forget(req.user.uid);
+      try { r = decideWith(await lockOf(req.user.uid)); } catch (e2) { COURSE_LOCKS.restore(req.user.uid, old); }   // the second read failed: the first decision stands
+    }
     if (!r.ok) return res.status(r.status).json({ code: r.code, error: r.error });
     next();
-  } catch (e) { console.error('[course] check failed: ' + e.message); next(); }   // a Firestore hiccup must not lock every student out
+  } catch (e) {   // Firestore failed and there is no recent lock to use: closed, never open. (Admins and a server without the service account never get here.)
+    console.error('[course] check failed: ' + e.message);
+    res.status(503).json({ code: 'temporarily_unavailable', error: 'Server abhi thoda busy hai. Thodi der baad dobara try karo.' });
+  }
 });
 // ---- Free plan (optional: Render env FREE_PLAN=on, default OFF; plan-core.js, public/plan.js) ----
 // A student without Plus gets FREE_SECONDS (default 600) of study time per IST day and only the first FREE_CHAPTERS (default 1) chapters.
@@ -139,10 +159,13 @@ app.use('/api', async (req, res, next) => {
     const r = await PLAN_GATE(req);
     if (!r.ok) return res.status(r.status).json({ code: r.code, kind: r.kind, error: r.error });
     next();
-  } catch (e) { console.error('[plan] check failed: ' + e.message); next(); }   // a Firestore hiccup must not lock every student out
+  } catch (e) {   // the free-time counter could not be read: closed, not unlimited. (A Plus lookup that fails already counts as "not Plus".)
+    console.error('[plan] check failed: ' + e.message);
+    res.status(503).json({ code: 'temporarily_unavailable', error: 'Server abhi thoda busy hai. Thodi der baad dobara try karo.' });
+  }
 });
 // The student left the "own courses" choice (lock deleted in Firestore): forget the cached lock at once so the next course works immediately.
-app.post('/api/course/reset', (req, res) => { COURSE_CACHE.delete(req.user.uid); res.json({ ok: true }); });
+app.post('/api/course/reset', (req, res) => { COURSE_LOCKS.forget(req.user.uid); res.json({ ok: true }); });
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Add more free keys (each from a DIFFERENT Google project) in Render as GEMINI_API_KEYS=key1,key2,key3
@@ -1429,6 +1452,7 @@ async function fsVideo(req, id) {
   } catch (e) { return null; }
 }
 
+const VIDEO_TTL = Math.min(7200, Math.max(60, parseInt(process.env.VIDEO_URL_TTL || '3600', 10) || 3600));   // seconds a video link works (Render env VIDEO_URL_TTL, default 3600). Lower it to 900 once the link renewal is tested.
 app.post('/api/video', async (req, res) => {
   const vid = String((req.body || {}).id || '');
   const v = VBY.get(vid) || await fsVideo(req, vid);
@@ -1436,14 +1460,16 @@ app.post('/api/video', async (req, res) => {
   if (!B2) return res.status(500).json({ error: 'Video storage abhi set nahi hai.' });
   if (!(await hasAccess(req, v))) return res.status(403).json({ code: 'subscription_required', error: 'Ye video dekhne ke liye subscription chahiye.' });
   try {
-    const url = await getSignedUrl(B2, new GetObjectCommand({ Bucket: process.env.B2_BUCKET, Key: v.key }), { expiresIn: 3600 });
+    const url = await getSignedUrl(B2, new GetObjectCommand({ Bucket: process.env.B2_BUCKET, Key: v.key }), { expiresIn: VIDEO_TTL });   // the browser asks for a new link by itself if this one runs out while a video plays (vidFail in index.html)
     // Try the link once ourselves, so a storage problem shows up as a clear message instead of a dead video player.
     const chk = await fetch(url, { headers: { Range: 'bytes=0-0' } });
     if (!chk.ok) {
       const body = (await chk.text()).slice(0, 400);
       console.error('B2 check failed', chk.status, body);
       const code = (body.match(/<Code>([^<]+)<\/Code>/) || [])[1] || '';
-      return res.status(502).json({ error: 'Video storage ne mana kiya (' + chk.status + (code ? ' ' + code : '') + '). Key, bucket ya endpoint check karo.' });
+      // Only the admin sees the storage details; students get a plain message (bucket and error codes are not for them).
+      const msg = isAdminReq(req) ? 'Video storage ne mana kiya (' + chk.status + (code ? ' ' + code : '') + '). Key, bucket ya endpoint check karo.' : 'Video abhi nahi chal paa rahi. Thodi der baad try karo.';
+      return res.status(502).json({ error: msg });
     }
     res.json({ url });
   } catch (e) {
@@ -1477,7 +1503,7 @@ app.post('/api/video/upload-url', async (req, res) => {
 });
 
 // ---- AI narration (Sonex Labs) -> private Backblaze B2 ---------------------------------------------------------
-// Render env vars: SONEX_API_KEY, SONEX_BASE_URL (optional), SONEX_DEFAULT_VOICE_ID (optional), NARRATION_URL_TTL (seconds, default 3600),
+// Render env vars: SONEX_API_KEY, SONEX_BASE_URL (optional), SONEX_DEFAULT_VOICE_ID (optional), NARRATION_URL_TTL (seconds, default 3600, at most 7200),
 // NARRATION_FREE=true (optional: narration is free for everyone even when REQUIRE_SUBSCRIPTION=true).
 // Audio is generated ONCE by the admin (never when a student presses play), stored under audio/generated/... and only short-lived signed links are handed out.
 const { HeadObjectCommand } = require('@aws-sdk/client-s3');
@@ -1516,7 +1542,7 @@ app.post('/api/narration/generate', async (req, res) => {
 });
 
 // Student: short-lived links for the audio of ONE lesson. Body: { lessonId, keys:[...] }. Never signs a key that is not a narration file of that lesson.
-const NARR_TTL = Math.min(86400, Math.max(60, parseInt(process.env.NARRATION_URL_TTL || '3600', 10) || 3600));
+const NARR_TTL = Math.min(7200, Math.max(60, parseInt(process.env.NARRATION_URL_TTL || '3600', 10) || 3600));
 async function lessonIsFree(req, lessonId) {
   if (process.env.NARRATION_FREE === 'true') return true;
   const id = String(lessonId).toLowerCase();
@@ -1538,6 +1564,13 @@ app.post('/api/narration/url', async (req, res) => {
     console.error('narration sign failed', e.message);
     res.status(502).json({ error: 'Audio ka link nahi ban paya. Dobara try karo.' });
   }
+});
+
+// ---- A student's AI video goes to the admin for review. The server writes it (Admin SDK); firestore.rules no longer lets a browser create these documents. ----
+const PENDING = require('./pending-core').make({ db: FSDB });
+app.post('/api/videoreq/pending', async (req, res) => {
+  try { const r = await PENDING.add({ uid: req.user.uid, body: req.body }); res.status(r.status).json(r.body); }
+  catch (e) { console.error('[pending] failed: ' + e.message); res.status(502).json({ error: 'Abhi save nahi ho paya.' }); }
 });
 
 // ---- Assamese + Bengali text for a video plan (a second, small AI call) ----------------------------------
@@ -2049,7 +2082,7 @@ try {
     STUDY_PUSH.setVapidDetails(process.env.VAPID_SUBJECT || 'https://orbittutorial.web.app', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
   }
 } catch (e) { console.error('[study] push is off: ' + e.message); STUDY_PUSH = null; }
-const STUDY = require('./study-routes').make({ db: FSDB, webpush: STUDY_PUSH, now: Date.now, env: { VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY, STUDY_CRON_KEY: process.env.STUDY_CRON_KEY } });
+const STUDY = require('./study-routes').make({ db: FSDB, webpush: STUDY_PUSH, now: Date.now, log: console.warn, env: { VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY, STUDY_CRON_KEY: process.env.STUDY_CRON_KEY } });
 const studyRoute = h => async (req, res) => {
   try { const r = await h({ uid: req.user && req.user.uid, query: req.query || {}, body: req.body || {}, headers: req.headers }); res.status(r.status).json(r.body); }
   catch (e) { console.error('[study] ' + (e && e.message)); res.status(500).json({ error: 'Kuch gadbad hui. Dobara try karo.' }); }
@@ -2103,6 +2136,13 @@ const payRoute = h => async (req, res) => {
 };
 app.post('/api/pay/order', payRoute(PAY.order));
 app.post('/api/pay/verify', payRoute(PAY.verify));
+async function payWebhook(req, res) {
+  try {
+    const r = await PAY.webhook({ raw: req.body, signature: String(req.headers['x-razorpay-signature'] || '') });
+    if (r.body && r.body.did) console.log('[pay] webhook ' + r.body.did);
+    res.status(r.status).json(r.body);
+  } catch (e) { console.error('[pay] webhook ' + (e && e.message)); res.status(500).json({ error: 'Retry later.' }); }   // 5xx: Razorpay sends it again
+}
 
 // ---- Free plan status and the study-time heartbeat (public/plan.js). Both answer { on:false } while FREE_PLAN is off. ----
 async function planStatus(req, seconds) {

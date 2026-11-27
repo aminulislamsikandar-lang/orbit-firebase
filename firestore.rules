@@ -103,19 +103,10 @@ service cloud.firestore {
         && request.resource.data.plan.steps.size() <= 12;
       allow delete: if isAdmin();
     }
-    // mathVideoPending = AI videos made by students, waiting for the admin. Any signed-in student can ADD one (never change or read others); only the admin reads, approves or deletes.
+    // mathVideoPending = AI videos made by students, waiting for the admin. A browser can NOT create one any more (any account could add unlimited documents):
+    // the server writes it (POST /api/videoreq/pending, pending-core.js: same field checks, 20 per student per day, Admin SDK). Only the admin reads or deletes.
     match /mathVideoPending/{key} {
-      allow create: if request.auth != null
-        && key.matches('[0-9a-f]{40}')
-        && request.resource.data.keys().hasOnly(['text', 'plan', 'uid', 'ts', 'qid'])
-        && request.resource.data.get('qid', '') is string
-        && request.resource.data.get('qid', '').size() <= 40
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.ts is number
-        && request.resource.data.text is string && request.resource.data.text.size() <= 400
-        && request.resource.data.plan.type == 'equation'
-        && request.resource.data.plan.steps is list
-        && request.resource.data.plan.steps.size() <= 12;
+      allow create, update: if false;
       allow read, delete: if isAdmin();
     }
     // Science Get Video: same shape as the maths ones (plan.type is 'science').
@@ -129,16 +120,9 @@ service cloud.firestore {
         && request.resource.data.plan.steps.size() <= 12;
       allow delete: if isAdmin();
     }
+    // Same as mathVideoPending: written by the server only (store 'science', plan.type 'science', text <= 700).
     match /sciencePending/{key} {
-      allow create: if request.auth != null
-        && key.matches('[0-9a-f]{40}')
-        && request.resource.data.keys().hasOnly(['text', 'plan', 'uid', 'ts'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.ts is number
-        && request.resource.data.text is string && request.resource.data.text.size() <= 700
-        && request.resource.data.plan.type == 'science'
-        && request.resource.data.plan.steps is list
-        && request.resource.data.plan.steps.size() <= 12;
+      allow create, update: if false;
       allow read, delete: if isAdmin();
     }
     // Report button (Task 50): a student reports a wrong question or AI answer. Any signed-in student can ADD a report, never read, change or delete one;
