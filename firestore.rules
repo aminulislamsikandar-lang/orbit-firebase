@@ -368,15 +368,27 @@ service cloud.firestore {
         // Only a parent of this child can approve (the status), or open / close the listening window (listenUntil, never more than 1 hour ahead).
         // The child's phone can close the window (listenUntil = 0) and approve a pending request (status only; the app asks for the parent PIN and an opt-in switch first). The server writes lastListenAt and listenCount (the parent's log).
         allow update: if (kidParent(code)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'listenUntil'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'listenUntil', 'watchAsk'])
             && request.resource.data.status == 'approved'
+            && (!('watchAsk' in request.resource.data) || request.resource.data.watchAsk == 0)
             && (!('listenUntil' in request.resource.data) || (request.resource.data.listenUntil is number && request.resource.data.listenUntil >= 0 && request.resource.data.listenUntil <= request.time.toMillis() + 3660000)))
           || (kidOwner(code)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['listenUntil'])
             && request.resource.data.listenUntil == 0)
           || (kidOwner(code)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-            && request.resource.data.status == 'approved');
+            && request.resource.data.status == 'approved')
+          // An approved mentor can ask to listen / watch (watchAsk = the time of the ask, 0 = withdraw). Only then can the child's phone (parent PIN in the app) open the window or say no.
+          || (request.auth.uid == uid
+            && resource.data.status == 'approved'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['watchAsk'])
+            && request.resource.data.watchAsk is number
+            && (request.resource.data.watchAsk == 0 || request.resource.data.watchAsk <= request.time.toMillis() + 60000))
+          || (kidOwner(code)
+            && resource.data.status == 'approved' && ('watchAsk' in resource.data) && resource.data.watchAsk > 0
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['listenUntil', 'watchAsk'])
+            && request.resource.data.watchAsk == 0
+            && (!('listenUntil' in request.resource.data) || (request.resource.data.listenUntil is number && request.resource.data.listenUntil >= 0 && request.resource.data.listenUntil <= request.time.toMillis() + 3660000)));
         allow delete: if request.auth != null && (request.auth.uid == uid || kidOwner(code) || kidParent(code));
       }
       match /state/sum {

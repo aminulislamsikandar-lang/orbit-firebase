@@ -49,7 +49,9 @@ function cloudFor(db, uid) {
       getWa: async code => { const m = (db.mentors[code] || {})[uid]; if (!(db.parents[code] || {})[uid] && !(m && m.status === 'approved')) return null; return db.wa[code] || null; },
       delWa: async code => { if (!(db.parents[code] || {})[uid]) throw denied(); delete db.wa[code]; },
       // The same rules as firestore.rules: a parent opens the window (at most about 1 hour), parent or child closes it, only a listening mentor writes marks.
-      mentorListen: async (code, u, until) => { const m = (db.mentors[code] || {})[u], isPar = (db.parents[code] || {})[uid], isKid = db.links[code] && db.links[code].kidUid === uid; if (!m) throw denied(); if (isPar && m.status === 'approved' && until >= 0 && until <= Date.now() + 3660000) { m.listenUntil = until; return; } if (isKid && until === 0) { m.listenUntil = 0; return; } throw denied(); },
+      mentorListen: async (code, u, until) => { const m = (db.mentors[code] || {})[u], isPar = (db.parents[code] || {})[uid], isKid = db.links[code] && db.links[code].kidUid === uid; if (!m) throw denied(); if (isPar && m.status === 'approved' && until >= 0 && until <= Date.now() + 3660000) { m.listenUntil = until; if (until > 0) m.watchAsk = 0; return; } if (isKid && until === 0) { m.listenUntil = 0; return; } if (isKid && m.status === 'approved' && m.watchAsk > 0 && until > 0 && until <= Date.now() + 3660000) { m.listenUntil = until; m.watchAsk = 0; return; } throw denied(); },   // firestore.rules: the child phone may open the window only to answer an ask by the mentor
+      mentorWatchAsk: async (code, on) => { const m = (db.mentors[code] || {})[uid]; if (!m || m.status !== 'approved') throw denied(); m.watchAsk = on ? Date.now() : 0; },
+      mentorWatchNo: async (code, u) => { const m = (db.mentors[code] || {})[u], isPar = (db.parents[code] || {})[uid], isKid = db.links[code] && db.links[code].kidUid === uid; if (!m || !(isPar || (isKid && m.watchAsk > 0))) throw denied(); m.watchAsk = 0; },
       putRep: async (code, r) => { if (!db.links[code] || db.links[code].kidUid !== uid || !Array.isArray(r.days) || r.days.length > 7 || !Array.isArray(r.weak) || r.weak.length > 8) throw denied(); db.rep[code] = r; db.repWrites++; },
       getRep: async code => { const m = (db.mentors[code] || {})[uid], own = db.links[code] && db.links[code].kidUid === uid; if (!own && !(m && m.status === 'approved')) throw denied(); return db.rep[code] || null; },
       getReview: async (code, rid) => ((db.reviews[code] || {})[rid]) || null,
@@ -264,6 +266,40 @@ async function boot(db, uid, { role } = {}) {
   par.click('[data-kl=refresh]'); await tick(150);
   par.click('[data-kl=lstop]'); await tick(300);
   t('the parent closes the window any time', db.mentors[kcode].men1.listenUntil === 0 && !!par.d.querySelector('[data-kl=lgo]'));
+
+  // 6d2. The mentor asks to listen / watch; a parent (parent phone) or the child's phone (Parent ke liye) answers.
+  men.click('[data-kl=mrefresh]'); await tick(150);
+  t('mentor: a "Sunna / Dekhna maango" button is on the card when no window is open', !!men.d.querySelector('[data-kl=mwatch]') && !men.d.querySelector('[data-kl=mwatchoff]'));
+  men.click('[data-kl=mwatch]'); await tick(200);
+  t('mentor: after tapping it the ask is saved and the card says the request is waiting', db.mentors[kcode].men1.watchAsk > 0 && /Request bhej di/.test(men.app()) && !!men.d.querySelector('[data-kl=mwatchoff]') && !men.d.querySelector('[data-kl=mwatch]'));
+  men.click('[data-kl=mwatchoff]'); await tick(200);
+  t('mentor: can take the ask back', db.mentors[kcode].men1.watchAsk === 0 && !!men.d.querySelector('[data-kl=mwatch]'));
+  let denied2 = 0;
+  try { await kid.w.CLOUD.kids.mentorListen(kcode, 'men1', Date.now() + 1000); } catch (e) { denied2++; }
+  t('child phone can NOT open a window when the mentor has not asked', denied2 === 1 && db.mentors[kcode].men1.listenUntil === 0);
+  men.click('[data-kl=mwatch]'); await tick(200);
+  par.click('[data-kl=refresh]'); await tick(150);
+  t('parent phone: sees "Rahul sunna aur dekhna chahta hai" with the usual open button and Abhi nahi', /Rahul sunna aur dekhna chahta hai/.test(par.app()) && !!par.d.querySelector('[data-kl=lgo]') && !!par.d.querySelector('[data-kl=lno]'));
+  await kid.w.KIDLINK._listenPoll(); await tick(100);
+  t('child phone: Parent ke liye shows the ask with "1 ghante ke liye do" and "Abhi nahi"', /Rahul/.test(kid.app()) && /sunna aur dekhna chahta hai/.test(kid.app()) && !!kid.d.querySelector('[data-kl=kwyes]') && !!kid.d.querySelector('[data-kl=kwno]'));
+  kid.click('[data-kl=kwno]'); await tick(250);
+  t('child phone: Abhi nahi clears the ask and opens no window', db.mentors[kcode].men1.watchAsk === 0 && db.mentors[kcode].men1.listenUntil === 0 && !kid.d.querySelector('[data-kl=kwyes]'));
+  men.click('[data-kl=mrefresh]'); await tick(150);
+  men.click('[data-kl=mwatch]'); await tick(200);
+  await kid.w.KIDLINK._listenPoll(); await tick(100);
+  kid.click('[data-kl=kwyes]'); await tick(300);
+  t('child phone: 1 ghante ke liye do opens the 1-hour window (the parent does not have to be there) and clears the ask', db.mentors[kcode].men1.listenUntil > Date.now() + 3500000 && db.mentors[kcode].men1.watchAsk === 0 && /Mentor sun rahe hain/.test(kid.app()));
+  men.click('[data-kl=mrefresh]'); await tick(150);
+  t('mentor: the window is open, so the Live screen box shows and the ask button is gone', !!men.d.querySelector('[data-kl-live]') && !men.d.querySelector('[data-kl=mwatch]'));
+  kid.click('[data-kl=kstop]'); await tick(250);
+  men.click('[data-kl=mrefresh]'); await tick(150);
+  t('after the child stops it the mentor can ask again', !!men.d.querySelector('[data-kl=mwatch]'));
+  par.click('[data-kl=refresh]'); await tick(150);
+  men.click('[data-kl=mwatch]'); await tick(200);
+  par.click('[data-kl=refresh]'); await tick(150);
+  par.click('[data-kl=lno]'); await tick(250);
+  t('parent phone: Abhi nahi clears the ask', db.mentors[kcode].men1.watchAsk === 0 && !/sunna aur dekhna chahta hai/.test(par.app()));
+  t('rules: mentor may only write watchAsk on its own approved record; child opens only to answer an ask; parent clears the ask on open', (() => { const r = require('fs').readFileSync(require('path').join(__dirname, '..', 'firestore.rules'), 'utf8'); return /hasOnly\(\['status', 'listenUntil', 'watchAsk'\]\)/.test(r) && /request\.auth\.uid == uid\s*&& resource\.data\.status == 'approved'\s*&& request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasOnly\(\['watchAsk'\]\)/.test(r) && /kidOwner\(code\)\s*&& resource\.data\.status == 'approved' && \('watchAsk' in resource\.data\) && resource\.data\.watchAsk > 0/.test(r); })());
 
   // 6e. Mentor upgrades: the 7-day chart with the streak, and the items still to repeat.
   const dkOf = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');

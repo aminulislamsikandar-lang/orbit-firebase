@@ -12,7 +12,7 @@
   const goodCode = c => /^[A-HJ-NP-Z2-9]{8}$/.test(c);
   const fmt = c => String(c || '').slice(0, 4) + '-' + String(c || '').slice(4);
   const REV = 'orbit.kl.rev.', PUSH_MS = 20000, TICK_MS = 30000, PRES_MS = 45000, ONLINE_MS = 150000;   // the child's phone says "I am here" about once a minute; no word for 2.5 minutes = Offline
-  const S = { uid: '', last: 0, pend: 0, kid: { loaded: false, busy: false, err: '', msg: '', link: null, parents: 0, pend: [] }, par: { loaded: false, busy: false, err: '', msg: '', kids: [] }, men: { loaded: false, busy: false, err: '', msg: '', kids: [], filter: 'all' }, presAt: 0, presOn: null, accAt: 0, accOn: false, listen: [], polls: 0, repKey: '', repAt: 0, repSend: 0 };
+  const S = { uid: '', last: 0, pend: 0, kid: { loaded: false, busy: false, err: '', msg: '', link: null, parents: 0, pend: [], asks: [] }, par: { loaded: false, busy: false, err: '', msg: '', kids: [] }, men: { loaded: false, busy: false, err: '', msg: '', kids: [], filter: 'all' }, presAt: 0, presOn: null, accAt: 0, accOn: false, listen: [], polls: 0, repKey: '', repAt: 0, repSend: 0 };
   const cloud = () => (g.CLOUD && g.CLOUD.kids) || null;
   const draw = () => { if (typeof g.draw === 'function') g.draw(); };
   const role = () => (typeof KIDROLE !== 'undefined' && typeof COURSE !== 'undefined' && COURSE && COURSE.kid) ? KIDROLE : '';
@@ -314,6 +314,7 @@
         const hear = +m.listenUntil > Date.now(), mine = (k.reviews || []).filter(r => r.by === m.uid);
         let sahi = 0, galat = 0; mine.forEach(r => { for (const c of String(r.marks || '')) { if (c === '1') sahi++; else if (c === '0') galat++; } });
         return `<div class="bl-row" style="margin-top:6px"><span>${esc(m.name)} <span class="mut">(mentor)</span></span><button class="chip" data-kl="mno" data-v="${esc(k.code)}" data-u="${esc(m.uid)}">Hatao</button></div>
+          ${+m.watchAsk > 0 && !hear ? `<p style="margin:6px 0 0"><b>${esc(m.name)} sunna aur dekhna chahta hai.</b></p><div class="chips" style="margin-top:6px"><button class="chip" data-kl="lno" data-v="${esc(k.code)}" data-u="${esc(m.uid)}" ${S.par.busy ? 'disabled' : ''}>Abhi nahi</button></div>` : ''}
           ${hear ? `<p style="margin:6px 0 0"><b>Sunna chalu hai</b>, ${hm(m.listenUntil)} tak.</p><div class="chips" style="margin-top:6px"><button class="chip" data-kl="lstop" data-v="${esc(k.code)}" data-u="${esc(m.uid)}" ${S.par.busy ? 'disabled' : ''}>Abhi band karo</button></div>`
           : `<div class="chips" style="margin-top:6px"><button class="chip" data-kl="lgo" data-v="${esc(k.code)}" data-u="${esc(m.uid)}" ${S.par.busy ? 'disabled' : ''}>1 ghante ke liye sunne do</button></div><p class="mut" style="margin:4px 0 0;font-size:12.5px">Padhai ke time par dabao. 1 ghante baad apne aap band. Mentor Saath me bolo recordings sunta hai, letter par sahi ya galat likhta hai, aur bachche ki screen par likha hua (game, level, sawaal) live dekh sakta hai.</p>`}
           ${m.listenCount ? `<p class="mut" style="margin:4px 0 0;font-size:12.5px">Is mentor ne ${+m.listenCount} recording suni. Aakhri baar: ${esc(new Date(+m.lastListenAt || 0).toLocaleString())}.</p>` : ''}
@@ -360,8 +361,10 @@
     if (now.length && !S.listen.length) setTimeout(() => livePush(true), 50);   // a window just opened: the mentor sees the screen at once
     const pend = all.filter(m => m.status === 'pending').map(m => ({ uid: m.uid, name: m.name }));
     const same = now.length === S.listen.length && now.every((m, i) => m.uid === S.listen[i].uid);
+    const asks = all.filter(m => m.status === 'approved' && +m.watchAsk > 0 && !(+m.listenUntil > Date.now())).map(m => ({ uid: m.uid, name: m.name }));
+    const sameAsk = asks.length === (S.kid.asks || []).length && asks.every((m, i) => m.uid === S.kid.asks[i].uid);
     const samePend = pend.length === S.kid.pend.length && pend.every((m, i) => m.uid === S.kid.pend[i].uid);
-    S.listen = now; S.kid.pend = pend; if (!same || !samePend) draw();
+    S.listen = now; S.kid.pend = pend; S.kid.asks = asks; if (!same || !samePend || !sameAsk) draw();
   }
   // Mentor requests on the child's phone ("Parent ke liye"). A parent joining is optional: the parent can approve or refuse right here.
   // The buttons work only while the parent PIN is open (edit), so a child can not approve when a PIN is set; a confirm question comes first.
@@ -379,12 +382,35 @@
     const rows = list.map(m => `<div style="margin-top:8px"><b>${esc(m.name)}</b> <span class="mut">mentor banna chahta hai</span>${edit
       ? `<div class="chips" style="margin-top:6px"><button class="chip" data-kl="kmyes" data-u="${esc(m.uid)}" ${K.busy ? 'disabled' : ''}>Manzoor karo</button><button class="chip" data-kl="kmno" data-u="${esc(m.uid)}" ${K.busy ? 'disabled' : ''}>Mana karo</button></div>`
       : '<p class="mut" style="margin:4px 0 0;font-size:12.5px">Manzoori ke liye parent ka PIN chahiye.</p>'}</div>`).join('');
-    return `<div style="margin-top:12px"><b>Mentor ki request</b>${list.length ? rows : '<p class="mut" style="margin:4px 0 0;font-size:12.5px">Abhi koi request nahi.</p>'}</div>`;
+    const asks = (K.asks || []).map(m => `<div style="margin-top:8px"><b>${esc(m.name)}</b> <span class="mut">sunna aur dekhna chahta hai</span>${edit
+      ? `<div class="chips" style="margin-top:6px"><button class="chip" data-kl="kwyes" data-u="${esc(m.uid)}" ${K.busy ? 'disabled' : ''}>1 ghante ke liye do</button><button class="chip" data-kl="kwno" data-u="${esc(m.uid)}" ${K.busy ? 'disabled' : ''}>Abhi nahi</button></div>`
+      : '<p class="mut" style="margin:4px 0 0;font-size:12.5px">Manzoori ke liye parent ka PIN chahiye.</p>'}</div>`).join('');
+    return `<div style="margin-top:12px"><b>Mentor ki request</b>${list.length ? rows : '<p class="mut" style="margin:4px 0 0;font-size:12.5px">Abhi koi request nahi.</p>'}${asks}</div>`;
   }
   function kidBannerHTML() {
     klStyle();
     const L = role() === 'kid' ? S.listen : []; if (!L.length) return '';
     return `<div class="card kl-listen" role="status" style="margin-top:12px"><div class="bl-row"><span class="kl-state"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><b>Mentor sun rahe hain</b></span><button class="chip" data-kl="kstop">Band karo</button></div><p class="mut" style="margin:4px 0 0;font-size:12.5px">${esc(L.map(m => m.name).join(', '))} tumhari Saath me bolo recording sun sakte hain, aur ye bhi dekh sakte hain ki screen par kya likha hai (sirf likha hua, photo ya awaaz nahi).</p></div>`;
+  }
+  // A mentor asks to listen / watch (the ask is a time stamp on the mentor's own record), or takes the ask back.
+  async function mentorWatch(code, on) {
+    const C = cloud(), M = S.men; if (role() !== 'mentor' || !C || !C.mentorWatchAsk || M.busy) return;
+    M.err = '';
+    try { await C.mentorWatchAsk(code, on); } catch (e) { M.err = fail(e); }
+    await menLoad(true); draw();
+  }
+  async function watchNo(code, uid, who) {
+    const C = cloud(); if (!C || !C.mentorWatchNo) return;
+    try { await C.mentorWatchNo(code, uid); } catch (e) {}
+    if (who === 'par') { await parLoad(true); draw(); } else { await listenPoll(); draw(); }
+  }
+  // The child's phone ("Parent ke liye", parent PIN open): give the asking mentor the 1-hour window, or say no.
+  async function kidWatch(uid, ok) {
+    const C = cloud(), K = S.kid; if (role() !== 'kid' || !C || !K.link || K.busy) return;
+    if (ok && !g.confirm('Kya aap bachche ke parent ho? Ye mentor 1 ghante tak screen par likha hua dekh sakega (photo ya awaaz nahi). Aap ya bachcha kabhi bhi band kar sakte ho.')) return;
+    K.busy = true; K.err = ''; K.msg = ''; draw();
+    try { if (ok) { await C.mentorListen(K.link.code, uid, Date.now() + 3600000); K.msg = 'Mentor 1 ghante tak dekh sakta hai.'; } else { await C.mentorWatchNo(K.link.code, uid); K.msg = 'Request mana kar di.'; } } catch (e) { K.err = fail(e); }
+    K.busy = false; await listenPoll(); draw();
   }
   async function kidStop() {
     const C = cloud(); if (role() !== 'kid' || !C || !S.kid.link) return;
@@ -420,7 +446,7 @@
         if (!link || !me) { try { await C.forgetMentee(code); } catch (e) {} continue; }   // the child stopped sharing, or the parent said no
         let pres = null, sum = null, wa = null, rep = null;
         if (me.status === 'approved') { try { pres = await C.getPres(code); } catch (e) {} try { sum = await C.getSum(code); } catch (e) {} wa = await C.getWa(code); rep = await C.getRep(code); }
-        out.push({ code, name: link.name, status: me.status, pres, sum, wa, rep, target: tgt[code] || 0, listenUntil: +me.listenUntil || 0 });
+        out.push({ code, name: link.name, status: me.status, pres, sum, wa, rep, target: tgt[code] || 0, listenUntil: +me.listenUntil || 0, watchAsk: +me.watchAsk || 0 });
       }
       M.kids = out;
     } catch (e) { M.err = fail(e); }
@@ -528,10 +554,13 @@
     const week = ok ? weekHTML(k) : '';
     const watching = ok && +k.listenUntil > Date.now();
     const watch = watching ? `<div class="md-h">${mi('wave')}<span>Live screen</span></div><div class="md-watch" data-kl-live="${esc(k.code)}" aria-live="polite">${liveHTML(S.men.live && S.men.live[k.code])}</div>` : '';
+    const askBox = ok && !watching ? (+k.watchAsk > 0
+      ? `<div class="md-h">${mi('wave')}<span>Sunna aur dekhna</span></div><p style="margin:0">Request bhej di (${esc(new Date(k.watchAsk).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }))}). Parent ya bachche ke parent ki manzoori ka intezaar.</p><div class="chips" style="margin-top:8px"><button class="chip" data-kl="mwatchoff" data-v="${esc(k.code)}">Request wapas lo</button></div>`
+      : `<div class="md-h">${mi('wave')}<span>Sunna aur dekhna</span></div><div class="chips"><button class="chip" data-kl="mwatch" data-v="${esc(k.code)}">Sunna / Dekhna maango</button></div><p class="mut" style="margin:6px 0 0;font-size:12.5px">Parent manzoor karega to 1 ghante tak bachche ki recordings sun sakte ho aur uski screen par likha hua live dekh sakte ho.</p>`) : '';
     const voice = ok && g.BOLOREC && g.BOLOREC.mentorHTML ? g.BOLOREC.mentorHTML(k.code, k.listenUntil) : '';
     const wa = ok && k.wa && k.wa.num ? `<button class="chip" data-kl="mwa" data-v="${esc(k.code)}">WhatsApp report</button>` : '';
     return `<div class="md-card" data-kl-mcard="${esc(k.code)}" style="--k1:${c1};--k2:${c2}"><div class="md-top"><div class="md-av" aria-hidden="true">${esc(String(k.name || '?').trim().charAt(0).toUpperCase() || '?')}</div><div class="md-nm"><h2>${esc(k.name)}</h2>${pill}</div>${streak ? `<span class="md-streak" title="Lagatar din">${mi('flame')}${streak}</span>` : ''}</div>
-      <div class="md-body">${flagH}${live}${watch}${last}${target}${prog}${week}${voice}
+      <div class="md-body">${flagH}${live}${watch}${askBox}${last}${target}${prog}${week}${voice}
         <div class="chips" style="margin-top:14px">${wa}<button class="chip" data-kl="mleave" data-v="${esc(k.code)}">${ok ? 'Is bachche se hatao' : 'Request wapas lo'}</button></div></div></div>`;
   }
   // Live screen on the mentor's side: words only, drawn with textContent-safe escaping; older than 20 s means the phone is in the background.
@@ -601,6 +630,11 @@
     else if (a === 'wadel') parWa(b.dataset.v, true);
     else if (a === 'lgo') parListen(b.dataset.v, b.dataset.u, true);
     else if (a === 'lstop') parListen(b.dataset.v, b.dataset.u, false);
+    else if (a === 'lno') watchNo(b.dataset.v, b.dataset.u, 'par');
+    else if (a === 'mwatch') mentorWatch(b.dataset.v, true);
+    else if (a === 'mwatchoff') mentorWatch(b.dataset.v, false);
+    else if (a === 'kwyes') kidWatch(b.dataset.u, true);
+    else if (a === 'kwno') kidWatch(b.dataset.u, false);
     else if (a === 'kstop') kidStop();
     else if (a === 'kmyes') kidMentor(b.dataset.u, true);
     else if (a === 'kmno') kidMentor(b.dataset.u, false);
@@ -640,7 +674,7 @@
   g.KIDLINK = {
     normCode, goodCode, fmt, joinCode, mentorAsk, waNum, reportText, kidBannerHTML, kidPanelHTML, parentHTML, mentorHTML, touch,
     kidCode: () => (S.kid.link && S.kid.link.code) || '',
-    setUser(u) { const id = u && u.uid ? u.uid : ''; if (id === S.uid) return; S.uid = id; S.kid = { loaded: false, busy: false, err: '', msg: '', link: null, parents: 0, pend: [] }; S.par = { loaded: false, busy: false, err: '', msg: '', kids: [] }; S.men = { loaded: false, busy: false, err: '', msg: '', kids: [], filter: 'all' }; S.presAt = 0; S.presOn = null; S.accAt = 0; S.accOn = false; S.listen = []; S.repKey = ''; S.repAt = 0; S.repSend = 0; },
-    _state: S, _pull: pull, _push: push, _tick: tick, _beat: beat, _livePush: livePush, _liveBuild: liveBuild, _liveTick: liveTick, _listenPoll: listenPoll, _kidMentor: kidMentor, _repPush: repPush, _flagsOf: flagsOf
+    setUser(u) { const id = u && u.uid ? u.uid : ''; if (id === S.uid) return; S.uid = id; S.kid = { loaded: false, busy: false, err: '', msg: '', link: null, parents: 0, pend: [], asks: [] }; S.par = { loaded: false, busy: false, err: '', msg: '', kids: [] }; S.men = { loaded: false, busy: false, err: '', msg: '', kids: [], filter: 'all' }; S.presAt = 0; S.presOn = null; S.accAt = 0; S.accOn = false; S.listen = []; S.repKey = ''; S.repAt = 0; S.repSend = 0; },
+    _state: S, _pull: pull, _push: push, _tick: tick, _beat: beat, _kidWatch: kidWatch, _livePush: livePush, _liveBuild: liveBuild, _liveTick: liveTick, _listenPoll: listenPoll, _kidMentor: kidMentor, _repPush: repPush, _flagsOf: flagsOf
   };
 })(window);

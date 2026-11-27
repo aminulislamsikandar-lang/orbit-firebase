@@ -361,9 +361,11 @@ window.CLOUD.kids = {
     await setDoc(doc(db, 'users', u.uid, 'mentees', code), { at: Date.now() });
   },
   async mentorMe(code) { const u = auth.currentUser; if (!u) return null; try { const s = await getDoc(doc(db, 'kidLinks', code, 'mentors', u.uid)); return s.exists() ? s.data() : null; } catch (e) { return null; } },
+  async mentorWatchAsk(code, on) { const u = auth.currentUser; if (!u) throw new Error('login'); await updateDoc(doc(db, 'kidLinks', code, 'mentors', u.uid), { watchAsk: on ? Date.now() : 0 }); },   // mentor: ask to listen / watch (or withdraw)
+  async mentorWatchNo(code, uid) { await updateDoc(doc(db, 'kidLinks', code, 'mentors', uid), { watchAsk: 0 }); },   // parent or the child's phone: say no to the ask
   async mentors(code) { const s = await getDocs(collection(db, 'kidLinks', code, 'mentors')); const a = []; s.forEach(d => a.push(d.data())); return a; },
   async mentorApprove(code, uid) { await updateDoc(doc(db, 'kidLinks', code, 'mentors', uid), { status: 'approved' }); },
-  async mentorListen(code, uid, until) { await updateDoc(doc(db, 'kidLinks', code, 'mentors', uid), { listenUntil: until }); },   // parent: open the window (at most 1 hour); parent or child: until = 0 closes it
+  async mentorListen(code, uid, until) { await updateDoc(doc(db, 'kidLinks', code, 'mentors', uid), until > 0 ? { listenUntil: until, watchAsk: 0 } : { listenUntil: until }); },   // opening also clears the mentor's ask   // parent: open the window (at most 1 hour); parent or child: until = 0 closes it
   async getReview(code, rid) { try { const s = await getDoc(doc(db, 'kidLinks', code, 'reviews', rid)); return s.exists() ? s.data() : null; } catch (e) { return null; } },
   async putReview(code, rid, marks) { const u = auth.currentUser; if (!u) throw new Error('login'); await setDoc(doc(db, 'kidLinks', code, 'reviews', rid), { marks, by: u.uid, at: Date.now() }); },
   async reviews(code) { try { const s = await getDocs(collection(db, 'kidLinks', code, 'reviews')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a; } catch (e) { return []; } },
