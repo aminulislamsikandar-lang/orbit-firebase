@@ -10,7 +10,7 @@ let pass = 0, fail = 0;
 const t = (n, ok, extra) => { if (ok) pass++; else { fail++; console.log('FAIL  ' + n + (extra ? '  ' + extra : '')); } };
 const tick = (ms = 40) => new Promise(r => setTimeout(r, ms));
 
-const newDb = () => ({ course: {}, links: {}, parents: {}, sums: {}, sets: {}, kids: {}, mentors: {}, pres: {}, mentees: {}, wa: {}, reviews: {}, rep: {}, repWrites: 0, menteeData: {}, n: 0 });
+const newDb = () => ({ course: {}, links: {}, parents: {}, sums: {}, sets: {}, kids: {}, mentors: {}, pres: {}, mentees: {}, wa: {}, reviews: {}, rep: {}, live: {}, repWrites: 0, menteeData: {}, n: 0 });
 function cloudFor(db, uid) {
   const denied = () => { const e = new Error('denied'); e.code = 'permission-denied'; return e; };
   return {
@@ -35,6 +35,9 @@ function cloudFor(db, uid) {
       leave: async code => { delete (db.parents[code] || {})[uid]; db.kids[uid] = (db.kids[uid] || []).filter(c => c !== code); },
       forget: async code => { db.kids[uid] = (db.kids[uid] || []).filter(c => c !== code); },
       // Online / Offline and mentors (same rules as firestore.rules: the child writes presence; a parent approves; only an approved mentor reads)
+      putLive: async (code, l) => { if (!db.links[code] || db.links[code].kidUid !== uid) throw denied(); if (!l || Object.keys(l).some(k => !['at', 'act', 'lines'].includes(k)) || !Array.isArray(l.lines) || l.lines.length > 14) throw denied(); db.live[code] = l; },
+      getLive: async code => { const m = (db.mentors[code] || {})[uid], own = db.links[code] && db.links[code].kidUid === uid, par = (db.parents[code] || {})[uid]; if (!(own || par || (m && m.status === 'approved' && +m.listenUntil > Date.now()))) return null; return db.live[code] || null; },
+      delLive: async code => { if (db.links[code] && db.links[code].kidUid === uid) delete db.live[code]; },
       putPres: async (code, p) => { if (!db.links[code] || db.links[code].kidUid !== uid) throw denied(); db.pres[code] = p; },
       getPres: async code => { const m = (db.mentors[code] || {})[uid]; const ok = (db.parents[code] || {})[uid] || (db.links[code] && db.links[code].kidUid === uid) || (m && m.status === 'approved'); if (!ok) throw denied(); return db.pres[code] || null; },
       mentorAsk: async (code, name) => { if (!db.links[code]) throw denied(); (db.mentors[code] = db.mentors[code] || {})[uid] = { uid, name, status: 'pending', at: Date.now() }; (db.mentees[uid] = db.mentees[uid] || []).push(code); },
@@ -216,6 +219,19 @@ async function boot(db, uid, { role } = {}) {
   t('the child\'s screen says "Mentor sun rahe hain" with a Band karo button', /Mentor sun rahe hain/.test(kid.app()) && /Rahul/.test(kid.app()) && !!kid.d.querySelector('[data-kl=kstop]'));
   men.click('[data-kl=mrefresh]'); await tick(150);
   t('the mentor now sees the listening time and can open the recordings', /Awaaz sunne ka time/.test(men.app()) && !!men.d.querySelector('[data-br=mtoggle]'));
+  // Live screen (words only): the child's phone writes it only while the window is open; the mentor sees it inside the window.
+  await kid.w.KIDLINK._livePush(true); await tick(80);
+  const lv = db.live[kcode];
+  t('window open: the child phone writes the words on its screen (act + lines, nothing else)', !!lv && Object.keys(lv).sort().join() === 'act,at,lines' && Array.isArray(lv.lines) && lv.lines.length <= 14 && lv.lines.every(x => typeof x === 'string' && x.length <= 60));
+  t('the live words never include the Parent ke liye box (PIN and settings)', !lv.lines.some(x => /PIN|Parent ke liye|Badalne ke liye/.test(x)));
+  t('the mentor card has a Live screen box', !!men.d.querySelector('[data-kl-live]') && /Live screen/.test(men.app()));
+  db.live[kcode] = { at: Date.now(), act: 'ABC Levels', lines: ['Level 1 · 1 / 10', 'Fish — ye kis letter se shuru hota hai?', 'F', 'B', 'C', 'Y', '<img src=x onerror=alert(1)>'] };
+  await men.w.KIDLINK._liveTick(); await tick(50);
+  const box = men.d.querySelector('[data-kl-live]');
+  t('the mentor sees the game, level, question and answer buttons live', /ABC Levels/.test(box.textContent) && /Level 1 · 1 \/ 10/.test(box.textContent) && /Fish — ye kis letter/.test(box.textContent) && [...box.querySelectorAll('.md-ln div')].map(x => x.textContent).slice(2, 6).join() === 'F,B,C,Y');
+  t('words from the child are shown as plain text (no HTML runs)', !box.querySelector('img') && /<img src=x/.test(box.textContent));
+  db.live[kcode].at = Date.now() - 60000; await men.w.KIDLINK._liveTick(); await tick(50);
+  t('a screen older than 20 s says the phone is in the background', /background mein hai/.test(men.d.querySelector('[data-kl-live]').textContent));
   men.click('[data-br=mtoggle]'); await tick(150);
   t('the recordings are listed', !!men.d.querySelector('[data-br=mplay]'));
   men.click('[data-br=mplay]'); await tick(200);
@@ -236,6 +252,8 @@ async function boot(db, uid, { role } = {}) {
   t('only a parent can open the window, and never for more than about an hour', denied === 3);
   kid.click('[data-kl=kstop]'); await tick(150);
   t('the child stops the listening with one tap', db.mentors[kcode].men1.listenUntil === 0 && !/Mentor sun rahe hain/.test(kid.app()));
+  await tick(200);
+  t('closing the window also removes the live screen words', !db.live[kcode]);
   men.click('[data-kl=mrefresh]'); await tick(150);
   t('the mentor loses the recordings at once and the page drops the open recording', /manzoori maango/.test(men.app()) && !men.d.getElementById('brAud'));
   let mdenied = false; try { await men.w.CLOUD.kids.putReview(kcode, RID, '11'); } catch (e) { mdenied = true; }

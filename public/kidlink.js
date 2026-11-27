@@ -84,6 +84,30 @@
     Object.keys(on).forEach(d => { (map[d] = map[d] || { d, o: 0, b: 0, k: 0, r: 0 }).o = Math.max(0, Math.min(86400, +on[d] || 0)); });
     return { days: Object.keys(map).sort().slice(-7).map(d => map[d]), weak: b.weak || [] };
   }
+  // Live screen for a mentor whose window is open (see firestore.rules state/live): only the WORDS on the child's screen, never a picture, a sound or anything typed.
+  const LIVE_MS = 5000;
+  function liveBuild() {
+    const doc = g.document, root = doc.getElementById('app'); if (!root) return null;
+    const h = root.querySelector('h2'), out = [], skip = 'details, input, textarea, select, script, style, svg, [aria-hidden="true"], [data-nolive]';
+    root.querySelectorAll('*').forEach(el => {
+      if (el.children.length || el.closest(skip)) return;
+      if (h && !(h.compareDocumentPosition(el) & 4)) return;   // 4 = after the title: the tab buttons above it are not repeated
+      const s = String(el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (s && out[out.length - 1] !== s && out.length < 14) out.push(s);
+    });
+    let act = ''; try { act = String(g.BOLO && g.BOLO.activity ? g.BOLO.activity() || '' : '').slice(0, 40); } catch (e) {}
+    return { act, lines: out };
+  }
+  async function livePush(force) {
+    const C = cloud(); if (role() !== 'kid' || !C || !S.uid || !S.kid.link || !C.putLive) return;
+    const code = S.kid.link.code;
+    if (!S.listen.length || !seen()) { if (S.liveOn && !S.listen.length) { S.liveOn = false; S.liveKey = ''; try { await C.delLive(code); } catch (e) {} } return; }
+    const b = liveBuild(); if (!b) return;
+    const key = JSON.stringify(b), now = Date.now();
+    if (!force && key === S.liveKey && now - S.liveAt < 15000) return;
+    S.liveKey = key; S.liveAt = now; S.liveOn = true;
+    try { await C.putLive(code, { at: now, act: b.act, lines: b.lines }); } catch (e) { S.liveKey = ''; }
+  }
   async function repPush(force) {
     const C = cloud(); if (role() !== 'kid' || !C || !S.uid || !S.kid.link || !seen()) return;
     const r = repBuild(), stable = JSON.stringify({ d: r.days.map(x => [x.d, x.b, x.k, x.r]), w: r.weak }), full = stable + JSON.stringify(r.days.map(x => x.o)), now = Date.now();
@@ -190,7 +214,7 @@
   // The parent opens a 1-hour listening window for one approved mentor, or closes it. Opening also turns the Saath me bolo recording on (the mentor can only hear what is recorded).
   async function parListen(code, uid, on) {
     const C = cloud(), P = S.par; if (!C || P.busy) return;
-    if (on && !g.confirm('Ye mentor 1 ghante tak bachche ki "Saath me bolo" recordings sun sakega. Is ke liye recording bhi chalu ho jayegi (recording 2 ghante baad hat jaati hai). Bachche ki screen par "Mentor sun rahe hain" dikhega, aur aap ya bachcha kabhi bhi band kar sakte ho. Shuru karein?')) return;
+    if (on && !g.confirm('Ye mentor 1 ghante tak bachche ki "Saath me bolo" recordings sun sakega aur bachche ki screen par likha hua (game, level, sawaal) live dekh sakega, photo ya awaaz nahi. Is ke liye recording bhi chalu ho jayegi (recording 2 ghante baad hat jaati hai). Bachche ki screen par "Mentor sun rahe hain" dikhega, aur aap ya bachcha kabhi bhi band kar sakte ho. Shuru karein?')) return;
     P.busy = true; P.err = ''; P.msg = ''; draw();
     try {
       await C.mentorListen(code, uid, on ? Date.now() + 3600000 : 0);
@@ -291,7 +315,7 @@
         let sahi = 0, galat = 0; mine.forEach(r => { for (const c of String(r.marks || '')) { if (c === '1') sahi++; else if (c === '0') galat++; } });
         return `<div class="bl-row" style="margin-top:6px"><span>${esc(m.name)} <span class="mut">(mentor)</span></span><button class="chip" data-kl="mno" data-v="${esc(k.code)}" data-u="${esc(m.uid)}">Hatao</button></div>
           ${hear ? `<p style="margin:6px 0 0"><b>Sunna chalu hai</b>, ${hm(m.listenUntil)} tak.</p><div class="chips" style="margin-top:6px"><button class="chip" data-kl="lstop" data-v="${esc(k.code)}" data-u="${esc(m.uid)}" ${S.par.busy ? 'disabled' : ''}>Abhi band karo</button></div>`
-          : `<div class="chips" style="margin-top:6px"><button class="chip" data-kl="lgo" data-v="${esc(k.code)}" data-u="${esc(m.uid)}" ${S.par.busy ? 'disabled' : ''}>1 ghante ke liye sunne do</button></div><p class="mut" style="margin:4px 0 0;font-size:12.5px">Padhai ke time par dabao. 1 ghante baad apne aap band. Mentor sirf Saath me bolo recordings sunta hai aur letter par sahi ya galat likhta hai.</p>`}
+          : `<div class="chips" style="margin-top:6px"><button class="chip" data-kl="lgo" data-v="${esc(k.code)}" data-u="${esc(m.uid)}" ${S.par.busy ? 'disabled' : ''}>1 ghante ke liye sunne do</button></div><p class="mut" style="margin:4px 0 0;font-size:12.5px">Padhai ke time par dabao. 1 ghante baad apne aap band. Mentor Saath me bolo recordings sunta hai, letter par sahi ya galat likhta hai, aur bachche ki screen par likha hua (game, level, sawaal) live dekh sakta hai.</p>`}
           ${m.listenCount ? `<p class="mut" style="margin:4px 0 0;font-size:12.5px">Is mentor ne ${+m.listenCount} recording suni. Aakhri baar: ${esc(new Date(+m.lastListenAt || 0).toLocaleString())}.</p>` : ''}
           ${mine.length ? `<p class="mut" style="margin:4px 0 0;font-size:12.5px">Mentor ke marks: ${sahi} sahi, ${galat} galat (${mine.length} recording).</p>` : ''}`;
       })()
@@ -333,6 +357,7 @@
     let all = [];
     try { all = await C.mentors(S.kid.link.code); } catch (e) { return; }
     const now = all.filter(m => m.status === 'approved' && +m.listenUntil > Date.now()).map(m => ({ uid: m.uid, name: m.name }));
+    if (now.length && !S.listen.length) setTimeout(() => livePush(true), 50);   // a window just opened: the mentor sees the screen at once
     const pend = all.filter(m => m.status === 'pending').map(m => ({ uid: m.uid, name: m.name }));
     const same = now.length === S.listen.length && now.every((m, i) => m.uid === S.listen[i].uid);
     const samePend = pend.length === S.kid.pend.length && pend.every((m, i) => m.uid === S.kid.pend[i].uid);
@@ -359,12 +384,13 @@
   function kidBannerHTML() {
     klStyle();
     const L = role() === 'kid' ? S.listen : []; if (!L.length) return '';
-    return `<div class="card kl-listen" role="status" style="margin-top:12px"><div class="bl-row"><span class="kl-state"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><b>Mentor sun rahe hain</b></span><button class="chip" data-kl="kstop">Band karo</button></div><p class="mut" style="margin:4px 0 0;font-size:12.5px">${esc(L.map(m => m.name).join(', '))} tumhari Saath me bolo recording sun sakte hain.</p></div>`;
+    return `<div class="card kl-listen" role="status" style="margin-top:12px"><div class="bl-row"><span class="kl-state"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><b>Mentor sun rahe hain</b></span><button class="chip" data-kl="kstop">Band karo</button></div><p class="mut" style="margin:4px 0 0;font-size:12.5px">${esc(L.map(m => m.name).join(', '))} tumhari Saath me bolo recording sun sakte hain, aur ye bhi dekh sakte hain ki screen par kya likha hai (sirf likha hua, photo ya awaaz nahi).</p></div>`;
   }
   async function kidStop() {
     const C = cloud(); if (role() !== 'kid' || !C || !S.kid.link) return;
     const list = S.listen.slice(); S.listen = []; draw();
     for (const m of list) { try { await C.mentorListen(S.kid.link.code, m.uid, 0); } catch (e) {} }
+    livePush();   // the window is closed: the live words are removed at once
   }
   // ---- mentor's phone ----
   // Ask with a child's code. The parent has to approve before the mentor sees anything. Returns { ok: true } or { err: 'text' }.
@@ -500,11 +526,43 @@
     }
     const prog = ok ? `<div class="md-h">${mi('clock')}<span>Aaj ka progress</span></div><p style="margin:0">Aaj online: <b>${min(osec)} min</b>. Bolo practice: <b>${min(bolo)} min</b>.</p>${tilesHTML(tiles(sm, k.sum && k.sum.total))}` : '';
     const week = ok ? weekHTML(k) : '';
+    const watching = ok && +k.listenUntil > Date.now();
+    const watch = watching ? `<div class="md-h">${mi('wave')}<span>Live screen</span></div><div class="md-watch" data-kl-live="${esc(k.code)}" aria-live="polite">${liveHTML(S.men.live && S.men.live[k.code])}</div>` : '';
     const voice = ok && g.BOLOREC && g.BOLOREC.mentorHTML ? g.BOLOREC.mentorHTML(k.code, k.listenUntil) : '';
     const wa = ok && k.wa && k.wa.num ? `<button class="chip" data-kl="mwa" data-v="${esc(k.code)}">WhatsApp report</button>` : '';
     return `<div class="md-card" data-kl-mcard="${esc(k.code)}" style="--k1:${c1};--k2:${c2}"><div class="md-top"><div class="md-av" aria-hidden="true">${esc(String(k.name || '?').trim().charAt(0).toUpperCase() || '?')}</div><div class="md-nm"><h2>${esc(k.name)}</h2>${pill}</div>${streak ? `<span class="md-streak" title="Lagatar din">${mi('flame')}${streak}</span>` : ''}</div>
-      <div class="md-body">${flagH}${live}${last}${target}${prog}${week}${voice}
+      <div class="md-body">${flagH}${live}${watch}${last}${target}${prog}${week}${voice}
         <div class="chips" style="margin-top:14px">${wa}<button class="chip" data-kl="mleave" data-v="${esc(k.code)}">${ok ? 'Is bachche se hatao' : 'Request wapas lo'}</button></div></div></div>`;
+  }
+  // Live screen on the mentor's side: words only, drawn with textContent-safe escaping; older than 20 s means the phone is in the background.
+  function liveHTML(l) {
+    if (!l) return '<p class="mut" style="margin:0">Bachche ka screen yahan dikhega (kuch second mein).</p>';
+    if (Date.now() - (+l.at || 0) > 20000) return '<p class="mut" style="margin:0">Bachche ka phone background mein hai ya Orbit band hai.</p>';
+    const ln = (Array.isArray(l.lines) ? l.lines : []).slice(0, 14).map(x => `<div style="padding:3px 0">${esc(String(x).slice(0, 60))}</div>`).join('');
+    return `${l.act ? `<p style="margin:0 0 4px"><b>${esc(String(l.act).slice(0, 40))}</b></p>` : ''}<div class="md-ln" style="padding:8px 12px;border-radius:12px;background:rgba(0,0,0,.05)">${ln || '<span class="mut">Abhi koi sawaal nahi.</span>'}</div>`;
+  }
+  // Updates the open box in place with text nodes only (no innerHTML): what the child's screen shows is never run as HTML.
+  function liveFill(el, l) {
+    const d = g.document, mk = (tag, txt, st) => { const n = d.createElement(tag); n.textContent = txt; if (st) n.setAttribute('style', st); return n; };
+    while (el.firstChild) el.removeChild(el.firstChild);
+    if (!l) { el.appendChild(mk('p', 'Bachche ka screen yahan dikhega (kuch second mein).', 'margin:0')); return; }
+    if (Date.now() - (+l.at || 0) > 20000) { el.appendChild(mk('p', 'Bachche ka phone background mein hai ya Orbit band hai.', 'margin:0')); return; }
+    if (l.act) { const p = d.createElement('p'); p.setAttribute('style', 'margin:0 0 4px'); p.appendChild(mk('b', String(l.act).slice(0, 40))); el.appendChild(p); }
+    const box = d.createElement('div'); box.className = 'md-ln'; box.setAttribute('style', 'padding:8px 12px;border-radius:12px;background:rgba(0,0,0,.05)');
+    const lines = (Array.isArray(l.lines) ? l.lines : []).slice(0, 14);
+    lines.forEach(x => box.appendChild(mk('div', String(x).slice(0, 60), 'padding:3px 0')));
+    if (!lines.length) box.appendChild(mk('span', 'Abhi koi sawaal nahi.'));
+    el.appendChild(box);
+  }
+  async function liveTick() {
+    const C = cloud(), M = S.men; if (role() !== 'mentor' || !C || !C.getLive || !seen()) return;
+    const open = (M.kids || []).filter(k => k.status === 'approved' && +k.listenUntil > Date.now());
+    M.live = M.live || {};
+    for (const k of open) {
+      let l = null; try { l = await C.getLive(k.code); } catch (e) {}
+      M.live[k.code] = l;
+      const el = g.document.querySelector('[data-kl-live="' + k.code + '"]'); if (el) liveFill(el, l);
+    }
   }
   function mentorHTML() {
     klStyle();
@@ -573,6 +631,8 @@
   }
   const menEditing = () => { const c = g.document.getElementById('klMCode'); return !!((c && (c.value || g.document.activeElement === c)) || (g.BOLOREC && g.BOLOREC.busy && g.BOLOREC.busy())); };
   setInterval(tick, TICK_MS);
+  setInterval(() => { try { livePush(); } catch (e) {} }, LIVE_MS);
+  setInterval(() => { try { liveTick(); } catch (e) {} }, 4000);
   // The child's phone goes to the background (or comes back): Offline / Online right away, not after the next minute.
   g.document.addEventListener('visibilitychange', () => { if (role() === 'kid') beat(true); });
   if (g.addEventListener) g.addEventListener('pagehide', () => { if (role() === 'kid') beat(true); });
@@ -581,6 +641,6 @@
     normCode, goodCode, fmt, joinCode, mentorAsk, waNum, reportText, kidBannerHTML, kidPanelHTML, parentHTML, mentorHTML, touch,
     kidCode: () => (S.kid.link && S.kid.link.code) || '',
     setUser(u) { const id = u && u.uid ? u.uid : ''; if (id === S.uid) return; S.uid = id; S.kid = { loaded: false, busy: false, err: '', msg: '', link: null, parents: 0, pend: [] }; S.par = { loaded: false, busy: false, err: '', msg: '', kids: [] }; S.men = { loaded: false, busy: false, err: '', msg: '', kids: [], filter: 'all' }; S.presAt = 0; S.presOn = null; S.accAt = 0; S.accOn = false; S.listen = []; S.repKey = ''; S.repAt = 0; S.repSend = 0; },
-    _state: S, _pull: pull, _push: push, _tick: tick, _beat: beat, _listenPoll: listenPoll, _kidMentor: kidMentor, _repPush: repPush, _flagsOf: flagsOf
+    _state: S, _pull: pull, _push: push, _tick: tick, _beat: beat, _livePush: livePush, _liveBuild: liveBuild, _liveTick: liveTick, _listenPoll: listenPoll, _kidMentor: kidMentor, _repPush: repPush, _flagsOf: flagsOf
   };
 })(window);

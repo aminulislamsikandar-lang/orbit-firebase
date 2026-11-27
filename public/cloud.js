@@ -324,7 +324,7 @@ window.CLOUD.kids = {
   async parents(code) { const s = await getDocs(collection(db, 'kidLinks', code, 'parents')); const a = []; s.forEach(d => a.push(d.data())); return a; },
   async remove(code) {   // the child's phone stops sharing: the link and everything under it go
     for (const sub of ['parents', 'mentors', 'reviews']) { try { const s = await getDocs(collection(db, 'kidLinks', code, sub)); await Promise.all(s.docs.map(d => deleteDoc(d.ref))); } catch (e) {} }
-    for (const id of ['sum', 'set', 'pres', 'wa', 'rep']) { try { await deleteDoc(doc(db, 'kidLinks', code, 'state', id)); } catch (e) {} }
+    for (const id of ['sum', 'set', 'pres', 'wa', 'rep', 'live']) { try { await deleteDoc(doc(db, 'kidLinks', code, 'state', id)); } catch (e) {} }
     await deleteDoc(doc(db, 'kidLinks', code));
   },
   async putSum(code, sum) { await setDoc(doc(db, 'kidLinks', code, 'state', 'sum'), sum); },
@@ -346,6 +346,9 @@ window.CLOUD.kids = {
   // Online / Offline: written by the child's phone, read by the parent and by an approved mentor.
   async putPres(code, pres) { await setDoc(doc(db, 'kidLinks', code, 'state', 'pres'), pres); },
   async getPres(code) { const s = await getDoc(doc(db, 'kidLinks', code, 'state', 'pres')); return s.exists() ? s.data() : null; },
+  async putLive(code, live) { await setDoc(doc(db, 'kidLinks', code, 'state', 'live'), live); },   // child's phone, only while a mentor's window is open: the words on the child's screen
+  async getLive(code) { try { const s = await getDoc(doc(db, 'kidLinks', code, 'state', 'live')); return s.exists() ? s.data() : null; } catch (e) { return null; } },
+  async delLive(code) { try { await deleteDoc(doc(db, 'kidLinks', code, 'state', 'live')); } catch (e) {} },
   async putRep(code, rep) { await setDoc(doc(db, 'kidLinks', code, 'state', 'rep'), rep); },   // the last 7 days and the items to repeat, for the mentor
   async getRep(code) { try { const s = await getDoc(doc(db, 'kidLinks', code, 'state', 'rep')); return s.exists() ? s.data() : null; } catch (e) { return null; } },
   async putWa(code, num) { await setDoc(doc(db, 'kidLinks', code, 'state', 'wa'), { num, at: Date.now() }); },
