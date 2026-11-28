@@ -18,6 +18,7 @@
       { "source": "/public-videos/**", "headers": [{ "key": "Content-Security-Policy", "value": "sandbox allow-scripts allow-popups allow-presentation" }] },
       { "source": "/audio/**", "headers": [{ "key": "Cache-Control", "value": "public, max-age=604800" }] },
       { "source": "/bolo-audio/**", "headers": [{ "key": "Cache-Control", "value": "public, max-age=604800" }] },
+      { "source": "/byanjan-pic/**", "headers": [{ "key": "Cache-Control", "value": "public, max-age=604800" }] },
       { "source": "/swar/**", "headers": [{ "key": "Cache-Control", "value": "public, max-age=604800" }] },
       { "source": "**/*.@(webp|png|jpg|jpeg|svg|ico|woff2)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=604800" }] },
       { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },

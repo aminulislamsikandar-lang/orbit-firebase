@@ -61,7 +61,7 @@
   const canEdit = () => !hasPin() || st.unlocked;
   function firstOpen() { const m = marks(), n = list().length; for (let i = 0; i < n; i++) if (m[i] !== 'd') return i; return 0; }
   const stopAbc = () => { if (g.ABC) g.ABC.leave(); if (g.ABCLV) g.ABCLV.leave(); if (g.NUMG) g.NUMG.leave(); if (g.NUMLV) g.NUMLV.leave(); if (g.NUMCT) g.NUMCT.leave(); if (g.SUNO) g.SUNO.leave(); if (g.SWAR) g.SWAR.leave(); };   // the ABC topics keep their own speech and timers: stop them when the child changes topic or leaves
-  function reset(mode) { if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); if (g.SWARSAATH && g.SWARSAATH.running()) g.SWARSAATH.stop(); if (g.ABCSAATH && g.ABCSAATH.running()) g.ABCSAATH.stop(); stopListen(); stopSay(); clearAdv(); if (mode) { st.mode = mode; stopAbc(); } st.fb = null; st.err = ''; st.enter = true; st.i = firstOpen(); }
+  function reset(mode) { if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); if (g.SWARSAATH && g.SWARSAATH.running()) g.SWARSAATH.stop(); if (g.ABCSAATH && g.ABCSAATH.running()) g.ABCSAATH.stop(); if (g.BYANJANPIC && g.BYANJANPIC.running()) g.BYANJANPIC.stop(); stopListen(); stopSay(); clearAdv(); if (mode) { st.mode = mode; stopAbc(); } st.fb = null; st.err = ''; st.enter = true; st.i = firstOpen(); }
 
   // ---- voice out ----
   // Byanjan items carry a recorded voice clip (item.audio) and a mouth "video" (byanjan-video.js); everything else uses the browser voice.
@@ -426,7 +426,7 @@
     g.document.head.appendChild(s); return '';
   }
 
-  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['saath', 'সাথে বলো', '#e0613a'], ['asvyanjan', 'ক – কল', '#00969f'], ['abc', 'ABC Games', '#f59e0b'], ['abclv', 'ABC Levels', '#16a34a'], ['numg', '123 Games', '#f59e0b'], ['numlv', '123 Levels', '#16a34a'], ['numct', '123 Ginti', '#f59e0b'], ['suno', 'Suno Game', '#f59e0b'], ['swar', 'স্বৰ-বৰ্ণ', '#8e44ad'], ['swarsaath', 'স্বৰ সাথে বলো', '#8e44ad'], ['abcsaath', 'A–Z সাথে বলো', '#e91e63']];
+  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['saath', 'সাথে বলো', '#e0613a'], ['asvyanjan', 'ক – কল', '#00969f'], ['abc', 'ABC Games', '#f59e0b'], ['abclv', 'ABC Levels', '#16a34a'], ['numg', '123 Games', '#f59e0b'], ['numlv', '123 Levels', '#16a34a'], ['numct', '123 Ginti', '#f59e0b'], ['suno', 'Suno Game', '#f59e0b'], ['swar', 'স্বৰ-বৰ্ণ', '#8e44ad'], ['swarsaath', 'স্বৰ সাথে বলো', '#8e44ad'], ['abcsaath', 'A–Z সাথে বলো', '#e91e63'], ['byanjanpic', 'ছবিৰে সাথে বলো', '#e0613a']];
   const chipRow = (label, arr) => `<div class="chips bl-chips" role="group" aria-label="${label}">${arr.map(m => `<button class="chip" style="--c:${m[3]}" data-bl="${m[0]}" data-v="${m[1]}" aria-pressed="${m[4]}">${m[2]}</button>`).join('')}</div>`;
   const modeChips = () => chipRow('Kya bolna hai', MODES.map(m => ['mode', m[0], m[1], m[2], st.mode === m[0]]));
   function subPick() {   // the second row of chips (table number, or which poem) - still only chips at the top
@@ -470,6 +470,17 @@
     g.SWARSAATH.start({ sens: load().set.vol, code: linked() ? g.KIDLINK.kidCode() : '', api: g.api, redraw: () => { if (onScreen()) redraw(); }, alive: () => onScreen() && st.mode === 'swarsaath' });
   }
 
+  // "ছবিৰে সাথে বলো" (Saath me bolo with pictures): the same 41 letters and the same teacher recording as Saath me bolo, with the picture and word of the AJB book under the big letter. Its own screen and recorder in public/byanjanpic.js; the same Start rules (mic switch, parent's tick when joined, practice when not joined).
+  function picSaathCard() {
+    if (!g.BYANJANPIC) return '<div class="card"><p class="mut" style="margin:0">Ye hissa abhi load nahi hua. Page dobara kholo.</p></div>';
+    return g.BYANJANPIC.html({ ready: recOK(), why: over() ? '' : recWhy(), sens: load().set.vol, practice: !linked() });
+  }
+  function picSaathStart() {
+    if (!g.BYANJANPIC || g.BYANJANPIC.running() || !recOK()) return;
+    reset(); stopSay();
+    g.BYANJANPIC.start({ sens: load().set.vol, code: linked() ? g.KIDLINK.kidCode() : '', api: g.api, redraw: () => { if (onScreen()) redraw(); }, alive: () => onScreen() && st.mode === 'byanjanpic' });
+  }
+
   // "A–Z সাথে বলো" (ABC saath me bolo): the same thing for the 26 English letters, its own screen and recorder in public/abcsaath.js; the same Start rules (mic switch, parent's tick when joined, practice when not joined).
   function abcSaathCard() {
     if (!g.ABCSAATH) return '<div class="card"><p class="mut" style="margin:0">Ye hissa abhi load nahi hua. Page dobara kholo.</p></div>';
@@ -494,6 +505,7 @@
     if (st.mode === 'saath') return saathCard();
     if (st.mode === 'swarsaath') return swarSaathCard();
     if (st.mode === 'abcsaath') return abcSaathCard();
+    if (st.mode === 'byanjanpic') return picSaathCard();
     const by = st.mode === 'byanjan', asv = st.mode === 'asvyanjan';
     const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:60px' : 'font-size:104px';
     const bigHTML = by && g.BYANJAN_VIDEO ? g.BYANJAN_VIDEO.stageHTML(it, C.PLACES) : `<div class="bl-big" style="${big}">${esc(it.big)}</div>`;
@@ -552,6 +564,8 @@
     else if (a === 'sautostop') { if (g.SWARSAATH) g.SWARSAATH.stop(); }
     else if (a === 'aauto') abcSaathStart();
     else if (a === 'aautostop') { if (g.ABCSAATH) g.ABCSAATH.stop(); }
+    else if (a === 'bpauto') picSaathStart();
+    else if (a === 'bpautostop') { if (g.BYANJANPIC) g.BYANJANPIC.stop(); }
     else if (a === 'pin') pinAction(v);
   });
   g.document.addEventListener('change', e => {
@@ -575,7 +589,7 @@
     kidStart() {   // Kid mode (child), first screen of every app open: ABC Levels, at the level the child was last trying to pass. Later redraws and the child's own topic taps are left alone.
       if (st.kidInit) return; st.kidInit = true; st.mode = 'abclv'; st.fbInit = false; if (g.ABCLV && g.ABCLV.openAtLast) g.ABCLV.openAtLast();
     },
-    leave() { stopAbc(); if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); if (g.SWARSAATH && g.SWARSAATH.running()) g.SWARSAATH.stop(); if (g.ABCSAATH && g.ABCSAATH.running()) g.ABCSAATH.stop(); stopListen(); stopSay(); clearAdv(); save(); },
+    leave() { stopAbc(); if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); if (g.SWARSAATH && g.SWARSAATH.running()) g.SWARSAATH.stop(); if (g.ABCSAATH && g.ABCSAATH.running()) g.ABCSAATH.stop(); if (g.BYANJANPIC && g.BYANJANPIC.running()) g.BYANJANPIC.stop(); stopListen(); stopSay(); clearAdv(); save(); },
     // Kid mode: what the parent's phone may see (no audio, no text), and the limit / mic switch the parent set there.
     // Kid mode: a short label of what the child is doing right now (the topic only), for the mentor's "live activity".
     activity() {

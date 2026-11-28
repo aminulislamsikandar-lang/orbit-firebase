@@ -22,7 +22,7 @@ ok(S._url(0) === C.byanjanAudio(1) && S._url(24) === C.byanjanAudio(29), 'same f
 for (let t = 0; t < 200; t++) { const p = S._pick(6); ok(p.length === 6 && new Set(p).size === 6 && p.every(i => i >= 0 && i < NN), 'a pick is 6 different clips'); }
 
 // ---- wiring and style ----
-ok(/\['numct', '123 Ginti', '#f59e0b'\], \['suno', 'Suno Game', '#f59e0b'\](, \['swar', '[^']+', '#8e44ad'\])?(, \['swarsaath', '[^']+', '#8e44ad'\])?(, \['abcsaath', '[^']+', '#e91e63'\])?\]/.test(bolo), 'bolo.js: one new chip at the end, the old ones in place (Swar-borno may follow it)');
+ok(/\['numct', '123 Ginti', '#f59e0b'\], \['suno', 'Suno Game', '#f59e0b'\](, \['swar', '[^']+', '#8e44ad'\])?(, \['swarsaath', '[^']+', '#8e44ad'\])?(, \['abcsaath', '[^']+', '#e91e63'\])?(, \['byanjanpic', '[^']+', '#e0613a'\])?\]/.test(bolo), 'bolo.js: one new chip at the end, the old ones in place (Swar-borno may follow it)');
 ok(bolo.includes("if (g.SUNO) g.SUNO.leave();") && bolo.includes("st.mode === 'suno'") && bolo.includes('g.SUNO.viewHTML()'), 'bolo.js draws it and stops it when the child leaves');
 ok(idx.includes('<script src="/sunogame.js"></script>') && idx.includes("SUNO.mount($('#app'))") && idx.includes("NUMCT.mount($('#app'))"), 'index.html loads and mounts it, the other mounts are still there');
 ok(sw.includes("'/sunogame.js'") && +(/orbit-shell-v(\d+)/.exec(sw) || [])[1] >= 67, 'cached for offline, service worker version bumped');
@@ -47,7 +47,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   w.Audio = class { constructor(u) { this.u = u; this.l = {}; } addEventListener(e, f) { this.l[e] = f; } removeEventListener(e) { delete this.l[e]; } pause() {} play() { played.push(this.u); const f = this.l.ended; setTimeout(() => f && f(), 5); return Promise.resolve(); } };
   ['bolo-core.js', 'byanjan-video.js', 'bolo.js', 'sunogame.js'].forEach(x => w.eval(read(x))); w.eval('draw()');
   const d = w.document, chips = () => [...d.querySelectorAll('.bl-chips [data-bl=mode]')];
-  ok(/^alpha,table,poem,byanjan,saath,asvyanjan,(abc,abclv,numg,numlv,numct,)?suno(,swar)?(,swarsaath)?(,abcsaath)?$/.test(chips().map(c => c.dataset.v).join()), 'Suno Game comes after all the old chips (Swar-borno may follow it), nothing else was removed');
+  ok(/^alpha,table,poem,byanjan,saath,asvyanjan,(abc,abclv,numg,numlv,numct,)?suno(,swar)?(,swarsaath)?(,abcsaath)?(,byanjanpic)?$/.test(chips().map(c => c.dataset.v).join()), 'Suno Game comes after all the old chips (Swar-borno may follow it), nothing else was removed');
   ok(!!d.querySelector('.bl-big') && !d.getElementById('suno-root'), 'A se Z is still the first screen');
   chips().find(c => c.dataset.v === 'suno').click(); await wait(20);
   ok(!!d.getElementById('suno-root') && d.querySelectorAll('.sg-tab').length === 3 && !d.querySelector('.bl-big'), 'the topic draws its page with three games');
