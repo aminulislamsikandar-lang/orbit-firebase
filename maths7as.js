@@ -1,6 +1,6 @@
 // Class 7 Mathematics, Assamese medium (textbook "নতুন গণিত", used at Halimon Nessa Academy). Question ids start with m7ac<chapter>- so they never clash with other courses.
 // Question text is in Assamese, copied from the textbook exercises (the English line printed under a word problem is not kept). `context` on a chapter is hidden from students and only sent to the AI (notes in English).
-// Only the exercises of a chapter are added here (no theory page, no worked examples). Chapters that are not listed yet are not in this book's list in the app.
+// Only the exercises of a chapter are added here (no theory page, no worked examples). Chapters 6-17 are listed by name only (locked: true, no sections) until their exercises are added.
 // Figures: the book's diagrams are redrawn as small black-and-white SVGs (maths7as-figs.js, drawn to the angles given in the question) and attached below as `fig` (one figure) or `figs` (one per item i, ii, iii ...); the app shows them under the question text / item. The hidden chapter `context` also describes each figure for the AI.
 // A mixed number is written with a space: 3 1/5 means 3 and 1/5. "A ক B ৰে" = A by B. "A ৰ B" = "B of A".
 const Q = (id, no, label, text, extra = {}) => ({ id, no, label, text, ...extra });
@@ -13,6 +13,54 @@ const course = {
   medium: 'Assamese',
   sourceLang: 'Assamese',   // answers are Assamese: the translate menu offers English / Hinglish / Bengali
   chapters: [
+    {
+      no: 1, title: 'অখণ্ড সংখ্যা (Integers)', kind: 'Exercises 1(A) - 1(C)',
+      context: `Chapter notes (Class 7, Integers, Assamese-medium textbook; only the exercises 1(A), 1(B) and 1(C) are added, no theory page or worked examples). Answer in simple Assamese, show the steps, and keep numbers, symbols and units as they are.
+Integers are ..., -3, -2, -1, 0, 1, 2, 3, ... Natural numbers are 1, 2, 3, ...; whole numbers are 0, 1, 2, 3, ...; 0 is neither positive nor negative. On the number line a number to the right is greater (4 > 3, -2 > -3, -4 < -3).
+Addition: same signs, add the numbers and keep the sign; different signs, subtract the smaller from the larger (ignoring signs) and keep the sign of the larger. The additive inverse of a is -a (a + (-a) = 0, and the additive inverse of 0 is 0). Properties of addition: closure, commutative (a + b = b + a), associative ((a + b) + c = a + (b + c)), additive identity (a + 0 = a), additive inverse. Subtraction: a - b = a + (-b); it is NOT commutative (a - b is not b - a) and NOT associative ((a - b) - c is not a - (b - c)). "A ৰ পৰা B বিয়োগ" = A - B. "A আৰু B ৰ যোগফলৰ পৰা C বিয়োগ" = (A + B) - C. "A ৰ পৰা B আৰু C ৰ যোগফল বিয়োগ" = A - (B + C). If the sum of two integers is S and one is x, the other is S - x.
+Multiplication: same signs give a positive product, different signs a negative product; a product of an even number of negative integers is positive and of an odd number is negative (so (-1) multiplied 50 times = 1 and 101 times = -1). Properties: commutative, associative, multiplicative identity 1 (a x 1 = a), a x 0 = 0, a x (-1) = -a, and distributive a x (b + c) = a x b + a x c and a x (b - c) = a x b - a x c. "A ক B ৰে পূৰণ" = A x B. Use the distributive property for questions like 1527 x (-2) + (-1527) x 98 = -1527 x (2 + 98); 25693 x 99 + 25693 = 25693 x 100.
+Division: same signs give a positive quotient, different signs a negative quotient; a / 1 = a, a / (-1) = -a, a / a = 1, 0 / a = 0 (a not 0); division by 0 is not defined. Division is not commutative (12 / (-6) is not (-6) / 12) and not associative. "A ক B ৰে হৰণ" = A / B. The exact answers of the true/false questions must be worked out and shown.
+Notes about the book: in Exercise 1(C) Question 3 the seventh item is printed (viii) twice by mistake; here the items are numbered (vii) and (viii). In 1(B) Question 6 the number is "1 ৰ লগত" as printed.`,
+      sections: [
+        sec('অনুশীলনী 1(A) (যোগ আৰু বিয়োগ)', 'integers addition and subtraction class 7', [
+          Q('m7ac1-a1', 1, 'Q1.', 'মান নিৰ্ণয় কৰা : (Find the values.)', { parts: ['(i) 17 + (– 9)', '(ii) – 25 + 13', '(iii) – 8 + (– 19)', '(iv) (– 36) + 42', '(v) 63 + (– 29)', '(vi) (– 38) + (– 42)'] }),
+          Q('m7ac1-a2', 2, 'Q2.', 'তলৰ অখণ্ড সংখ্যাবোৰৰ যোগফল উলিওৱা : (Find the sum of the following integers.)', { parts: ['(i) 263 আৰু 146', '(ii) 315 আৰু – 265', '(iii) – 219 আৰু 300', '(iv) – 157 আৰু – 385', '(v) – 424 আৰু 346', '(vi) 275 আৰু – 429'] }),
+          Q('m7ac1-a3', 3, 'Q3.', 'তলৰ অখণ্ড সংখ্যাবোৰৰ বিপৰীত যোগাত্মক সংখ্যাবোৰ লিখা : (Write the additive inverse of each of the following integers.)', { parts: ['(i) 46', '(ii) – 92', '(iii) 0', '(iv) – 33', '(v) 64'] }),
+          Q('m7ac1-a4', 4, 'Q4.', 'বিয়োগ কৰা (subtract) :', { parts: ['(i) 262 ৰ পৰা 136', '(ii) 175 ৰ পৰা 327', '(iii) 315 ৰ পৰা – 182', '(iv) – 286 ৰ পৰা 196', '(v) – 242 ৰ পৰা – 305', '(vi) – 460 ৰ পৰা – 525'] }),
+          Q('m7ac1-a5', 5, 'Q5.', 'খালী ঠাই পূৰ কৰা : (Fill in the blanks)', { parts: ['(i) 25 + 16 = ____ + 25', '(ii) – 18 + ____ = – 18', '(iii) {(– 25) + 17} + (– 30) = ____ + {17 + (– 30)}', '(iv) 72 + ____ = 0', '(v) – 23 + ____ = – 17 + (– 23)', '(vi) – 29 + 29 = ____'] }),
+          Q('m7ac1-a6', 6, 'Q6.', 'সৰল কৰা : (Simplify)', { parts: ['(i) 26 – 46 + 29 – 18', '(ii) – 39 + (– 14) + 89 – 13 + 11', '(iii) 52 + (– 38) + 34 + (– 72) + 16', '(iv) 100 + 432 – 209 – 136 – 49', '(v) – 462 + 139 – 264 + 501'] }),
+          Q('m7ac1-a7', 7, 'Q7.', "a = 16, b = – 22, c = 18 হ'লে তলৰ ধৰ্মকেইটা সত্যাপন কৰা (verify) :", { parts: ['(i) a + b = b + a', '(ii) (a + b) + c = a + (b + c)', '(iii) a + 0 = a', '(iv) 0 + b = b', '(v) a – b ≠ b – a', '(vi) (a – b) – c ≠ a – (b – c)'] }),
+          Q('m7ac1-a8', 8, 'Q8.', 'তলৰ উক্তিকেইটাত কি ধৰ্ম প্ৰয়োগ হৈছে উল্লেখ কৰা : (Write the name of the property used in each of the following statements.)', { parts: ['(i) (a + b) + c = a + (b + c)', '(ii) – 13 + 17 = 17 + (– 13)', '(iii) 42 + 0 = 42', '(iv) 92 + (– 92) = 0', '(v) – 16 + 39, এটা অখণ্ড সংখ্যা', '(vi) (– 25 + 17) + (– 42) = – 25 + {17 + (– 42)}'] }),
+          Q('m7ac1-a9', 9, 'Q9.', '– 129 ৰ পৰা – 842 আৰু 469 ৰ যোগফলটো বিয়োগ কৰা।'),
+          Q('m7ac1-a10', 10, 'Q10.', '49 আৰু – 67 ৰ যোগফলৰ পৰা – 152 বিয়োগ কৰা।'),
+          Q('m7ac1-a11', 11, 'Q11.', "দুটা অখণ্ড সংখ্যাৰ যোগফল – 37। ইয়াৰে এটা 72 হ'লে আনটো কিমান?"),
+          Q('m7ac1-a12', 12, 'Q12.', "দুটা সংখ্যাৰ যোগফল 236। ইয়াৰে এটা – 145 হ'লে আনটো কিমান?"),
+          Q('m7ac1-a13', 13, 'Q13.', 'এটা সংখ্যা a ৰ পৰা – 27 বিয়োগ কৰিলে বিয়োগফল – 11 হয়। a ৰ মান নিৰ্ণয় কৰা।'),
+          Q('m7ac1-a14', 14, 'Q14.', 'তলৰ উক্তিবোৰ সত্য (true) নে অসত্য (false) লিখা :', { parts: ['(a) আটাইতকৈ সৰু অখণ্ড সংখ্যা 0।', '(b) দুটা ঋণাত্মক সংখ্যাৰ যোগফলটোও এটা ঋণাত্মক সংখ্যা।', '(c) – 17 > – 11', '(d) 1 > – 20', '(e) অখণ্ড সংখ্যাবোৰে বিয়োগ প্ৰক্ৰিয়া সাপেক্ষে ক্ৰম বিনিময় বিধি মানি চলে।'] })
+        ]),
+        sec('অনুশীলনী 1(B) (পূৰণ)', 'multiplication of integers class 7', [
+          Q('m7ac1-b1', 1, 'Q1.', 'তলত নিৰ্দেশ কৰা অনুসৰি পূৰণ কৰা : (Multiply as directed.)', { parts: ['(i) 12 ক 8 ৰে', '(ii) – 16 ক 8 ৰে', '(iii) 18 ক – 6 ৰে', '(iv) – 20 ক – 15 ৰে', '(v) 17 ক – 14 ৰে', '(vi) – 24 ক – 11 ৰে'] }),
+          Q('m7ac1-b2', 2, 'Q2.', 'পূৰণফল উলিওৱা : (Find the products.)', { parts: ['(i) 4 × (– 6) × 3', '(ii) (– 5) × 7 × (– 8)', '(iii) (– 12) × (– 8) × (– 14)', '(iv) 8 × 10 × (– 16)', '(v) (– 11) × (– 13) × (– 9)', '(vi) (– 15) × 17 × (– 7)'] }),
+          Q('m7ac1-b3', 3, 'Q3.', 'পূৰণফল উলিওৱা : (Find the products.)', { parts: ['(i) (– 1) × (– 2) × (– 3) × (– 4)', '(ii) (– 5) × (– 4) × (– 6) × (– 7) × (– 2)', '(iii) (– 2) × (– 2) × (– 2) × (– 2) × (– 2) × (– 2)', '(iv) (– 1) × (– 1) × (– 1) × ..... × (– 1) [50 বাৰ]', '(v) (– 1) × (– 1) × (– 1) × ..... × (– 1) [101 বাৰ]'] }),
+          Q('m7ac1-b4', 4, 'Q4.', 'উপযুক্ত ধৰ্ম খটুৱাই পূৰণফল উলিওৱা : (Find the products using suitable properties.)', { parts: ['(i) 1527 × (– 2) + (– 1527) × 98', '(ii) 25693 × 99 – (– 25693)', '(iii) 2539 × 778 – 539 × 778', '(iv) 25 × 123 × (– 4)', '(v) – 17 × 25 × 125 × (– 4) × 8'] }),
+          Q('m7ac1-b5', 5, 'Q5.', 'কি অখণ্ড সংখ্যাৰ লগত – 1 পূৰণ কৰিলে তলৰ অখণ্ড সংখ্যাবোৰ পোৱা যাব নিৰ্ণয় কৰা :', { parts: ['(i) – 69', '(ii) 37', '(iii) – 50', '(iv) 46'] }),
+          Q('m7ac1-b6', 6, 'Q6.', '1 ৰ লগত কি অখণ্ড সংখ্যা পূৰণ কৰিলে পূৰণফল তলৰ অখণ্ড সংখ্যাবোৰ পোৱা যাব উলিওৱা :', { parts: ['(i) – 32', '(ii) 45', '(iii) 97', '(iv) – 88'] }),
+          Q('m7ac1-b7', 7, 'Q7.', "তলৰ পূৰণফলবোৰৰ চিন (sign) কি হ'ব?", { parts: ['(i) 20 টা ঋণাত্মক সংখ্যাৰ পূৰণফল।', '(ii) 8 টা ধনাত্মক সংখ্যাৰ পূৰণফল।', '(iii) 5 টা ধনাত্মক আৰু 7 টা ঋণাত্মক সংখ্যাৰ পূৰণফল।', '(iv) 4 টা ধনাত্মক আৰু 18 টা ঋণাত্মক সংখ্যাৰ পূৰণফল।', '(v) 7 টা ধনাত্মক আৰু 6 টা ঋণাত্মক সংখ্যাৰ পূৰণফল।', '(vi) 4 টা ধনাত্মক সংখ্যা আৰু – 1 ৰ পূৰণফল।', '(vii) 7 টা ঋণাত্মক সংখ্যা আৰু – 1 ৰ পূৰণফল।', '(viii) 80 টা ঋণাত্মক সংখ্যাৰ পূৰণফল।'] }),
+          Q('m7ac1-b8', 8, 'Q8.', "a = 16, b = – 14, c = 13 হ'লে তলৰ ধৰ্মবোৰৰ সত্যাপন কৰা (verify) :", { parts: ['(i) a × b = b × a', '(ii) (a × b) × c = a × (b × c)', '(iii) a × (b + c) = a × b + a × c', '(iv) a × (b – c) = a × b – a × c'] }),
+          Q('m7ac1-b9', 9, 'Q9.', 'সত্যাপন কৰা (verify) :', { parts: ['(i) 17 × {9 + (– 5)} = 17 × 9 + 17 × (– 5)', '(ii) – 21 × {(– 7) + 19} = (– 21) × (– 7) + (– 21) × 19', '(iii) – 13 × 15 = 15 × (– 13)', '(iv) (– 10 × 15) × 18 = (– 10) × (15 × 18)'] }),
+          Q('m7ac1-b10', 10, 'Q10.', 'সৰল কৰা (simplify) :', { parts: ['(i) (– 10) × 7 + (– 10) × 9', '(ii) 11 × (– 13) + 11 × (– 7)', '(iii) 4 × (– 5) × 5 × (– 6)', '(iv) (– 16) × (– 8) + (– 4) × (– 8)', '(v) 5 × (– 2) × 25 × (– 4)', '(vi) 125 × (– 3) × (– 7) × 8'] }),
+          Q('m7ac1-b11', 11, 'Q11.', 'খালী ঠাই পূৰ কৰা : (Fill in the blanks.)', { parts: ['(i) (– 7) × ____ = 7', '(ii) (– 19) × ____ = – 19', '(iii) (– 16) × ____ × 17 = 0', '(iv) {(– 5) × 4} × (– 7) = ____ × {4 × (– 7)}', '(v) 11 × – 8 = ____ × 11', '(vi) – 6 × (– 11) + (– 6) × 5 = ____ × {(– 11) + 5}'] }),
+          Q('m7ac1-b12', 12, 'Q12.', 'তলৰ উক্তিবোৰ সত্য (true) নে অসত্য (false) লিখা :', { parts: ['(i) এটা ধনাত্মক আৰু ঋণাত্মক সংখ্যাৰ পূৰণফল সদায় এটা ঋণাত্মক সংখ্যা।', '(ii) 7 টা ধনাত্মক আৰু 6 টা ঋণাত্মক সংখ্যাৰ পূৰণফল এটা ঋণাত্মক সংখ্যা।', '(iii) 52 টা ঋণাত্মক সংখ্যাৰ পূৰণফল এটা ধনাত্মক সংখ্যা।', '(iv) 103 টা ঋণাত্মক সংখ্যাৰ পূৰণফল এটা ধনাত্মক সংখ্যা।', '(v) 8 টা ধনাত্মক আৰু 11 টা ঋণাত্মক সংখ্যাৰ পূৰণফল এটা ঋণাত্মক সংখ্যা।', '(vi) 5 টা ঋণাত্মক আৰু 0 ৰ পূৰণফল এটা ঋণাত্মক সংখ্যা।'] })
+        ]),
+        sec('অনুশীলনী 1(C) (হৰণ)', 'division of integers class 7', [
+          Q('m7ac1-c1', 1, 'Q1.', 'নিৰ্দেশ কৰা অনুসৰি হৰণ কৰা : (Divide as directed.)', { parts: ['(i) 75 ক 5 ৰে', '(ii) – 63 ক 9 ৰে', '(iii) 81 ক – 9 ৰে', '(iv) – 50 ক – 10 ৰে', '(v) 64 ক – 16 ৰে', '(vi) – 72 ক 12 ৰে', '(vii) – 56 ক – 7 ৰে', '(viii) – 90 ক – 10 ৰে'] }),
+          Q('m7ac1-c2', 2, 'Q2.', 'খালী ঠাই পূৰ কৰা : (Fill in the blanks.)', { parts: ['(i) 7 × 11 = 77, 77 ÷ ____ = 7, 77 ÷ 7 = ____', '(ii) (– 6) × (– 6) = 36, 36 ÷ ____ = – 6, 36 ÷ (– 6) = ____', '(iii) – 7 × 8 = – 56, – 56 ÷ 8 = ____, – 56 ÷ ____ = 8', '(iv) 9 × (– 10) = – 90, – 90 ÷ 10 = ____, – 90 ÷ (– 9) = ____'] }),
+          Q('m7ac1-c3', 3, 'Q3.', 'খালী ঠাই পূৰ কৰা : (Fill in the blanks.)', { parts: ['(i) 72 ÷ ____ = – 12', '(ii) – 60 ÷ ____ = 10', '(iii) 0 ÷ (– 8) = ____', '(iv) 16 ÷ (– 1) = ____', '(v) 25 ÷ 1 = ____', '(vi) – 17 ÷ ____ = – 17', '(vii) – 24 ÷ ____ = 24', '(viii) ____ ÷ 1 = – 37', '(ix) ____ ÷ (– 1) = 13', '(x) ____ ÷ (– 1) = – 17'] }),
+          Q('m7ac1-c4', 4, 'Q4.', 'তলৰ উক্তিবোৰ সত্য নে অসত্য উল্লেখ কৰা : (State true or false.)', { parts: ['(i) 12 ÷ (– 6) = (– 6) ÷ 12', '(ii) 0 ÷ 4 = 0', '(iii) – 5 ÷ 0 = 0', '(iv) 0 ÷ (– 11) = 0', '(v) (20 ÷ 10) ÷ 2 ≠ 20 ÷ (10 ÷ 2)', '(vi) (– 8) ÷ (– 1) = – 8'] }),
+          Q('m7ac1-c5', 5, 'Q5.', 'হৰণ কৰা : (Divide)', { parts: ['(i) – 125 ÷ 25', '(ii) – 729 ÷ (– 27)', '(iii) – 105 ÷ (– 21)', '(iv) – 469 ÷ (– 469)', '(v) 1495 ÷ (– 65)', '(vi) – 1470 ÷ 42'] })
+        ])
+      ]
+    },
     {
       no: 2, title: 'ভগ্নাংশ আৰু দশমিক সংখ্যা (Fractions and Decimal Numbers)', kind: 'Exercises 2(A) - 2(D)',
       context: `Chapter notes (Class 7, Fractions and Decimal Numbers, Assamese-medium textbook). Answer in simple Assamese, show the steps, and keep numbers, symbols and units as they are.
@@ -174,7 +222,19 @@ The figures are drawn under the question in the app (redrawn to match the given 
           Q('m7ac5-c8', 8, 'Q8.', 'কাষৰ চিত্ৰত AB আৰু CD দুটা উলম্ব খুঁটি (vertical pole)। ইহঁতৰ উচ্চতা (height) ক্ৰমে 6 মি. আৰু 11 মি.। যদি BD = 12 মি. তেন্তে AC উলিওৱা।', { parts: ['[ইংগিত : AE ⊥ CD অংকন কৰা।]'] })
         ])
       ]
-    }
+    },
+    { no: 6, title: 'ত্ৰিভুজৰ সর্বসমতা (Congruence of Triangles)', kind: 'Coming soon', locked: true, sections: [] },
+    { no: 7, title: 'অনুপাত, সমানুপাত, ঐকিক প্ৰণালী (Ratio, Proportion, Unitary Method)', kind: 'Coming soon', locked: true, sections: [] },
+    { no: 8, title: 'শতাংশ (Percentage)', kind: 'Coming soon', locked: true, sections: [] },
+    { no: 9, title: 'সৰল সুত (Simple Interest)', kind: 'Coming soon', locked: true, sections: [] },
+    { no: 10, title: 'পৰিমেয় সংখ্যা (Rational Numbers)', kind: 'Coming soon', locked: true, sections: [] },
+    { no: 11, title: 'বীজগণিতীয় ৰাশি (Algebraic Expressions)', kind: 'Coming soon', locked: true, sections: [] },
+    { no: 12, title: 'সূচক (Exponents)', kind: 'Coming soon', locked: true, sections: [] },
+    { no: 13, title: 'পৰিমিতি (Mensuration)', kind: 'Coming soon', locked: true, sections: [] },
+    { no: 14, title: 'জ্যামিতিক অংকন (Geometrical Construction)', kind: 'Coming soon', locked: true, sections: [] },
+    { no: 15, title: 'সমমিতি (Symmetry)', kind: 'Coming soon', locked: true, sections: [] },
+    { no: 16, title: 'গোটা আকৃতি (Solid Shapes)', kind: 'Coming soon', locked: true, sections: [] },
+    { no: 17, title: 'তথ্য সংগ্ৰহ, উপস্থাপন আৰু বিচাৰ (Data Handling)', kind: 'Coming soon', locked: true, sections: [] }
   ]
 };
 
