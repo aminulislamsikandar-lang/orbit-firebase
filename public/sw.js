@@ -1,7 +1,7 @@
 // Orbit service worker: keeps the app page, its scripts and the question lists so chapters open offline.
 // API calls (/api/*) are never cached here; answers are stored by the page itself.
 // robots.txt, sitemap.xml and the Google verification file are NOT touched: they always go to the server.
-const SHELL = 'orbit-shell-v97';
+const SHELL = 'orbit-shell-v98';
 const FONTS = 'orbit-fonts-v1';
 const ASSETS = 'orbit-assets-v1';
 
@@ -13,7 +13,8 @@ const CORE = [
   '/analytics.js', '/parent-key.js', '/recall.js', '/voicematch-core.js', '/assamese-fuse.js', '/bolo-core.js', '/bolorec-core.js', '/bolorec.js', '/saath-core.js', '/saath.js', '/swarsaath-core.js', '/swarsaath.js', '/byanjan-video.js', '/bolo.js', '/swarborno.js', '/swar/swar.mp3', '/swar/swar-01.webp', '/swar/swar-02.webp', '/swar/swar-03.webp', '/swar/swar-04.webp', '/swar/swar-05.webp', '/swar/swar-06.webp', '/swar/swar-07.webp', '/swar/swar-08.webp', '/swar/swar-09.webp', '/swar/swar-10.webp', '/swar/swar-11.webp', '/kidlink.js', '/vlab.js', '/models3d.js', '/promptbox.js', '/abcgames.js', '/abclevels.js', '/numcore.js', '/numgames.js', '/numlevels.js', '/sunogame.js', '/numcount.js', '/report.js', '/avatar.js', '/studytime.js', '/kidbank.js', '/cloud.js',
   '/limit-msg.js', '/revision-core.js', '/answer-check.js', '/quiz.js', '/exam.js', '/aireview.js', '/classroom.js', '/weekly.js', '/voice-tutor.js',
   '/firebase-config.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png',
-  '/questions.json', '/videos.json', '/publicvideos.json'
+  '/questions.json', '/videos.json', '/publicvideos.json',
+  ...'abcdefghijklmnopqrstuvwxyz'.split('').map(l => '/abc/' + l + '.webp')   // the 26 ABC letter pictures
 ];
 const CORE_SET = new Set(CORE);
 // Two big teacher recordings (about 1.3 MB) are NOT downloaded at install any more: a student who never opens Kid mode never pays for them.

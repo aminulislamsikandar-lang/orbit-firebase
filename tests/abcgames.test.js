@@ -36,6 +36,8 @@ ok(!idx.includes("item('abc'") && !idx.includes("'models3d','abc'"), 'ABC Games 
 ok(/\['abc', 'ABC Games'/.test(fs.readFileSync(path.join(ROOT, 'public', 'bolo.js'), 'utf8')), 'ABC Games is a topic chip on the Bolo page');
 ok((idx.match(/ABC\.leave\(\)/g) || []).length >= 2, 'leave is called from go() and from the back button');
 ok(sw.includes('/abcgames.js'), 'cached for offline');
+ok(sw.includes("'/abc/' + l + '.webp'"), 'the 26 letter pictures are saved for offline');
+for (const l of 'abcdefghijklmnopqrstuvwxyz') { const f = path.join(ROOT, 'public', 'abc', l + '.webp'), bf = fs.existsSync(f) ? fs.readFileSync(f) : Buffer.alloc(0); ok(bf.length > 1500 && bf.length < 40000 && bf.toString('latin1', 0, 4) === 'RIFF' && bf.toString('latin1', 8, 12) === 'WEBP', 'public/abc/' + l + '.webp is a small WebP'); }
 ok(+(/orbit-shell-v(\d+)/.exec(sw) || [])[1] >= 51, 'service worker cache version bumped');
 ok(src.length < 30000, 'stays small (' + src.length + ' bytes)');
 
@@ -63,7 +65,10 @@ const chip = (b, label) => b.q('.chip').find(c => c.textContent === label);
 
   // Learn: picture + "A for Apple", speaks once, next goes to B
   b.click(b.q('.abc-card')[0]); await wait(30);
-  ok(b.app.textContent.includes('A for Apple') && b.q('.abc-pic')[0].textContent === D[0][2], 'learn shows A for Apple with its picture');
+  const pic0 = b.q('.abc-pic')[0], im0 = pic0.querySelector('img');
+  ok(b.app.textContent.includes('A for Apple') && !!im0 && /^\/abc\/a\.webp/.test(im0.getAttribute('src')) && pic0.getAttribute('aria-label') === 'Apple', 'learn shows A for Apple with its picture (public/abc/a.webp)');
+  im0.dispatchEvent(new (im0.ownerDocument.defaultView.Event)('error'));
+  ok(pic0.textContent === D[0][2] && !pic0.querySelector('img'), 'if the picture can not load, the old emoji is shown instead');
   await wait(30); ok(b.spoken.filter(t => t === 'A for Apple').length === 1, 'the letter is spoken once, not twice');
   b.click(b.q('.btn').find(x => x.textContent === 'Next')); await wait(30);
   ok(b.app.textContent.includes('B for Ball') && b.spoken[b.spoken.length - 1] === 'B for Ball', 'next shows and speaks the NEW letter');
