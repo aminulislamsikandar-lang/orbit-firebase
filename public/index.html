@@ -1017,15 +1017,25 @@ function closeOtherVideos(keep){
  closePV();
  try{if(window.MathVideoPlayer&&window.MathVideoPlayer.close)window.MathVideoPlayer.close()}catch(e){}
 }
+// A fresh signed link for one recorded video (used by the "save in Orbit" arrow, vsave.js). Same server check as playing it.
+window.orbitVideoUrl=id=>api('/api/video',{id}).then(j=>j.url);
+// A copy the student saved inside Orbit (vsave.js), as a blob: address, or null. Never throws.
+const savedVideoUrl=async id=>{try{return window.VSave?await window.VSave.url(id):null}catch(e){return null}};
 async function openVideo(id){
  const rec=VIDEOS.find(v=>v.id===id);
  if(!(VID[id]&&VID[id].url))closeOtherVideos(id);   // tapping the open video again just closes it (below)
- if(lowData()){const s0=VID[id]=VID[id]||{};s0.err=L4(M_LOWDATA);draw();return}
+ let su=null;   // saved copy: plays in low-data mode too (it uses no data) and when there is no internet
+ if(lowData()){su=await savedVideoUrl(id);if(!su){const s0=VID[id]=VID[id]||{};s0.err=L4(M_LOWDATA);draw();return}}
  if(rec&&rec.kind&&rec.kind!=='mp4')return openCodeVideo(rec);
  const s=VID[id]=VID[id]||{};
  if(s.url){delete s.url;draw();return}
  s.loading=true;s.err='';s.sub=false;draw();
- try{const j=await api('/api/video',{id});s.url=j.url;s.renewed=false}catch(e){s.err=errMsg(e);s.sub=!!e&&e.code==='subscription_required'}
+ if(su){s.url=su;s.renewed=false}
+ else try{const j=await api('/api/video',{id});s.url=j.url;s.renewed=false;const sv=await savedVideoUrl(id);if(sv)s.url=sv}   // access is still checked online; a saved copy just saves the data
+ catch(e){
+  const off=e&&e.code!=='subscription_required'?await savedVideoUrl(id):null;   // offline / server down: play the saved copy. No subscription = no saved copy.
+  if(off){s.url=off;s.renewed=false;s.err=''}else{s.err=errMsg(e);s.sub=!!e&&e.code==='subscription_required'}
+ }
  s.loading=false;draw();
 }
 fetch('/videos.json').then(r=>r.ok?r.json():[]).then(v=>{STATIC_V=v;mergeV()}).catch(()=>{});
@@ -1569,6 +1579,7 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/voiceover.js"></script>
 <script src="/vkeep.js"></script>
 <script src="/vboost.js"></script>
+<script src="/vsave.js"></script>
 <script src="/vplayer.js"></script>
 <script src="/voiceover-admin.js"></script>
 <script src="/narration-admin.js"></script>

@@ -137,9 +137,14 @@
     var vol = el("input", "vp-vol");
     vol.type = "range"; vol.min = "0"; vol.max = "1"; vol.step = "0.05"; vol.value = "1"; vol.setAttribute("aria-label", "Volume");
     var speedB = button("Playback speed", null, "1x"), fullB = button("Fullscreen", "full");
+    // Optional "save in Orbit" arrow (vsave.js). Without that file, or if it cannot start, the bar is exactly as before.
+    var saveB = null;
+    if (g.VSave && g.VSave.bind) {
+      try { saveB = button("Save video", null); if (!g.VSave.bind(v, saveB)) saveB = null; } catch (e) { saveB = null; }
+    }
 
     bar.appendChild(seek);
-    [playB, backB, fwdB, time, gap, vol, speedB, fullB].forEach(function (n) { bar.appendChild(n); });
+    [playB, backB, fwdB, time, gap, vol, speedB, saveB, fullB].forEach(function (n) { if (n) bar.appendChild(n); });
 
     function update() {
       var d = dur(v);
