@@ -80,6 +80,7 @@ function answer(b) {
   const opts = b.q('.lv-opt'), tiles = b.q('.lv-tile:not(.used)'), slots = b.q('.lv-slot');
   if (opts.length) {
     const big = b.app.querySelector('.lv-big'), pic = b.app.querySelector('.lv-pic');
+    if (pic && !big && !slots.length) { const im = pic.querySelector('img'); ok(!!im && /^\/abc\/[a-z]\.webp/.test(im.getAttribute('src')), 'the picture level shows the letter picture'); }
     if (big) { const l = big.textContent; return opts.find(o => o.textContent === l.toLowerCase()); }                        // case level
     if (!slots.length) { const w = /^(.+?) \u2014/.exec(t)[1]; const d = D.find(x => x[1] === w); return opts.find(o => o.textContent === d[0]); }   // picture level
     const segL = slots.map(s => s.textContent); const first = segL.find(x => x !== '?'); const st = AL.indexOf(first) - segL.indexOf(first);   // one gap

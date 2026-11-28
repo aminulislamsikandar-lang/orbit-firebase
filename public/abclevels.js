@@ -89,6 +89,13 @@
   function later(fn, ms) { const t = setTimeout(() => { const i = timers.indexOf(t); if (i >= 0) timers.splice(i, 1); fn(); }, ms); timers.push(t); return t; }
   const h = (tag, cls, txt, attrs) => { const e = g.document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
   const btn = (cls, txt, fn, attrs) => { const b = h('button', cls, txt, attrs); b.type = 'button'; b.addEventListener('click', fn); return b; };
+  // The picture of a letter (the same public/abc/*.webp as ABC Games). If it can not load, the old emoji is shown instead.
+  const picBtn = (cls, d, fn) => {
+    const b = btn(cls, null, fn, { 'aria-label': d[1] });
+    const im = h('img', 'lv-img', null, { src: '/abc/' + d[0].toLowerCase() + '.webp?v=1', alt: '', width: '128', height: '128', draggable: 'false' });
+    im.addEventListener('error', () => { b.textContent = d[2]; });
+    b.appendChild(im); return b;
+  };
   const clear = el => { while (el.firstChild) el.removeChild(el.firstChild); };
 
   const CSS = '.lv-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0}'
@@ -107,6 +114,7 @@
     + '.lv-c{background:var(--card);border-radius:22px;padding:18px;margin:12px 0;text-align:center;box-shadow:0 1px 0 var(--ln)}'
     + '.lv-bar{height:10px;border-radius:8px;background:var(--ln);overflow:hidden;margin:8px 0}.lv-bar i{display:block;height:100%;background:#16a34a}'
     + '.lv-pic{font-size:88px;line-height:1.15;border:0;background:transparent;cursor:pointer;padding:0}'
+    + '.lv-pic .lv-img{display:block;width:128px;height:128px;object-fit:contain;margin:0 auto;pointer-events:none;-webkit-user-drag:none}'
     + '.lv-big{font-size:84px;line-height:1.05;font-weight:700}.lv-ask{font-size:19px;margin:6px 0 10px}.lv-msg{min-height:28px;margin-top:8px;font-weight:600}'
     + '.lv-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}'
     + '.lv-opt{font-size:38px;font-weight:700;padding:14px;border:0;background:#16a34a;color:#fff;border-radius:16px;box-shadow:0 4px 0 #0f7a36}.lv-opt.ok{background:#14532d;color:#fff;box-shadow:0 4px 0 #0b3a1f}'
@@ -185,7 +193,7 @@
     let intro = '';
     if (q.k === 'pic') {
       const sp = () => say(q.q[1]);
-      c.appendChild(btn('lv-pic', q.q[2], sp, { 'aria-label': q.q[1] })); c.appendChild(h('div', 'lv-ask', q.q[1] + ' \u2014 ' + L('askPic')));
+      c.appendChild(picBtn('lv-pic', q.q, sp)); c.appendChild(h('div', 'lv-ask', q.q[1] + ' \u2014 ' + L('askPic')));
       opts(c, q.opts, q.q[0], q.q[0] + ' for ' + q.q[1]); intro = q.q[1];
     } else if (q.k === 'case') {
       c.appendChild(h('div', 'lv-big', q.l)); c.appendChild(h('div', 'lv-ask', L('askCase')));

@@ -2,7 +2,7 @@
 //   1. ABC Learn and Quiz  - see a picture for every letter, listen to it, then answer a quiz
 //   2. ABC Puzzle          - fill the missing letters of the A-Z strip, and build words from jumbled letters
 // index.html calls ABC.viewHTML() to draw the page, ABC.mount(root) after drawing and ABC.leave() when the student goes elsewhere.
-// Needs no network and no library. Pictures are emoji (they live inside the games only; the Orbit menu keeps its line icons).
+// Needs no library. The 26 letter pictures are small transparent files (public/abc/a.webp ... z.webp, saved for offline by sw.js); the other pictures are emoji (they live inside the games only; the Orbit menu keeps its line icons).
 // The game logic is in small pure functions with an injectable random source so tests can check every puzzle has exactly one right answer.
 (function (g) {
   'use strict';
@@ -84,6 +84,13 @@
   function later(fn, ms) { const t = setTimeout(() => { const i = timers.indexOf(t); if (i >= 0) timers.splice(i, 1); fn(); }, ms); timers.push(t); return t; }
   const h = (tag, cls, txt, attrs) => { const e = g.document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
   const btn = (cls, txt, fn, attrs) => { const b = h('button', cls, txt, attrs); b.type = 'button'; b.addEventListener('click', fn); return b; };
+  // The picture of a letter (public/abc/a.webp ... z.webp, transparent). If it can not load (first visit offline), the old emoji is shown instead.
+  const picBtn = (cls, d, fn) => {
+    const b = btn(cls, null, fn, { 'aria-label': d[1] });
+    const im = h('img', 'abc-img', null, { src: '/abc/' + d[0].toLowerCase() + '.webp?v=1', alt: '', width: '128', height: '128', draggable: 'false' });
+    im.addEventListener('error', () => { b.textContent = d[2]; });
+    b.appendChild(im); return b;
+  };
   const clear = el => { while (el.firstChild) el.removeChild(el.firstChild); };
 
   const CSS = '.abc-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 4px}'
@@ -94,6 +101,7 @@
     + '.abc-c{background:var(--card);border-radius:22px;padding:18px;margin:12px 0;text-align:center;box-shadow:0 1px 0 var(--ln)}'
     + '.abc-big{font-family:"Baloo 2",system-ui,sans-serif;font-size:92px;line-height:1.05;font-weight:700}'
     + '.abc-pic{font-size:88px;line-height:1.15;border:0;background:transparent;cursor:pointer;padding:0}'
+    + '.abc-pic .abc-img{display:block;width:128px;height:128px;object-fit:contain;margin:0 auto;pointer-events:none;-webkit-user-drag:none}'
     + '.abc-word{font-size:26px;margin:6px 0 10px}.abc-q{font-size:19px;margin:6px 0 10px}.abc-msg{min-height:28px;margin-top:8px;font-weight:600}'
     + '.abc-strip{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:12px 0}.abc-strip .chip{min-width:36px;justify-content:center;padding:4px 8px}'
     + '.abc-nav{display:flex;gap:10px;justify-content:center}'
@@ -166,7 +174,7 @@
     const d = D[li], sp = () => say(d[0] + ' for ' + d[1]);
     const c = h('div', 'abc-c');
     c.appendChild(h('div', 'abc-big', d[0] + ' ' + d[0].toLowerCase()));
-    c.appendChild(btn('abc-pic', d[2], sp, { 'aria-label': d[1] }));
+    c.appendChild(picBtn('abc-pic', d, sp));
     c.appendChild(h('div', 'abc-word', d[0] + ' for ' + d[1]));
     c.appendChild(btn('btn', L('listen'), sp));
     const strip = h('div', 'abc-strip'); D.forEach((x, k) => strip.appendChild(btn('chip', x[0], () => { li = k; learn(true); }, { 'aria-pressed': String(k === li) })));
@@ -184,7 +192,7 @@
     S.r = () => drawQuiz(false); kind = 'quiz';
     const q = P.q, sp = () => say(q[1]);
     const c = h('div', 'abc-c'); c.appendChild(scoreLine(TOTAL));
-    c.appendChild(btn('abc-pic', q[2], sp, { 'aria-label': q[1] }));
+    c.appendChild(picBtn('abc-pic', q, sp));
     c.appendChild(h('div', 'abc-word', q[1])); c.appendChild(h('div', 'abc-q', L('which')));
     c.appendChild(btn('btn', L('listen'), sp));
     const grid = h('div', 'abc-grid');
