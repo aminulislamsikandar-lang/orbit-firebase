@@ -11,7 +11,7 @@ service cloud.firestore {
       allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
       allow create: if request.auth != null && request.auth.uid == uid && (
         (request.resource.data.keys().hasOnly(['org', 'cls', 'med', 'at'])
-          && request.resource.data.org in ['seba', 'cbse', 'nashib', 'popular', 'halimon']
+          && request.resource.data.org in ['seba', 'cbse', 'ajb', 'nashib', 'popular', 'halimon']
           && request.resource.data.cls is int && request.resource.data.cls >= 1 && request.resource.data.cls <= 12
           && request.resource.data.med in ['Assamese', 'English']
           && request.resource.data.at is number)

@@ -33,6 +33,15 @@ eq(CAT.idsFor({ org: 'halimon', cls: 8, med: 'English' }, courses), [], 'Halimon
 eq(CAT.idsFor({ org: 'cbse', cls: 10, med: 'English' }, courses), [], 'CBSE has no content yet');
 eq(CAT.idsFor({ org: 'nashib', cls: 6, med: 'English' }, courses).length, 8, 'Nashib Ali class 6 English has 8 subjects');
 eq(CAT.idsFor(null, courses), [], 'no lock, no ids');
+// AJB (Assam Jatiya Bidyalay) is a board next to SEBA and CBSE: classes 1-8, no content yet
+eq(CAT.groups[0].items.map(o => o.id), ['seba', 'cbse', 'ajb'], 'Boards: SEBA, CBSE, AJB');
+ok(CAT.orgName('ajb') === 'AJB' && CAT.groups[0].items[2].sub === 'Assam Jatiya Bidyalay', 'AJB name and subtitle');
+ok(CAT.validLock({ org: 'ajb', cls: 1, med: 'Assamese' }) && CAT.validLock({ org: 'ajb', cls: 8, med: 'English' }), 'AJB: classes 1 and 8 are valid');
+ok(!CAT.validLock({ org: 'ajb', cls: 9, med: 'Assamese' }) && !CAT.validLock({ org: 'ajb', cls: 0, med: 'Assamese' }), 'AJB: class 9 and 0 are not offered');
+eq(CAT.idsFor({ org: 'ajb', cls: 8, med: 'Assamese' }, courses), ['c8-social-ajb'], 'AJB class 8 Assamese: Social Science (ready answers)');
+eq(CAT.idsFor({ org: 'ajb', cls: 8, med: 'English' }, courses), [], 'AJB class 8 English medium has nothing');
+eq(CAT.idsFor({ org: 'ajb', cls: 7, med: 'Assamese' }, courses), [], 'AJB class 7 has nothing yet');
+eq(CAT.labelOf({ org: 'ajb', cls: 7, med: 'Assamese' }), 'AJB · Class 7 · Assamese medium', 'AJB lock label');
 
 // 4. Server decisions
 const ids = CAT.idsFor({ org: 'seba', cls: 10, med: 'Assamese' }, courses);
