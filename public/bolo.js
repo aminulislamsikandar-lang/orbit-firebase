@@ -426,7 +426,7 @@
     g.document.head.appendChild(s); return '';
   }
 
-  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['saath', 'সাথে বলো', '#e0613a'], ['asvyanjan', 'ক – কল', '#00969f'], ['abc', 'ABC Games', '#f59e0b'], ['abclv', 'ABC Levels', '#16a34a'], ['numg', '123 Games', '#f59e0b'], ['numlv', '123 Levels', '#16a34a'], ['numct', '123 Ginti', '#f59e0b'], ['suno', 'Suno Game', '#f59e0b'], ['swar', 'স্বৰ-বৰ্ণ', '#8e44ad'], ['swarsaath', 'স্বৰ সাথে বলো', '#8e44ad'], ['abcsaath', 'A–Z সাথে বলো', '#e91e63'], ['byanjanpic', 'ছবিৰে সাথে বলো', '#e0613a']];
+  const MODES = [['alpha', 'A se Z', '#e91e63'], ['table', 'Table', '#2196f3'], ['poem', 'Poem', '#2eaa64'], ['byanjan', 'ব্যঞ্জন', '#8e44ad'], ['saath', 'সাথে বলো', '#e0613a'], ['asvyanjan', 'ক – কল', '#00969f'], ['abc', 'ABC Games', '#f59e0b'], ['abclv', 'ABC Levels', '#16a34a'], ['numg', '123 Games', '#f59e0b'], ['numlv', '123 Levels', '#16a34a'], ['numct', '123 Ginti', '#f59e0b'], ['suno', 'Suno Game', '#f59e0b'], ['swar', 'স্বৰ-বৰ্ণ', '#8e44ad'], ['swarsaath', 'স্বৰ সাথে বলো', '#8e44ad'], ['abcsaath', 'A–Z সাথে বলো', '#e91e63'], ['byanjanpic', 'ছবিৰে সাথে বলো', '#e0613a'], ['jahaz', 'Jahaz', '#2196f3']];
   const chipRow = (label, arr) => `<div class="chips bl-chips" role="group" aria-label="${label}">${arr.map(m => `<button class="chip" style="--c:${m[3]}" data-bl="${m[0]}" data-v="${m[1]}" aria-pressed="${m[4]}">${m[2]}</button>`).join('')}</div>`;
   const modeChips = () => chipRow('Kya bolna hai', MODES.map(m => ['mode', m[0], m[1], m[2], st.mode === m[0]]));
   function subPick() {   // the second row of chips (table number, or which poem) - still only chips at the top
@@ -481,6 +481,21 @@
     g.BYANJANPIC.start({ sens: load().set.vol, code: linked() ? g.KIDLINK.kidCode() : '', api: g.api, redraw: () => { if (onScreen()) redraw(); }, alive: () => onScreen() && st.mode === 'byanjanpic' });
   }
 
+  // "Jahaz" (Orbit Jahaz, public/jahaz-game.js): a tile like the others; the button opens the game full screen inside an iframe (srcdoc, DOM nodes only), its back arrow closes it.
+  function jahazClose() { const f = document.getElementById('blJahaz'); if (f && f.parentNode) f.parentNode.removeChild(f); }
+  function jahazOpen() {
+    if (document.getElementById('blJahaz') || !g.JAHAZ_HTML) return;
+    reset(); stopSay();
+    const f = document.createElement('iframe');
+    f.id = 'blJahaz'; f.srcdoc = g.JAHAZ_HTML || ''; f.title = 'Orbit Jahaz'; f.setAttribute('allow', 'autoplay');
+    f.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2000;background:#eef2f6';
+    document.body.appendChild(f);
+  }
+  window.addEventListener('message', e => { const f = document.getElementById('blJahaz'); if (f && e.source === f.contentWindow && e.data === 'orbit-jahaz-close') jahazClose(); });
+  function jahazCard() {
+    return '<div class="card" style="text-align:center"><div style="font-size:22px;font-weight:700">Orbit Jahaz</div><p class="mut">Jo akshar ya number bole, jahaz ko usi raste se nikaalo.</p><button class="btn" data-bl="jahazopen" style="min-height:56px;font-size:18px">Jahaz khelo</button></div>';
+  }
+
   // "A–Z সাথে বলো" (ABC saath me bolo): the same thing for the 26 English letters, its own screen and recorder in public/abcsaath.js; the same Start rules (mic switch, parent's tick when joined, practice when not joined).
   function abcSaathCard() {
     if (!g.ABCSAATH) return '<div class="card"><p class="mut" style="margin:0">Ye hissa abhi load nahi hua. Page dobara kholo.</p></div>';
@@ -506,6 +521,7 @@
     if (st.mode === 'swarsaath') return swarSaathCard();
     if (st.mode === 'abcsaath') return abcSaathCard();
     if (st.mode === 'byanjanpic') return picSaathCard();
+    if (st.mode === 'jahaz') return jahazCard();
     const by = st.mode === 'byanjan', asv = st.mode === 'asvyanjan';
     const big = it.big.length > 5 ? 'font-size:44px' : it.big.length > 3 ? 'font-size:60px' : 'font-size:104px';
     const bigHTML = by && g.BYANJAN_VIDEO ? g.BYANJAN_VIDEO.stageHTML(it, C.PLACES) : `<div class="bl-big" style="${big}">${esc(it.big)}</div>`;
@@ -566,6 +582,7 @@
     else if (a === 'aautostop') { if (g.ABCSAATH) g.ABCSAATH.stop(); }
     else if (a === 'bpauto') picSaathStart();
     else if (a === 'bpautostop') { if (g.BYANJANPIC) g.BYANJANPIC.stop(); }
+    else if (a === 'jahazopen') jahazOpen();
     else if (a === 'pin') pinAction(v);
   });
   g.document.addEventListener('change', e => {
@@ -589,7 +606,7 @@
     kidStart() {   // Kid mode (child), first screen of every app open: ABC Levels, at the level the child was last trying to pass. Later redraws and the child's own topic taps are left alone.
       if (st.kidInit) return; st.kidInit = true; st.mode = 'abclv'; st.fbInit = false; if (g.ABCLV && g.ABCLV.openAtLast) g.ABCLV.openAtLast();
     },
-    leave() { stopAbc(); if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); if (g.SWARSAATH && g.SWARSAATH.running()) g.SWARSAATH.stop(); if (g.ABCSAATH && g.ABCSAATH.running()) g.ABCSAATH.stop(); if (g.BYANJANPIC && g.BYANJANPIC.running()) g.BYANJANPIC.stop(); stopListen(); stopSay(); clearAdv(); save(); },
+    leave() { jahazClose(); stopAbc(); if (g.SAATH && g.SAATH.running()) g.SAATH.stop(); if (g.SWARSAATH && g.SWARSAATH.running()) g.SWARSAATH.stop(); if (g.ABCSAATH && g.ABCSAATH.running()) g.ABCSAATH.stop(); if (g.BYANJANPIC && g.BYANJANPIC.running()) g.BYANJANPIC.stop(); stopListen(); stopSay(); clearAdv(); save(); },
     // Kid mode: what the parent's phone may see (no audio, no text), and the limit / mic switch the parent set there.
     // Kid mode: a short label of what the child is doing right now (the topic only), for the mentor's "live activity".
     activity() {

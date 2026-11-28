@@ -138,7 +138,7 @@ function answer(b) {
     Object.defineProperty(w, 'crypto', { value: require('crypto').webcrypto, configurable: true }); w.TextEncoder = TextEncoder;
     ['bolo-core.js', 'byanjan-video.js', 'bolo.js', 'abcgames.js', 'abclevels.js'].forEach(x => w.eval(rd(x))); w.eval('draw()');
     const d = w.document, chips = () => [...d.querySelectorAll('.bl-chips [data-bl=mode]')];
-    ok(/^alpha,table,poem,byanjan,saath,asvyanjan,abc,abclv,numg,numlv,numct(,suno)?(,swar)?(,swarsaath)?(,abcsaath)?(,byanjanpic)?$/.test(chips().map(c => c.dataset.v).join()), 'Bolo shows ABC Games and ABC Levels after the old topics, then 123 Games and 123 Levels (the old ones are untouched)');
+    ok(/^alpha,table,poem,byanjan,saath,asvyanjan,abc,abclv,numg,numlv,numct(,suno)?(,swar)?(,swarsaath)?(,abcsaath)?(,byanjanpic)?(,jahaz)?$/.test(chips().map(c => c.dataset.v).join()), 'Bolo shows ABC Games and ABC Levels after the old topics, then 123 Games and 123 Levels (the old ones are untouched)');
     ok(!!d.querySelector('.bl-big') && !d.getElementById('abclv-root'), 'A se Z is still the first screen');
     chips().find(c => c.dataset.v === 'abclv').click(); await wait(20);
     ok(!!d.getElementById('abclv-root') && d.querySelectorAll('.lv-row').length === 6 && !d.querySelector('.bl-big'), 'ABC Levels topic: the level map is drawn inside Bolo');

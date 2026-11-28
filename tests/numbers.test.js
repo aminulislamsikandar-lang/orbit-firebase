@@ -50,7 +50,7 @@ ok(JSON.stringify(A._makeQ(7, fixed())) === JSON.stringify(A._makeQ(7, fixed()))
 // ---- how it is wired into the app ----
 ok(/<script src="\/numcore\.js"><\/script>\s*<script src="\/numgames\.js"><\/script>\s*<script src="\/numlevels\.js"><\/script>/.test(idx) && idx.indexOf('/numcore.js') > idx.indexOf('/abclevels.js'), 'index.html loads numcore.js first, then the two topics, after the ABC scripts');
 ok(idx.includes('NUMG.mount($(\'#app\'))') && idx.includes('NUMLV.mount($(\'#app\'))') && idx.includes('ABCLV.mount($(\'#app\'))') && idx.includes('ABC.mount($(\'#app\'))'), 'both new topics are mounted, the ABC mounts are still there');
-ok(/\['abclv', 'ABC Levels', '#16a34a'\], \['numg', '123 Games', '#f59e0b'\], \['numlv', '123 Levels', '#16a34a'\](, \['numct', '123 Ginti', '#f59e0b'\])?(, \['suno', 'Suno Game', '#f59e0b'\])?(, \['swar', '[^']+', '#8e44ad'\])?(, \['swarsaath', '[^']+', '#8e44ad'\])?(, \['abcsaath', '[^']+', '#e91e63'\])?(, \['byanjanpic', '[^']+', '#e0613a'\])?\]/.test(bolo), 'Bolo has the two new topics after the ABC ones (same colours as the ABC chips)');
+ok(/\['abclv', 'ABC Levels', '#16a34a'\], \['numg', '123 Games', '#f59e0b'\], \['numlv', '123 Levels', '#16a34a'\](, \['numct', '123 Ginti', '#f59e0b'\])?(, \['suno', 'Suno Game', '#f59e0b'\])?(, \['swar', '[^']+', '#8e44ad'\])?(, \['swarsaath', '[^']+', '#8e44ad'\])?(, \['abcsaath', '[^']+', '#e91e63'\])?(, \['byanjanpic', '[^']+', '#e0613a'\])?(, \['jahaz', '[^']+', '#2196f3'\])?\]/.test(bolo), 'Bolo has the two new topics after the ABC ones (same colours as the ABC chips)');
 ok(/g\.NUMG\.viewHTML\(\)/.test(bolo) && /g\.NUMLV\.viewHTML\(\)/.test(bolo) && /if \(g\.NUMG\) g\.NUMG\.leave\(\); if \(g\.NUMLV\) g\.NUMLV\.leave\(\);/.test(bolo), 'Bolo draws them and stops them when the child leaves');
 ok(['/numcore.js', '/numgames.js', '/numlevels.js'].every(f => sw.includes("'" + f + "'")) && +(/orbit-shell-v(\d+)/.exec(sw) || [])[1] >= 57, 'cached for offline, service worker version bumped');
 const code = [core, lvSrc, gmSrc].map(x => x.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')).join('\n');
@@ -200,8 +200,8 @@ async function solve(b) {
     Object.defineProperty(w, 'crypto', { value: require('crypto').webcrypto, configurable: true }); w.TextEncoder = TextEncoder;
     ['bolo-core.js', 'byanjan-video.js', 'bolo.js', 'abcgames.js', 'abclevels.js', 'numcore.js', 'numgames.js', 'numlevels.js'].forEach(x => w.eval(rd(x))); w.eval('draw()');
     const d = w.document, chips = () => [...d.querySelectorAll('.bl-chips [data-bl=mode]')];
-    ok(/^alpha,table,poem,byanjan,saath,asvyanjan,abc,abclv,numg,numlv(,numct)?(,suno)?(,swar)?(,swarsaath)?(,abcsaath)?(,byanjanpic)?$/.test(chips().map(c => c.dataset.v).join()), 'Bolo shows the old topics, then 123 Games and 123 Levels (and 123 Ginti)');
-    ok(/123 Games,123 Levels(,123 Ginti)?(,Suno Game)?(,স্বৰ-বৰ্ণ)?(,স্বৰ সাথে বলো)?(,A–Z সাথে বলো)?(,ছবিৰে সাথে বলো)?$/.test(chips().map(c => c.textContent).join()), 'chip names');
+    ok(/^alpha,table,poem,byanjan,saath,asvyanjan,abc,abclv,numg,numlv(,numct)?(,suno)?(,swar)?(,swarsaath)?(,abcsaath)?(,byanjanpic)?(,jahaz)?$/.test(chips().map(c => c.dataset.v).join()), 'Bolo shows the old topics, then 123 Games and 123 Levels (and 123 Ginti)');
+    ok(/123 Games,123 Levels(,123 Ginti)?(,Suno Game)?(,স্বৰ-বৰ্ণ)?(,স্বৰ সাথে বলো)?(,A–Z সাথে বলো)?(,ছবিৰে সাথে বলো)?(,Jahaz)?$/.test(chips().map(c => c.textContent).join()), 'chip names');
     ok(!!d.querySelector('.bl-big') && !d.getElementById('numg-root') && !d.getElementById('numlv-root'), 'A se Z is still the first screen');
     chips().find(c => c.dataset.v === 'numlv').click(); await wait(20);
     ok(!!d.getElementById('numlv-root') && d.querySelectorAll('.nl-row').length === 10 && !d.querySelector('.bl-big'), '123 Levels topic: the level map is drawn inside Bolo');

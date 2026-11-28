@@ -35,7 +35,7 @@ const CH = '.bl-chips [data-bl=mode]';
   let b = boot({ rec: true }, 'ABCD2345');
   const chips = [...b.d.querySelectorAll(CH)];
   const chip = chips.find(x => x.dataset.v === 'byanjanpic');
-  t('a topic chip ছবিৰে সাথে বলো exists, last of all, and the old chips are unchanged', !!chip && chip.textContent === 'ছবিৰে সাথে বলো' && chips.map(x => x.dataset.v).join() === 'alpha,table,poem,byanjan,saath,asvyanjan,abc,abclv,numg,numlv,numct,suno,swar,swarsaath,abcsaath,byanjanpic' && chips.find(x => x.dataset.v === 'saath').textContent === 'সাথে বলো' && chips.find(x => x.dataset.v === 'swarsaath').textContent === 'স্বৰ সাথে বলো');
+  t('a topic chip ছবিৰে সাথে বলো exists, last of all, and the old chips are unchanged', !!chip && chip.textContent === 'ছবিৰে সাথে বলো' && chips.map(x => x.dataset.v).join() === 'alpha,table,poem,byanjan,saath,asvyanjan,abc,abclv,numg,numlv,numct,suno,swar,swarsaath,abcsaath,byanjanpic,jahaz' && chips.find(x => x.dataset.v === 'saath').textContent === 'সাথে বলো' && chips.find(x => x.dataset.v === 'swarsaath').textContent === 'স্বৰ সাথে বলো');
 
   // the other tiles are untouched
   b.click('[data-bl=mode][data-v=saath]');
