@@ -321,7 +321,8 @@ service cloud.firestore {
       allow list: if request.auth != null && resource.data.kidUid == request.auth.uid;
       allow create: if request.auth != null
         && code.matches('^[A-HJ-NP-Z2-9]{8}$')
-        && request.resource.data.keys().hasOnly(['code', 'kidUid', 'name', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['code', 'kidUid', 'name', 'createdAt', 'nk'])
+        && (!('nk' in request.resource.data) || request.resource.data.nk == true)
         && request.resource.data.code == code
         && request.resource.data.kidUid == request.auth.uid
         && request.resource.data.name is string && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 40
@@ -397,6 +398,46 @@ service cloud.firestore {
           && request.resource.data.by == request.auth.uid
           && request.resource.data.at is number;
         allow delete: if kidParent(code) || kidOwner(code);
+      }
+      // Sandesh: an approved mentor sends a message that appears on the child's screen (text, a question to copy, or a voice) for a time the mentor sets.
+      // No parent approval per message (the mentor was approved once). Only the mentor who wrote a message can read / delete it. The child's phone writes shownAt / doneAt once and the replies.
+      match /msgs/{mid} {
+        allow get, list: if kidOwner(code) || (mentorOk(code) && resource.data.from == request.auth.uid);
+        allow create: if mentorOk(code)
+          && mid.matches('^[0-9]{13}-[a-z0-9]{6}$')
+          && request.resource.data.keys().hasOnly(['from', 'fromName', 'ins', 'q', 'aud', 'secs', 'at'])
+          && request.resource.data.keys().hasAll(['from', 'fromName', 'secs', 'at'])
+          && request.resource.data.from == request.auth.uid
+          && request.resource.data.fromName is string && request.resource.data.fromName.size() >= 1 && request.resource.data.fromName.size() <= 40
+          && (!('ins' in request.resource.data) || (request.resource.data.ins is string && request.resource.data.ins.size() >= 1 && request.resource.data.ins.size() <= 600))
+          && (!('q' in request.resource.data) || (request.resource.data.q is string && request.resource.data.q.size() >= 1 && request.resource.data.q.size() <= 1200))
+          && (!('aud' in request.resource.data) || (request.resource.data.aud is string && request.resource.data.aud.size() <= 380000 && request.resource.data.aud.startsWith('data:audio/')))
+          && ('ins' in request.resource.data || 'q' in request.resource.data || 'aud' in request.resource.data)
+          && request.resource.data.secs in [60, 120, 300, 600, 900, 1800]
+          && request.resource.data.at is number
+          && request.resource.data.at <= request.time.toMillis() + 60000
+          && request.resource.data.at >= request.time.toMillis() - 600000;
+        allow update: if kidOwner(code)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shownAt', 'doneAt'])
+          && (!('shownAt' in resource.data) || request.resource.data.shownAt == resource.data.shownAt)
+          && (!('doneAt' in resource.data) || request.resource.data.doneAt == resource.data.doneAt)
+          && (!('shownAt' in request.resource.data) || request.resource.data.shownAt is number)
+          && (!('doneAt' in request.resource.data) || request.resource.data.doneAt is number);
+        allow delete: if kidOwner(code) || (mentorOk(code) && resource.data.from == request.auth.uid);
+        // The child's answer: a photo of the copy or a short voice. Only the child's phone writes it; only the mentor who sent the message reads it.
+        match /reps/{rid} {
+          allow get, list: if kidOwner(code) || (mentorOk(code) && get(/databases/$(database)/documents/kidLinks/$(code)/msgs/$(mid)).data.from == request.auth.uid);
+          allow create: if kidOwner(code)
+            && exists(/databases/$(database)/documents/kidLinks/$(code)/msgs/$(mid))
+            && rid.matches('^[0-9]{13}-[a-z0-9]{6}$')
+            && request.resource.data.keys().hasOnly(['kind', 'data', 'at'])
+            && request.resource.data.kind in ['photo', 'voice']
+            && request.resource.data.data is string && request.resource.data.data.size() <= 380000
+            && ((request.resource.data.kind == 'photo' && request.resource.data.data.startsWith('data:image/jpeg;base64,'))
+              || (request.resource.data.kind == 'voice' && request.resource.data.data.startsWith('data:audio/')))
+            && request.resource.data.at is number;
+          allow delete: if kidOwner(code) || (mentorOk(code) && get(/databases/$(database)/documents/kidLinks/$(code)/msgs/$(mid)).data.from == request.auth.uid);
+        }
       }
       // Online / Offline: the child's phone writes it about once a minute while Orbit is open and on screen, and once more when it is hidden.
       match /state/pres {

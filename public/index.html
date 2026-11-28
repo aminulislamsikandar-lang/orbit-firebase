@@ -273,6 +273,7 @@ const I={
  chev:ic('<path d="M6 9l6 6 6-6"/>'),
  menu:ic('<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/>'),
  close:ic('<path d="M6 6l12 12"/><path d="M18 6L6 18"/>'),
+ mentor:ic('<path d="M4 5h16v11H9l-5 4z"/>'),
  home:ic('<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>'),
  pin:ic('<line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z"/>'),
  pyq:ic('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/>'),
@@ -339,7 +340,7 @@ try{
 function navSave(){try{localStorage.setItem(NKEY,JSON.stringify(NAV))}catch(e){}}
 // ---- Course lock: one course per student (School/Board + Class + Medium). Saved in Firestore (studentCourse/<uid>), remembered per account on this device. ----
 // COURSE_STATE: 'wait' (loading) | 'none' (must choose) | 'err' (could not load) | 'set'. The server checks the same course on every AI request.
-let KIDROLE='',KID_STEP='',KID_CODE='',OWN_PENDING=false,COURSE=null,COURSE_STATE='wait',RAWD=null,CS={org:'',cls:0,med:''},CSERR='',CSTEP='',CSBUSY=false,PEEK=location.hash==='#study';   // PEEK: a parent opened "Padhai ka time" (from the course screen, or by tapping the alert): no course is needed for that one view
+let KIDROLE='',KID_STEP='',KID_CODE='',KID_NK=false,OWN_PENDING=false,COURSE=null,COURSE_STATE='wait',RAWD=null,CS={org:'',cls:0,med:''},CSERR='',CSTEP='',CSBUSY=false,PEEK=location.hash==='#study';   // PEEK: a parent opened "Padhai ka time" (from the course screen, or by tapping the alert): no course is needed for that one view
 const COURSEKEY=uid=>'orbit_course_v1_'+uid;
 const courseLabel=l=>CATALOG.labelOf(l);
 const lockedIds=()=>COURSE&&RAWD?CATALOG.idsFor(COURSE,RAWD.courses):null;
@@ -449,8 +450,8 @@ function kidOfHTML(step){   // "I am parent" / "I am mentor" first asks: of a Ki
   +`<p class="mut" style="margin-top:24px"><button class="chip" data-act="kidback">← Wapas</button></p></div>`;
 }
 function kidMentorCodeHTML(){
- return `<h1 style="font-size:26px;margin-top:16px">Mentor of Kid</h1><p class="mut">Bachche ke parent se 8 akshar ka code lo aur yahan daalo. Parent request manzoor karega tab bachcha tumhe dikhega.</p>
-  <input id="kidCode" value="${esc(KID_CODE)}" maxlength="9" autocomplete="off" autocapitalize="characters" placeholder="ABCD-EFGH" aria-label="Bachche ka code" style="width:100%;padding:12px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit;font-size:20px;letter-spacing:3px;margin-top:10px">
+ return `<h1 style="font-size:26px;margin-top:16px">${KID_NK?'Mentor of Not Kid':'Mentor of Kid'}</h1><p class="mut">${KID_NK?'Student se uska 8 akshar ka mentor code lo (uske phone par Mentor page mein milta hai) aur yahan daalo. Student request manzoor karega tab tum sandesh bhej paoge.':'Bachche ke parent se 8 akshar ka code lo aur yahan daalo. Parent request manzoor karega tab bachcha tumhe dikhega.'}</p>
+  <input id="kidCode" value="${esc(KID_CODE)}" maxlength="9" autocomplete="off" autocapitalize="characters" placeholder="ABCD-EFGH" aria-label="${KID_NK?'Student ka code':'Bachche ka code'}" style="width:100%;padding:12px;border:1px solid var(--ln);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit;font-size:20px;letter-spacing:3px;margin-top:10px">
   <button class="btn" data-act="mentorsend" ${CSBUSY?'disabled':''} style="margin-top:12px">${CSBUSY?SPN+'Request ja rahi hai…':'Request bhejo'}</button>`
   +(CSERR?`<p class="err">${esc(CSERR)}</p>`:'')
   +`<p class="mut" style="margin-top:24px"><button class="chip" data-act="kidback">← Wapas</button></p></div>`;
@@ -897,7 +898,7 @@ function syncSoon(){
 }
 window.onCloudFail=e=>{if(window.BUSY)BUSY.endBoot();CLOUDFAIL=String((e&&e.message)||e||'unknown');console.error('cloud.js failed',e);if(navigator.onLine&&!USER)draw()};
 window.onCloudLoginError=e=>{const c=e&&e.code;LOGINERR=c==='auth/unauthorized-domain'?'Ye website Firebase ke Authorized domains me nahi hai.':c==='auth/web-storage-unsupported'?'Browser storage band hai. Chrome ki settings me cookies chalu karo ya normal tab me kholo.':'Login nahi ho paya. Dobara try karo.';if(!USER)draw()};
-window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.BUSY){BUSY.endBoot();BUSY.wrapCloud()}if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.KIDLINK)window.KIDLINK.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(window.STUDY)window.STUDY.setUser(u);if(u&&FREE){FREE=false;FREE_ID=null;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';PEEK=false;COURSE=null;COURSE_STATE='wait';if(RAWD)courseChanged();if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u);loadCourse(u)}if(DATA||!u)draw()};
+window.onCloudUser=u=>{USER=u;AUTH_READY=true;if(window.PARENT_KEY)window.PARENT_KEY.setUser(u?u.uid:'');if(window.BUSY){BUSY.endBoot();BUSY.wrapCloud()}if(window.CLASSROOM)window.CLASSROOM.setUser(u);if(window.KIDLINK)window.KIDLINK.setUser(u);if(window.SANDESH)window.SANDESH.setUser(u);if(window.WEEKLY)window.WEEKLY.setUser(u);if(window.STUDY)window.STUDY.setUser(u);if(u&&FREE){FREE=false;FREE_ID=null;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}if(window.QVideo)window.QVideo.badge();if(window.Analytics)window.Analytics.userKnown(u);if(!u){LOGINERR='';PEEK=false;COURSE=null;COURSE_STATE='wait';if(RAWD)courseChanged();if(window.CUSTOM)CUSTOM.stop()}else{openSide(false,true);if(window.CUSTOM)CUSTOM.start(u);loadCourse(u)}if(DATA||!u)draw()};
 // First login on a device: merge this device's data with the cloud. After that the cloud copy wins.
 window.onCloudData=cd=>{
  if(window.RECALL&&RECALL.sync)RECALL.sync();   // Recall tracker + topic records: phone <-> account
@@ -1107,6 +1108,7 @@ function draw(){
  else if(VIEW==='class')body=window.CLASSROOM?CLASSROOM.viewHTML():'';
  else if(VIEW==='report')body=window.WEEKLY?WEEKLY.viewHTML():'';
  else if(VIEW==='study')body=window.STUDY?STUDY.viewHTML():'';
+else if(VIEW==='mentor')body=window.SANDESH?SANDESH.viewHTML():'';
  else if(VIEW==='mock'||VIEW==='daily')body=window.EXAM?EXAM.viewHTML(VIEW):'';
  else if(VIEW==='plan'||VIEW==='planover')body=window.PLAN?PLAN.viewHTML(VIEW):'';
  else if(VIEW==='bolo')body=window.BOLO?BOLO.viewHTML():'';
@@ -1138,7 +1140,7 @@ function drawSide(){
  // One item per section. Pages that share a section (Favourite + Pinned, the two Videos pages, ...) show tabs at the top of the page; see SGROUPS.
  const item=(v,ico,label,badge,alts)=>`<button class="sitem" data-act="nav" data-v="${v}" ${VIEW===v||(alts&&alts.includes(VIEW))?'aria-current="page"':''}>${I[ico]}<span>${label}</span>${badge!=null?`<span class="sbadge">${badge}</span>`:''}</button>`;
  $('#side').innerHTML=`<div class="shead"><div class="logo" style="font-size:22px">${LOGO}Orbit</div><button class="ic" data-act="close" aria-label="Menu band karo">${I.close}</button></div>
- ${item('home','home','Home')}${COURSE&&!COURSE.own?'':item('custom','plus','My Courses')}${item('fav','heart','Saved',nSaved()+nPinned(),['pins'])}${item('getvideo','vid','Videos',null,['pubvideo'])}${item('vlab','lab','Lab aur 3D',null,['models3d'])}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo aur voice',null,['read','talk'])}${item('pyq','pyq','Exam',null,['pass','mock','daily'])}${item('class','class','Meri progress',null,['report','study'])}
+ ${item('home','home','Home')}${COURSE&&!COURSE.own?'':item('custom','plus','My Courses')}${item('fav','heart','Saved',nSaved()+nPinned(),['pins'])}${item('getvideo','vid','Videos',null,['pubvideo'])}${item('vlab','lab','Lab aur 3D',null,['models3d'])}${item('recall','recall','Recall AI')}${item('bolo','mic','Bolo aur voice',null,['read','talk'])}${item('pyq','pyq','Exam',null,['pass','mock','daily'])}${item('class','class','Meri progress',null,['report','study'])}${item('mentor','mentor','Mentor',window.SANDESH&&SANDESH.badge?SANDESH.badge():null)}
  <div class="sgap"></div><div class="sline"></div>
  ${item('settings','set','Settings',null,['ai','topper','faculty','dev'])}${item('login','login',USER?'Account':'Log in')}`;
 }
@@ -1477,7 +1479,8 @@ document.addEventListener('click',e=>{
  else if(act==='kidrole'){const v=b.dataset.v;if(v==='parent'){KID_STEP='parentof';CSERR='';draw()}else if(v==='mentor'){KID_STEP='mentorof';CSERR='';draw()}else saveKid('kid')}
  else if(act==='kidof'){const kid=b.dataset.v==='kid',men=KID_STEP==='mentorof';CSERR='';
   if(!men&&kid){KID_STEP='code';draw()}                    // Parent of Kid: paste the child's code (as before)
-  else if(men&&kid){KID_STEP='mentorcode';draw()}          // Mentor of Kid: ask with the child's code, the parent approves
+  else if(men&&kid){KID_NK=false;KID_STEP='mentorcode';draw()}   // Mentor of Kid: ask with the child's code, the parent approves
+  else if(men){KID_NK=true;KID_STEP='mentorcode';draw()}         // Mentor of Not Kid: ask with the student's code, the student approves on the Mentor page
   else{PEEK=true;KID_STEP='';go('study')}}                 // Not Kid: the existing Padhai ka time door (until Not Kid is decided)
  else if(act==='kidback'){KID_STEP=KID_STEP==='code'?'parentof':KID_STEP==='mentorcode'?'mentorof':(KID_STEP==='parentof'||KID_STEP==='mentorof')?'role':'';CSERR='';draw()}
  else if(act==='kidjoin')kidJoin();
@@ -1611,6 +1614,8 @@ if('serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.se
 <script src="/byanjan-video.js"></script>
 <script src="/bolo.js"></script>
 <script src="/kidlink.js"></script>
+<script src="/sandesh-core.js"></script>
+<script src="/sandesh.js"></script>
 <script src="/voice-tutor.js"></script>
 <script src="/vlab.js"></script>
 <script src="/models3d.js"></script>

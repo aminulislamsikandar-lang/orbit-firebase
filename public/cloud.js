@@ -3,7 +3,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut }
   from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, documentId, serverTimestamp }
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, documentId, serverTimestamp, onSnapshot }
   from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -307,7 +307,7 @@ window.CLOUD.ytLinks = {
 
 // Kid mode: a parent connects to a child's phone with an 8-character code (firestore.rules: kidLinks). The child's phone shares a small summary, the parent sets the limit and the mic switch.
 window.CLOUD.kids = {
-  async create(name) {
+  async create(name, nk) {   // nk = true: a Not Kid student's link (mentor messages only)
     const u = auth.currentUser; if (!u) throw new Error('login');
     const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no I, O, 0, 1: easy to read aloud and copy
     for (let i = 0; i < 6; i++) {
@@ -315,6 +315,7 @@ window.CLOUD.kids = {
       let taken = false; try { taken = (await getDoc(doc(db, 'kidLinks', code))).exists(); } catch (e) {}
       if (taken) continue;
       const d = { code, kidUid: u.uid, name: String(name || 'Bachcha').slice(0, 40) || 'Bachcha', createdAt: Date.now() };
+      if (nk === true) d.nk = true;
       await setDoc(doc(db, 'kidLinks', code), d); return d;
     }
     throw new Error('code');
@@ -325,6 +326,7 @@ window.CLOUD.kids = {
   async remove(code) {   // the child's phone stops sharing: the link and everything under it go
     for (const sub of ['parents', 'mentors', 'reviews']) { try { const s = await getDocs(collection(db, 'kidLinks', code, sub)); await Promise.all(s.docs.map(d => deleteDoc(d.ref))); } catch (e) {} }
     for (const id of ['sum', 'set', 'pres', 'wa', 'rep', 'live']) { try { await deleteDoc(doc(db, 'kidLinks', code, 'state', id)); } catch (e) {} }
+    try { const ms = await getDocs(collection(db, 'kidLinks', code, 'msgs')); for (const m of ms.docs) { try { const rs = await getDocs(collection(m.ref, 'reps')); await Promise.all(rs.docs.map(d => deleteDoc(d.ref))); } catch (e) {} try { await deleteDoc(m.ref); } catch (e) {} } } catch (e) {}   // Sandesh messages and replies
     await deleteDoc(doc(db, 'kidLinks', code));
   },
   async putSum(code, sum) { await setDoc(doc(db, 'kidLinks', code, 'state', 'sum'), sum); },
@@ -373,7 +375,15 @@ window.CLOUD.kids = {
   async myMentees() { const u = auth.currentUser; if (!u) return []; const s = await getDocs(collection(db, 'users', u.uid, 'mentees')); const a = []; s.forEach(d => a.push(d.id)); return a; },
   async menteeData() { const u = auth.currentUser; if (!u) return []; const s = await getDocs(collection(db, 'users', u.uid, 'mentees')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a; },
   async menteeSet(code, patch) { const u = auth.currentUser; if (!u) throw new Error('login'); await setDoc(doc(db, 'users', u.uid, 'mentees', code), patch, { merge: true }); },   // the mentor's own notes (daily target): private
-  async forgetMentee(code) { const u = auth.currentUser; if (u) await deleteDoc(doc(db, 'users', u.uid, 'mentees', code)); }
+  async forgetMentee(code) { const u = auth.currentUser; if (u) await deleteDoc(doc(db, 'users', u.uid, 'mentees', code)); },
+  // Sandesh: a mentor's message to the child (kidLinks/{code}/msgs/{id}); the child's phone adds shownAt / doneAt and replies (msgs/{id}/reps/{rid}).
+  async msgSend(code, id, m) { await setDoc(doc(db, 'kidLinks', code, 'msgs', id), m); },
+  async msgsMine(code) { const u = auth.currentUser; if (!u) return []; const s = await getDocs(query(collection(db, 'kidLinks', code, 'msgs'), where('from', '==', u.uid))); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a; },
+  msgWatch(code, cb) { return onSnapshot(collection(db, 'kidLinks', code, 'msgs'), s => { const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); cb(a); }, () => {}); },   // the child's phone: live, so a message appears at once
+  async msgMark(code, id, patch) { await updateDoc(doc(db, 'kidLinks', code, 'msgs', id), patch); },
+  async msgDel(code, id) { try { const rs = await getDocs(collection(db, 'kidLinks', code, 'msgs', id, 'reps')); await Promise.all(rs.docs.map(d => deleteDoc(d.ref))); } catch (e) {} await deleteDoc(doc(db, 'kidLinks', code, 'msgs', id)); },
+  async repPut(code, mid, rid, rep) { await setDoc(doc(db, 'kidLinks', code, 'msgs', mid, 'reps', rid), rep); },
+  async reps(code, mid) { try { const s = await getDocs(collection(db, 'kidLinks', code, 'msgs', mid, 'reps')); const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a; } catch (e) { return []; } }
 };
 
 onAuthStateChanged(auth, async user => {

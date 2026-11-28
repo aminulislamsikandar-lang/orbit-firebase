@@ -1,7 +1,7 @@
 // Orbit service worker: keeps the app page, its scripts and the question lists so chapters open offline.
 // API calls (/api/*) are never cached here; answers are stored by the page itself.
 // robots.txt, sitemap.xml and the Google verification file are NOT touched: they always go to the server.
-const SHELL = 'orbit-shell-v100';
+const SHELL = 'orbit-shell-v101';
 const FONTS = 'orbit-fonts-v1';
 const ASSETS = 'orbit-assets-v1';
 
@@ -10,7 +10,7 @@ const CORE = [
   '/config.js', '/catalog.js', '/publicchapters.js', '/custom-course.js', '/warp-loader.js', '/busy.js', '/team.js', '/mathvideo-admin.js',
   '/narration-sync.js', '/narration-sprites.js', '/mathvideo-player.js', '/narration-loader.js',
   '/voiceover.js', '/vkeep.js', '/vboost.js', '/vsave.js', '/vplayer.js', '/voiceover-admin.js', '/narration-admin.js', '/video-admin.js', '/qvideo.js', '/ytplayer.js', '/plan.js',
-  '/analytics.js', '/parent-key.js', '/recall.js', '/voicematch-core.js', '/assamese-fuse.js', '/bolo-core.js', '/bolorec-core.js', '/bolorec.js', '/saath-core.js', '/saath.js', '/swarsaath-core.js', '/swarsaath.js', '/abcsaath-core.js', '/abcsaath.js', '/byanjanpic-core.js', '/byanjanpic.js', '/byanjan-video.js', '/bolo.js', '/swarborno.js', '/swar/swar.mp3', '/swar/swar-01.webp', '/swar/swar-02.webp', '/swar/swar-03.webp', '/swar/swar-04.webp', '/swar/swar-05.webp', '/swar/swar-06.webp', '/swar/swar-07.webp', '/swar/swar-08.webp', '/swar/swar-09.webp', '/swar/swar-10.webp', '/swar/swar-11.webp', '/kidlink.js', '/vlab.js', '/models3d.js', '/promptbox.js', '/abcgames.js', '/abclevels.js', '/numcore.js', '/numgames.js', '/numlevels.js', '/sunogame.js', '/numcount.js', '/report.js', '/avatar.js', '/studytime.js', '/kidbank.js', '/cloud.js',
+  '/analytics.js', '/parent-key.js', '/recall.js', '/voicematch-core.js', '/assamese-fuse.js', '/bolo-core.js', '/bolorec-core.js', '/bolorec.js', '/saath-core.js', '/saath.js', '/swarsaath-core.js', '/swarsaath.js', '/abcsaath-core.js', '/abcsaath.js', '/byanjanpic-core.js', '/byanjanpic.js', '/byanjan-video.js', '/bolo.js', '/swarborno.js', '/swar/swar.mp3', '/swar/swar-01.webp', '/swar/swar-02.webp', '/swar/swar-03.webp', '/swar/swar-04.webp', '/swar/swar-05.webp', '/swar/swar-06.webp', '/swar/swar-07.webp', '/swar/swar-08.webp', '/swar/swar-09.webp', '/swar/swar-10.webp', '/swar/swar-11.webp', '/kidlink.js', '/sandesh-core.js', '/sandesh.js', '/vlab.js', '/models3d.js', '/promptbox.js', '/abcgames.js', '/abclevels.js', '/numcore.js', '/numgames.js', '/numlevels.js', '/sunogame.js', '/numcount.js', '/report.js', '/avatar.js', '/studytime.js', '/kidbank.js', '/cloud.js',
   '/limit-msg.js', '/revision-core.js', '/answer-check.js', '/quiz.js', '/exam.js', '/aireview.js', '/classroom.js', '/weekly.js', '/voice-tutor.js',
   '/firebase-config.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png',
   '/questions.json', '/videos.json', '/publicvideos.json',

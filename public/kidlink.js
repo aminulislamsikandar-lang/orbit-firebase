@@ -492,7 +492,7 @@
         if (!link || !me) { try { await C.forgetMentee(code); } catch (e) {} continue; }   // the child stopped sharing, or the parent said no
         let pres = null, sum = null, wa = null, rep = null;
         if (me.status === 'approved') { try { pres = await C.getPres(code); } catch (e) {} try { sum = await C.getSum(code); } catch (e) {} wa = await C.getWa(code); rep = await C.getRep(code); }
-        out.push({ code, name: link.name, status: me.status, pres, sum, wa, rep, target: tgt[code] || 0, listenUntil: +me.listenUntil || 0, watchAsk: +me.watchAsk || 0 });
+        out.push({ code, name: link.name, nk: link.nk === true, status: me.status, pres, sum, wa, rep, target: tgt[code] || 0, listenUntil: +me.listenUntil || 0, watchAsk: +me.watchAsk || 0 });
       }
       M.kids = out;
     } catch (e) { M.err = fail(e); }
@@ -570,7 +570,7 @@
   const kcol = code => { let h = 0; for (const c of String(code)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return KC[h % KC.length]; };
   // What needs the mentor's attention for one approved child. c: 'a' = amber, 'r' = red.
   function flagsOf(k) {
-    if (k.status !== 'approved') return [];
+    if (k.status !== 'approved' || k.nk) return [];   // a Not Kid student shares no online time, so there is nothing to flag
     const f = [], dk = dayKey(), sm = k.sum && k.sum.day === dk ? k.sum : null;
     if (!k.pres) f.push({ c: 'r', t: 'Abhi tak Orbit par nahi aaya' });
     else if (!isOnline(k.pres)) { const d = Math.floor((Date.now() - (+k.pres.at || 0)) / 86400000); if (d >= 1) f.push({ c: d >= 2 ? 'r' : 'a', t: d === 1 ? 'Kal se Orbit par nahi aaya' : d + ' din se Orbit par nahi aaya' }); }
@@ -581,8 +581,9 @@
   }
   const rankOf = k => k.status !== 'approved' ? 3 : isOnline(k.pres) ? 0 : flagsOf(k).length ? 1 : 2;
   function kidCard(k) {
-    const on = k.status === 'approved' && isOnline(k.pres), ok = k.status === 'approved', dk = dayKey(), [c1, c2] = kcol(k.code);
-    const pill = !ok ? `<span class="md-pill">Parent ki manzoori ka intezaar</span>`
+    const on = k.status === 'approved' && isOnline(k.pres), ok = k.status === 'approved', nk = !!k.nk, dk = dayKey(), [c1, c2] = kcol(k.code);
+    const pill = !ok ? `<span class="md-pill">${nk ? 'Student' : 'Parent'} ki manzoori ka intezaar</span>`
+      : nk ? `<span class="md-pill">Student</span>`
       : `<span class="md-pill kl-state"><i class="kl-dot ${on ? 'kl-on' : 'kl-off'}" aria-hidden="true"></i><b>${on ? 'Online' : 'Offline'}</b></span>`;
     const streak = ok ? streakOf(k) : 0, flags = flagsOf(k);
     const sm = k.sum && k.sum.day === dk ? k.sum : null, osec = onlineSec(k.pres, dk), bolo = sm ? +sm.sec || 0 : 0, right = sm ? +sm.ok || 0 : 0;
@@ -605,9 +606,10 @@
       : `<div class="md-h">${mi('wave')}<span>Sunna aur dekhna</span></div><div class="chips"><button class="chip" data-kl="mwatch" data-v="${esc(k.code)}">Sunna / Dekhna maango</button></div><p class="mut" style="margin:6px 0 0;font-size:12.5px">Parent manzoor karega to 1 ghante tak bachche ki recordings sun sakte ho aur uski screen par likha hua live dekh sakte ho.</p>`) : '';
     const voice = ok && g.BOLOREC && g.BOLOREC.mentorHTML ? g.BOLOREC.mentorHTML(k.code, k.listenUntil) : '';
     const wa = ok && k.wa && k.wa.num ? `<button class="chip" data-kl="mwa" data-v="${esc(k.code)}">WhatsApp report</button>` : '';
+    const sand = ok && g.SANDESH && g.SANDESH.cardHTML ? g.SANDESH.cardHTML(k.code, k.name) : '';   // Sandesh bhejo (sandesh.js)
     return `<div class="md-card" data-kl-mcard="${esc(k.code)}" style="--k1:${c1};--k2:${c2}"><div class="md-top"><div class="md-av" aria-hidden="true">${esc(String(k.name || '?').trim().charAt(0).toUpperCase() || '?')}</div><div class="md-nm"><h2>${esc(k.name)}</h2>${pill}</div>${streak ? `<span class="md-streak" title="Lagatar din">${mi('flame')}${streak}</span>` : ''}</div>
-      <div class="md-body">${flagH}${live}${watch}${askBox}${last}${target}${prog}${week}${voice}
-        <div class="chips" style="margin-top:14px">${wa}<button class="chip" data-kl="mleave" data-v="${esc(k.code)}">${ok ? 'Is bachche se hatao' : 'Request wapas lo'}</button></div></div></div>`;
+      <div class="md-body">${sand}${nk ? '' : flagH + live + watch + askBox + last + target + prog + week + voice}
+        <div class="chips" style="margin-top:14px">${nk ? '' : wa}<button class="chip" data-kl="mleave" data-v="${esc(k.code)}">${ok ? 'Is bachche se hatao' : 'Request wapas lo'}</button></div></div></div>`;
   }
   // Live screen on the mentor's side: the child's screen drawn again through the cleaner (never innerHTML of what came from Firestore), read-only. Older than 20 s means the phone is in the background.
   function liveHTML(l) {
