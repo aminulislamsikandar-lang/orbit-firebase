@@ -12,8 +12,8 @@
   const classes = { seba: [9, 10], cbse: [9, 10], ajb: [1, 2, 3, 4, 5, 6, 7, 8], nashib: [2, 6, 7, 8, 9, 10], popular: [6, 7, 8, 9, 10], halimon: [6, 7, 8, 9, 10] };
   const content = {
     seba: { 10: [['c10-science', 'General Science'], ['c10-maths', 'Mathematics'], ['c10-social', 'Social Science'], ['c10-science-as', 'General Science']] },
-    nashib: { 2: [['c2-assamese', 'Assamese']], 6: [['c6-english', 'English'], ['c6-grammar', 'English Grammar'], ['c6-social', 'Social Science'], ['c6-science', 'General Science'], ['c6-hindi', 'Hindi'], ['c6-assamese', 'Assamese'], ['c6-arabic', 'Arabic'], ['c6-maths']], 7: [['c7-english'], ['c7-maths'], ['c7-science']] },
-    popular: { 7: [['c7-english'], ['c7-maths'], ['c7-science']] },
+    nashib: { 2: [['c2-assamese', 'Assamese']], 6: [['c6-english', 'English'], ['c6-grammar', 'English Grammar'], ['c6-social', 'Social Science'], ['c6-science', 'General Science'], ['c6-hindi', 'Hindi'], ['c6-assamese', 'Assamese'], ['c6-arabic', 'Arabic'], ['c6-maths']], 7: [['c7-english'], ['c7-english-as', 'English'], ['c7-grammar-as', 'English Grammar'], ['c7-maths'], ['c7-maths-as'], ['c7-science'], ['c7-science-as'], ['c7-hindi']] },
+    popular: { 7: [['c7-english'], ['c7-english-as', 'English'], ['c7-grammar-as', 'English Grammar'], ['c7-maths'], ['c7-maths-as'], ['c7-science'], ['c7-science-as'], ['c7-hindi']] },
     halimon: { 7: [['c7-english'], ['c7-english-as', 'English'], ['c7-grammar-as', 'English Grammar'], ['c7-maths'], ['c7-maths-as'], ['c7-science'], ['c7-science-as'], ['c7-hindi']], 8: [['c8-english']] },
     ajb: { 8: [['c8-social-ajb', 'Social Science']] }
   };

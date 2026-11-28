@@ -63,7 +63,7 @@ t('Chapter 1 is the first chapter of the book, so the free plan (first chapter f
 const courses = QUIZ.courses.map(x => ({ id: x.id, medium: x.medium }));
 t('Halimon Class 7 Assamese medium shows this Maths course, the Assamese Science course, the Hindi course and the English and English Grammar courses', same(CAT.idsFor({ org: 'halimon', cls: 7, med: 'Assamese' }, courses), ['c7-english-as', 'c7-grammar-as', 'c7-maths-as', 'c7-science-as', 'c7-hindi']));
 t('Halimon Class 7 English medium is unchanged (English, Maths, Science)', same(CAT.idsFor({ org: 'halimon', cls: 7, med: 'English' }, courses).sort(), ['c7-english', 'c7-maths', 'c7-science']));
-t('other schools are unchanged (Nashib, Popular Class 7 have no Assamese-medium course)', CAT.idsFor({ org: 'nashib', cls: 7, med: 'Assamese' }, courses).length === 0 && CAT.idsFor({ org: 'popular', cls: 7, med: 'Assamese' }, courses).length === 0);
+t('Nashib Ali Academy and Popular Academy Class 7 Assamese medium show the same five courses as Halimon; their English medium is unchanged', ['nashib', 'popular'].every(o => same(CAT.idsFor({ org: o, cls: 7, med: 'Assamese' }, courses), CAT.idsFor({ org: 'halimon', cls: 7, med: 'Assamese' }, courses)) && same(CAT.idsFor({ org: o, cls: 7, med: 'English' }, courses).sort(), ['c7-english', 'c7-maths', 'c7-science'])));
 // the app picks the course by class + subject + medium (runs the real courseOf of index.html)
 const idx = read('public/index.html'), src = (idx.match(/^const courseOf=.*$/m) || [''])[0];
 const courseOf = new Function('DATA', 'isCustomOrg', 'NAV', src + '\nreturn courseOf;')(QUIZ, () => false, { org: 'halimon' });
