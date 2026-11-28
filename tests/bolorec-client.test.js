@@ -24,8 +24,8 @@ const B = window.BOLOREC;
   t('letters are stepped in order, one after another', JSON.stringify(steps) === '[0,1,2]');
   t('only the quiet letter is a red alert', JSON.stringify(reds) === '[1]' && r.silent === 1);
   t('one recording started for the whole session and the mic is released at the end', started === 1 && stopped === 1);
-  t('one upload to the parent route with the code and webm', uploads.length === 1 && uploads[0].p === '/api/bolo/rec/upload' && uploads[0].b.code === 'ABCD2345' && uploads[0].b.mime === 'audio/webm' && uploads[0].b.audio.length > 100 && r.sent);
-  const rep = uploads[0].b.report;
+  t('NOTHING is uploaded: the recording is not sent', uploads.length === 0 && !r.sent);
+  const rep = { total: items.length, letters: r.letters };
   t('report: 3 letters, 2nd has no sound, start times grow', rep.total === 3 && rep.letters.map(x => x.s).join('') === '101' && rep.letters[1].l === 'খ' && rep.letters[0].t < rep.letters[1].t && rep.letters[1].t < rep.letters[2].t);
 
   // cancelled before the first letter: nothing to upload
@@ -36,7 +36,5 @@ const B = window.BOLOREC;
   t('mic refused: a clear message, nothing uploaded', /Mic/.test(r3.err) && uploads.length === 0 && !r3.sent);
   denied = false;
 
-  const bad = await B.run({ ...o, items: [items[0]], step: () => { AMP = 0.3; }, api: async () => { throw new Error('Net nahi hai'); } });
-  t('failed upload: the error is returned, the session still finished', bad.err === 'Net nahi hai' && !bad.sent && bad.letters.length === 1);
   console.log(pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0);
 })();

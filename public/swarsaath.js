@@ -41,7 +41,7 @@
   const warm = () => { if (warmed || !g.Image) return; warmed = true; K.LETTERS.forEach((_, i) => { const im = new g.Image(); im.src = K.pic(i); }); };
 
   const redraw = () => { try { S.redraw && S.redraw(); } catch (e) {} };
-  const statusText = () => S.phase === 'calib' ? 'Shaant raho...' : S.phase === 'run' ? 'Saath me bolo' : S.phase === 'send' ? 'Recording parent ko bheji ja rahi hai...' : S.phase === 'done' ? 'Shabash!' : 'Start dabao, phir swar ke saath bolte jao.';
+  const statusText = () => S.phase === 'calib' ? 'Shaant raho...' : S.phase === 'run' ? 'Saath me bolo' : S.phase === 'done' ? (S.replay ? 'Shabash! 5 second mein phir shuru hoga.' : 'Shabash!') : 'Start dabao, phir swar ke saath bolte jao.';
   const missText = () => S.miss ? 'Red alert: awaaz nahi aayi: ' + S.miss + ' swar' : '';
 
   // The screen follows the state: bolo.js may redraw the whole page at any time, and the cells, letter and counters come back as they were.
@@ -51,9 +51,9 @@
     const cur = S.cur >= 0 ? S.cur : 0, big = K.LETTERS[cur];   // before Start the first vowel is shown, like Saath me bolo
     const grid = K.rows().map(r => r.map(k => k < 0 ? '<div class="ss-c e"></div>' : `<div class="ss-c${S.cells[k] === 1 ? ' ok' : S.cells[k] === 2 ? ' no' : ''}${S.cur === k && S.phase === 'run' ? ' now' : ''}" data-i="${k}" lang="as">${esc(K.LETTERS[k])}</div>`).join('')).join('');
     const bad = S.letters.filter(x => !x.s).map(x => x.l);
-    const sum = S.phase === 'done' ? `<p class="ss-sum" role="status"><b>${S.letters.length - bad.length} / ${N}</b> swar par awaaz aayi.<br>${bad.length ? `<span style="color:#d64545">Awaaz nahi aayi: <span lang="as">${esc(bad.join(' '))}</span></span>` : 'Har swar par bachha bola.'}${S.sent ? '<br><span class="mut" data-nolive>Recording parent ko bhej di gayi (2 ghante tak sunai ja sakti hai).</span>' : o.practice ? '<br><span class="mut">Practice: recording kisi ko nahi bheji gayi.</span>' : ''}</p>` : '';
+    const sum = S.phase === 'done' ? `<p class="ss-sum" role="status"><b>${S.letters.length - bad.length} / ${N}</b> swar par awaaz aayi.<br>${bad.length ? `<span style="color:#d64545">Awaaz nahi aayi: <span lang="as">${esc(bad.join(' '))}</span></span>` : 'Har swar par bachha bola.'}<br><span class=\"mut\">Recording kisi ko nahi bheji jaati: sirf awaaz ka level naapa jaata hai.</span></p>` : '';
     const err = S.err ? `<p class="err" role="alert" style="margin:8px 0 0">${esc(S.err)}</p>` : '';
-    const btn = busy ? (S.phase === 'send' ? '' : '<div class="bl-two" style="margin-top:10px"><button class="btn bl-sec" data-bl="sautostop">Rok do</button></div>')
+    const btn = S.replay ? '<div class="bl-two" style="margin-top:10px"><button class="btn bl-sec" data-bl="sautostop">Rok do</button></div>' : busy ? (S.phase === 'send' ? '' : '<div class="bl-two" style="margin-top:10px"><button class="btn bl-sec" data-bl="sautostop">Rok do</button></div>')
       : o.ready ? `<div class="bl-two" style="margin-top:10px"><button class="btn" data-bl="sauto">${S.phase === 'done' ? 'Phir se' : 'Saath me bolo (shuru)'}</button></div>`
         : `<p class="mut" style="margin:10px 0 0">${esc(o.why || '')}</p>`;
     return `<div class="ss"><div class="ss-top"><span>স্বৰ সাথে বলো · অসমীয়া স্বৰবৰ্ণ</span><span id="ssCnt">${S.letters.length} / ${N}</span></div>
@@ -88,9 +88,11 @@
     S.letters.push({ i: k, l: K.LETTERS[k], t: K.startMs(off, k), s: ok ? 1 : 0 });   // t: where this letter starts inside the child's recording, so the parent can jump there
   }
 
-  // o = { code, api, redraw, calibMs, tailMs }
+  let replayT = 0;
+  // o = { code, api, redraw, calibMs, tailMs, replayMs (0 = no auto replay), alive }
   async function start(o) {
     o = o || {};
+    if (replayT) { clearTimeout(replayT); replayT = 0; }
     if (S.phase !== 'idle' && S.phase !== 'done') return;
     warm(); S = fresh(); S.mult = K.mult(o.sens); S.redraw = o.redraw || (() => { if (typeof g.draw === 'function') g.draw(); }); S.phase = 'calib'; redraw();
     let stream = null, ctx = null, rec = null, au = null, tmr = 0, level = () => 0;
@@ -132,15 +134,17 @@
       if (rec.state !== 'inactive') rec.stop(); await stopped;
     } catch (e) { S.err = 'Recording mein dikkat aayi.'; }
     clearInterval(tmr); try { stream.getTracks().forEach(t => t.stop()); } catch (e) {} try { ctx && ctx.close(); } catch (e) {}
-    if (S.letters.length && chunks.length && o.code && o.api) {
-      S.phase = 'send'; paint(); redraw();
-      try { await g.BOLOREC.send({ code: o.code, api: o.api, blob: new g.Blob(chunks, { type: (rec && rec.mimeType) || 'audio/webm' }), total: N, letters: S.letters }); S.sent = true; }
-      catch (e) { S.err = (e && e.message) || 'Recording bheji nahi ja saki.'; }
-    }
+    // The recording is NOT sent to anyone: only the sound level was measured, and the audio chunks are dropped here.
+    chunks.length = 0;
     S.cur = -1; S.phase = S.letters.length ? 'done' : 'idle'; S.end = null; redraw();
+    // Auto replay: after a full natural run the same lesson starts again 5 seconds later (Rok do / leaving the screen cancels it).
+    if (natural && !S.cancel && !S.err && S.letters.length && o.replayMs !== 0) {
+      S.replay = true; redraw();
+      replayT = setTimeout(() => { replayT = 0; S.replay = false; if (!o.alive || o.alive()) start(o); else redraw(); }, o.replayMs == null ? 5000 : o.replayMs);
+    }
   }
 
   // Rok do / the child left the screen: the letters done so far are still sent.
-  function stop() { S.cancel = true; if (S.end) S.end(); }
+  function stop() { if (replayT) { clearTimeout(replayT); replayT = 0; S.replay = false; redraw(); } S.cancel = true; if (S.end) S.end(); }
   g.SWARSAATH = { html, start, stop, running: () => S.phase === 'calib' || S.phase === 'run' || S.phase === 'send', _state: () => S, _reset: () => { S = fresh(); } };
 })(typeof window !== 'undefined' ? window : globalThis);

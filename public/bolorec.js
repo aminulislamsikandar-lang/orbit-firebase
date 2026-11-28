@@ -51,13 +51,7 @@
       if (rec.state !== 'inactive') rec.stop(); await stopped;
     } catch (e) { out.err = 'Recording mein dikkat aayi.'; }
     clearInterval(tmr); try { stream.getTracks().forEach(t => t.stop()); } catch (e) {} try { ctx && ctx.close(); } catch (e) {}
-    if (out.letters.length && chunks.length) {
-      try {
-        const blob = new g.Blob(chunks, { type: (rec && rec.mimeType) || 'audio/webm' });
-        await send({ code: o.code, api: o.api, blob, total: o.items.length, letters: out.letters });
-        out.sent = true;
-      } catch (e) { out.err = (e && e.message) || 'Recording bheji nahi ja saki.'; }
-    }
+    chunks.length = 0;   // the recording is not sent to anyone: only the sound level was measured
     return out;
   }
 

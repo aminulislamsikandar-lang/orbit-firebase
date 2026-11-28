@@ -457,7 +457,7 @@
   function saathStart() {
     if (!g.SAATH || g.SAATH.running() || !recOK()) return;
     reset(); stopSay();
-    g.SAATH.start({ sens: load().set.vol, code: linked() ? g.KIDLINK.kidCode() : '', api: g.api, redraw: () => { if (onScreen()) redraw(); } });
+    g.SAATH.start({ sens: load().set.vol, code: linked() ? g.KIDLINK.kidCode() : '', api: g.api, redraw: () => { if (onScreen()) redraw(); }, alive: () => onScreen() && st.mode === 'saath' });
   }
   // "স্বৰ সাথে বলো" (Swar saath me bolo): the same thing for the 11 vowels, its own screen and recorder in public/swarsaath.js; the same Start rules (mic switch, parent's tick when joined, practice when not joined).
   function swarSaathCard() {
@@ -467,7 +467,7 @@
   function swarSaathStart() {
     if (!g.SWARSAATH || g.SWARSAATH.running() || !recOK()) return;
     reset(); stopSay();
-    g.SWARSAATH.start({ sens: load().set.vol, code: linked() ? g.KIDLINK.kidCode() : '', api: g.api, redraw: () => { if (onScreen()) redraw(); } });
+    g.SWARSAATH.start({ sens: load().set.vol, code: linked() ? g.KIDLINK.kidCode() : '', api: g.api, redraw: () => { if (onScreen()) redraw(); }, alive: () => onScreen() && st.mode === 'swarsaath' });
   }
 
   function card() {
