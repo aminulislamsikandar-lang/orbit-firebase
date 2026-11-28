@@ -27,7 +27,7 @@ const tick = (ms = 20) => new Promise(r => setTimeout(r, ms));
   t('audio and picture addresses', D.AUDIO.startsWith('/swar/swar.mp3') && D.pic(0).startsWith('/swar/swar-01.webp') && D.pic(10).startsWith('/swar/swar-11.webp'));
   // ---- wiring ----
   const bolo = read('public/bolo.js'), idx = read('public/index.html'), sw = read('public/sw.js');
-  t('bolo.js: new chip, page and leave()', /\['swar', '[^']+', '#8e44ad'\](, \['swarsaath', '[^']+', '#8e44ad'\])?\];/.test(bolo) && bolo.includes("st.mode === 'swar') return g.SWAR ? g.SWAR.viewHTML() : ''") && bolo.includes('if (g.SWAR) g.SWAR.leave();'));
+  t('bolo.js: new chip, page and leave()', /\['swar', '[^']+', '#8e44ad'\](, \['swarsaath', '[^']+', '#8e44ad'\])?(, \['abcsaath', '[^']+', '#e91e63'\])?\];/.test(bolo) && bolo.includes("st.mode === 'swar') return g.SWAR ? g.SWAR.viewHTML() : ''") && bolo.includes('if (g.SWAR) g.SWAR.leave();'));
   t('bolo.js: all the old chips are still there', ["['alpha', 'A se Z'", "['table', 'Table'", "['poem', 'Poem'", "['byanjan'", "['saath'", "['asvyanjan'", "['abc', 'ABC Games'", "['abclv'", "['numg'", "['numlv'", "['numct', '123 Ginti'", "['suno', 'Suno Game'"].every(x => bolo.includes(x)));
   t('index.html: script loaded after sunogame.js, mounted with the other Bolo topics', idx.indexOf('<script src="/swarborno.js"></script>') > idx.indexOf('<script src="/sunogame.js"></script>') && idx.includes("if(window.SUNO)SUNO.mount($('#app'));if(window.SWAR)SWAR.mount($('#app'))}"));
   t('sw.js caches the script, the recording and all 11 pictures for offline use', ["'/swarborno.js'", "'/swar/swar.mp3'"].concat([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(i => "'/swar/swar-" + String(i).padStart(2, '0') + ".webp'")).every(x => sw.includes(x)));
